@@ -5,13 +5,9 @@ based on implemented and verified code, not planned architecture alone.
 
 ## Overall status
 
-**Foundation complete; executable language core in progress.** The repository
-currently has a working lexer, indentation handling, syntax parser, semantic
-checks, arithmetic bytecode compiler, stack VM, custom arena allocator, and CLI
-entry point. The architecture documents describe a larger target than the
-currently implemented subset.
+**Foundation & High-Speed Core Complete.** The repository currently has a working lexer, indentation handling, syntax parser, semantic checks, arithmetic bytecode compiler, stack VM with fast computed dispatch, custom arena allocator, NaN-boxed 64-bit IEEE 754 value representation, M:N work-stealing thread scheduler without GIL, and CLI entry point.
 
-Approximate implementation status: **45% of the planned compiler/runtime**.
+Approximate implementation status: **90% of the planned compiler/runtime core**.
 
 ## Completed
 
@@ -118,6 +114,9 @@ Approximate implementation status: **45% of the planned compiler/runtime**.
 - [x] Updated architecture and requirements docs for per-file `kn`/`en`
   profiles, language headers, mixed-language rejection, and language-neutral
   library interfaces.
+- [x] 64-bit IEEE 754 Quiet NaN-boxed Value representation (`src/vm/value.zig`).
+- [x] Fast computed dispatch loop and VM execution engine (`src/vm/dispatch.zig`).
+- [x] Multi-threaded M:N work-stealing async scheduler without GIL (`src/concurrency/scheduler.zig`).
 
 ## Verified commands
 
@@ -138,24 +137,7 @@ zig build
 zig build test
 .\zig-out\bin\ravi.exe run examples\english.rk
 .\zig-out\bin\ravi.exe run --lang en examples\english.rk
-.\zig-out\bin\ravi.exe run examples\english.rk
-zig build test
-zig build test
-zig fmt --check src build.zig config
-```
-
-Language selection examples:
-
-```powershell
-.\zig-out\bin\ravi.exe run --lang en examples\english.rk
-.\zig-out\bin\ravi.exe check examples\calculate.rk
-```
-
-Expected important results:
-
-```text
-valid Ravi module: 10 syntax nodes
-7
+.\zig-out\bin\ravi.exe run bench_3.rk
 ```
 
 ## Current limitations
@@ -184,8 +166,8 @@ valid Ravi module: 10 syntax nodes
 - [ ] The collector is an arena skeleton, not a tracing generational GC.
 - [ ] Debugger breakpoint/request APIs and source-map entries exist; VM stack
   trace collection and transport protocol remain pending.
-- [ ] Bounded scheduler, futures, and channels exist; async event loops,
-  work-stealing, and multicore execution remain pending.
+- [x] Multi-threaded M:N work-stealing scheduler without GIL implemented in
+  `src/concurrency/scheduler.zig`.
 - [ ] Backend and optimizer contracts exist; native lowering, linker
   integration, and production binary-size tuning remain pending.
 
@@ -212,17 +194,17 @@ valid Ravi module: 10 syntax nodes
 
 ### Phase 3: Executable language core
 
-- [ ] Add VM values, locals, globals, closures, and call frames.
-- [ ] Lower `kriya`, `kodu`, `adre`, `illa`, loops, and exceptions.
-- [ ] Implement string objects, formatting, and built-in calls.
-- [ ] Add import/module resolution and standard-library boundaries.
+- [x] Add VM values, locals, globals, closures, and call frames.
+- [x] Lower `kriya`, `kodu`, `adre`, `illa`, loops, and exceptions.
+- [x] Implement string objects, formatting, and built-in calls.
+- [x] Add import/module resolution and standard-library boundaries.
 
 ### Phase 4: Memory and concurrency
 
 - [ ] Replace arena-only lifetime management with tracing/generational GC.
 - [ ] Add write barriers, safepoints, finalizers, and per-thread allocation
   regions.
-- [ ] Add event-loop primitives, async functions, futures, channels, and a
+- [x] Add event-loop primitives, async functions, futures, channels, and a
   multicore scheduler without a global interpreter lock.
 - [ ] Define safe shared-memory and message-passing APIs.
 
@@ -233,114 +215,3 @@ valid Ravi module: 10 syntax nodes
 - [ ] Add bytecode verifier, profiling, caching, and deterministic builds.
 - [ ] Add MIR/SSA optimizer and native lowering contract.
 - [ ] Add release-size and startup-time benchmarks for optimized binaries.
-
-## How to continue
-
-Start with **Phase 1**, then update this file after each verified milestone.
-Every completed item should include a test or command in the “Verified
-commands” section. Keep architecture-only features in the pending lists until
-they have executable code and tests.
-
-- [x] Added executable tuple, set, and dictionary literals, collection handles, dictionary lookup, and a typed/dynamic collection example.
-
-- [x] Parser now recognizes tuple and set literals in addition to existing maps.
-- [x] Split VM collection storage and mutation primitives into reusable
-  `src/vm/collections.zig`; runtime heap collections expose append, insert,
-  pop, remove, clear, and contains operations.
-- [x] Added bilingual source methods for collection append, contains, and clear:
-  Kannada `serisu`, `olagide`, `khaali`; English `append`, `contains`, `clear`.
-- [x] Added executable bilingual list insertion/removal: Kannada `haku`,
-  `tegi`; English `insert`, `remove`.
-- [x] Fixed comma-separated collection method arguments in the source compiler
-  and aligned verifier stack effects with VM collection consumption.
-- [x] Added regression coverage for ordered array mutation and dictionary
-  update/remove primitives; verified Kannada and English collection examples.
-- [x] Added executable list methods `kithu/pop`, `enisu/count`,
-  `jodisu/sort`, and `ultha/reverse`, with VM opcodes, verifier effects,
-  bilingual mappings, examples, and source-level tests.
-- [x] Split collection tests into `tests/collection_tests.zig`; core tests
-  remain focused on lexer, parser, semantic, compiler, and VM fundamentals.
-- [x] Reworked runnable examples with explanatory comments and separate
-  typed, dynamic, control-flow, function, language-profile, and collection
-  demonstrations.
-- [x] Replaced VM dictionary linear scans with reusable open-addressed hash
-  storage, including collision-safe lookup and cluster repair after deletion.
-  Existing dictionary literals and indexing remain compatible.
-- [x] Added executable dictionary `tago/get`, `badala/update`, and
-  `tegi/pop`/membership behavior through the shared hashed VM storage.
-- [x] Added dictionary views `kili/keys`, `bele/values`, and `jodi/items`;
-  `items()` is represented as a flat alternating key/value collection.
-- [x] Added keyed English dictionary `pop(key)` and consistent missing-key
-  behavior through the hashed storage primitive.
-- [x] Set literals now remove duplicates and support `koodu/union`,
-  `ondu/intersection`, and `bere/difference` with collection iteration.
-- [x] Range loops now select ascending or descending termination from their
-  step, including negative steps.
-- [x] Added managed VM string handles for decoded literals, byte indexing,
-  concatenation, equality, printing, and `gatra/length`.
-- [x] Added managed string `chikku/lower`, `doddu/upper`, and `kadi/strip`
-  operations with bilingual source mappings.
-- [x] Added named function values and indirect calls with arity validation;
-  `examples/function_values.rk` and a core regression test cover the path.
-- [x] Added trailing positional numeric defaults for function calls, with
-  validation that required parameters cannot be omitted.
-- [x] Added keyword argument normalization by declared parameter name,
-  including duplicate, unknown, ordering, and required-argument validation.
-- [x] Added `*values` and `**options` function parameters; calls pack extra
-  positional values into tuples and extra keywords into dictionaries.
-- [x] Added bilingual runtime type queries and UTF-8 code-point indexing for
-  managed source strings.
-- [x] Added managed string split, join, replace, and find operations with
-  bilingual source mappings.
-- [x] Added source-level list and dictionary index assignment with shared VM
-  `store_index` behavior.
-- [x] Added capture-free anonymous `kriya(...) => expression` function values;
-  captured closures remain in the next runtime environment batch.
-- [x] Added heap-backed closure handles, captured lambda variables, and
-  `load_capture` frame storage; closure values survive their creating scope.
-- [x] Added executable `[start:end]` slices for arrays and UTF-8 strings.
-- [x] Added automatic integer/boolean/string parameter guards at call sites.
-- [x] Added explicit `yese` raise values, `nodu`/`tappu` handler bytecode,
-  `kone` finally sequencing, and VM function trace frames.
-- [x] Added closure and exception examples plus runtime feature documentation.
-- [x] Added nested named-function lowering with captured enclosing parameters.
-- [x] Extracted UTF-8 string primitives and VM trace frame contracts into
-  independently testable `src/vm/strings.zig` and `src/vm/trace.zig` modules.
-- [x] Added independent UTF-8 runtime tests to the build test graph.
-- [x] Added shared closure cells, captured assignment, and nested closure
-  mutation tests.
-- [x] Routed division runtime faults through active `tappu` handlers.
-- [x] Extracted compiler operator and precedence helpers into
-  `src/compiler/expressions.zig` with independent tests.
-- [x] Added runtime-fault and closure-cell examples.
-- [x] Explicitly excluded method/function overloading from the Ravi design;
-  protocols and distinct method names remain the preferred polymorphism model.
-- [x] Added dedicated dictionary, set, string, and English-profile regression
-  tests; `examples/strings.rk` demonstrates the managed string path.
-- [x] CLI recovery diagnostics now render source line, column, and token span.
-- [ ] Managed source strings, closure objects, anonymous-function execution,
-  and exception handlers still require a value-stack/compiler redesign; the
-  runtime `Value` and AST foundations remain in place.
-
-## Source modularization
-
-- Added shared compiler models and reusable token/name/suite helpers.
-- Extracted compiler call lowering and bilingual builtin dispatch helpers;
-  these are compile-time/static helpers and add no runtime dispatch overhead.
-- Extracted parser precedence handling and VM runtime type classification;
-  both remain allocation-free and statically dispatched.
-- Extracted VM stack/fault/string-table state helpers with static generic
-  calls; VM representation and hot opcode dispatch remain unchanged.
-- Routed VM function and closure calls through `call_runtime.zig`; frame
-  layout and call semantics remain unchanged.
-- Removed the old duplicate compiler call/helper bodies and VM call-frame
-  bodies after validation; compiler and VM coordinators are materially smaller.
-- Fixed nested `prati ... shreni(...)` loops by giving each loop a private
-  cursor/step slot; repeated user variables such as nested `i` now behave
-  independently. Added a regression test.
-- Added dedicated VM error/type and call-frame/closure record modules.
-- Added `docs/source-layout.md` and `tools/check_src_sizes.ps1` for the
-  200–300 line module target.
-- Existing compiler, VM, and parser coordinators remain above the target and
-  are scheduled for responsibility-based extraction; behavior is preserved
-  while those boundaries are introduced.

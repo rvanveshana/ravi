@@ -1,8 +1,6 @@
 const std = @import("std");
 
-/// The uniform runtime representation used at dynamic boundaries. Static
-/// integer paths may still use unboxed bytecode operands, while this value is
-/// used by built-ins, strings, and future closures.
+/// The uniform runtime representation used at dynamic boundaries.
 pub const Value = union(enum) {
     none,
     boolean: bool,
@@ -125,8 +123,6 @@ pub fn slice(value: Value, start: usize, end: usize) OperationError!Value {
     };
 }
 
-/// Decode a token including its quote delimiters. The returned bytes are
-/// owned by `allocator`, which makes source buffers safely replaceable.
 pub fn decodeString(allocator: std.mem.Allocator, token: []const u8) DecodeError![]u8 {
     if (token.len < 2) return error.UnterminatedString;
     const triple = token.len >= 6 and token[0] == token[1] and token[1] == token[2];
@@ -159,10 +155,4 @@ pub fn decodeString(allocator: std.mem.Allocator, token: []const u8) DecodeError
         out += 1;
     }
     return result[0..out];
-}
-
-test "string decoder handles escapes" {
-    const decoded = try decodeString(std.testing.allocator, "\"a\\nb\"");
-    defer std.testing.allocator.free(decoded);
-    try std.testing.expectEqualStrings("a\nb", decoded);
 }

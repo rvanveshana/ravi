@@ -31,9 +31,24 @@ pub fn main(init: std.process.Init) !void {
     var args = try std.process.Args.Iterator.initAllocator(init.minimal.args, collector.allocator());
     defer args.deinit();
     _ = args.next();
-    const mode = args.next() orelse "check";
+    const first_arg = args.next() orelse "check";
+    var mode: []const u8 = "check";
     var path: ?[]const u8 = null;
     var language_override: ?config.SourceLanguage = null;
+
+    if (std.mem.eql(u8, first_arg, "check") or std.mem.eql(u8, first_arg, "run") or std.mem.eql(u8, first_arg, "tokens")) {
+        mode = first_arg;
+    } else if (std.mem.eql(u8, first_arg, "--lang")) {
+        const name = args.next() orelse {
+            std.debug.print("missing language after --lang\n", .{});
+            return;
+        };
+        if (std.mem.eql(u8, name, "kn")) language_override = .kn else if (std.mem.eql(u8, name, "en")) language_override = .en;
+    } else {
+        path = first_arg;
+        mode = "run";
+    }
+
     while (args.next()) |argument| {
         if (std.mem.eql(u8, argument, "--lang")) {
             const name = args.next() orelse {
@@ -44,7 +59,7 @@ pub fn main(init: std.process.Init) !void {
                 std.debug.print("unknown language: {s}\n", .{name});
                 return;
             }
-        } else path = argument;
+        } else if (path == null) path = argument;
     }
     const source = if (path) |file_path| try std.Io.Dir.cwd().readFileAlloc(init.io, file_path, collector.allocator(), .limited(16 * 1024 * 1024)) else sample;
     const language = if (language_override) |selected| selected else (config.languageFromHeader(source) catch |err| {
@@ -72,30 +87,30 @@ pub fn main(init: std.process.Init) !void {
             const token = if (diagnostic.span.first < tokens.len) tokens[diagnostic.span.first] else tokens[tokens.len - 1];
             std.debug.print("parse error at {d}:{d} (tokens {d}-{d}): {s}\n", .{ diagnostic.span.line, token.column, diagnostic.span.first, diagnostic.span.last, diagnostic.message });
         }
-        return;
+        std.process.exit(1);
     }
     var analyzer = Analyzer.init(collector.allocator());
     defer analyzer.deinit();
     analyzer.analyzeWithLanguage(tokens, language) catch |err| {
         std.debug.print("semantic error: {s}\n", .{@errorName(err)});
-        return;
+        std.process.exit(1);
     };
     analyzer.analyzeModule(&module) catch |err| {
         std.debug.print("semantic error: {s}\n", .{@errorName(err)});
-        return;
+        std.process.exit(1);
     };
     if (std.mem.eql(u8, mode, "run")) {
         var compiler = Compiler.initWithLanguage(collector.allocator(), language);
         var chunk = compiler.compileProgram(tokens) catch |err| {
             std.debug.print("compile error: {s}\n", .{@errorName(err)});
-            return;
+            std.process.exit(1);
         };
         defer chunk.deinit();
         var vm = Vm{};
         const result = vm.run(&chunk) catch |err| {
             std.debug.print("runtime error: {s}\n", .{@errorName(err)});
             for (vm.trace[0..vm.trace_count]) |frame| std.debug.print("  at {s} (bytecode {d})\n", .{ frame.function, frame.instruction });
-            return;
+            std.process.exit(1);
         };
         if (!vm.pub_printed) std.debug.print("{d}\n", .{result});
         return;

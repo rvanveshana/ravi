@@ -68,11 +68,23 @@ pub const Parser = struct {
 
     fn parseStatement(self: *Parser, module: *ast.Module, out: *std.ArrayListUnmanaged(ast.Stmt)) ParseError!void {
         const start = self.index;
-        if (self.isImportStart()) try self.parseImport(module, out, start) else if (self.word("kriya")) try self.parseFunction(module, out, start) else if (self.word("kodu") or self.word("taru")) try self.parseReturn(module, out, start) else if (self.word("nillu") or self.word("munde") or self.word("yese")) try self.parseTransfer(module, out, start) else if (self.isControl()) try self.parseControl(module, out, start) else if (self.at(.identifier) and self.index + 1 < self.tokens.len and self.tokens[self.index + 1].kind == .colon) try self.parseTypedAssignment(module, out, start) else {
+        if (self.word("saarva") or self.word("swanta") or self.word("vansha") or self.word("olage") or self.word("public") or self.word("private") or self.word("protected") or self.word("internal")) {
+            self.index += 1;
+        }
+        if (self.isImportStart()) try self.parseImport(module, out, start) else if (self.word("roopa")) try self.parseClass(module, out, start) else if (self.word("kriya")) try self.parseFunction(module, out, start) else if (self.word("kodu") or self.word("taru")) try self.parseReturn(module, out, start) else if (self.word("nillu") or self.word("munde") or self.word("yese")) try self.parseTransfer(module, out, start) else if (self.isControl()) try self.parseControl(module, out, start) else if (self.at(.identifier) and self.index + 1 < self.tokens.len and self.tokens[self.index + 1].kind == .colon) try self.parseTypedAssignment(module, out, start) else {
             const value = try self.parseExpression(module, 0);
             if (self.at(.newline)) self.index += 1;
             try out.append(self.allocator, .{ .span = .{ .first = start, .last = self.index, .line = self.tokens[start].line }, .kind = .{ .expression = value } });
         }
+    }
+
+    fn parseClass(self: *Parser, module: *ast.Module, out: *std.ArrayListUnmanaged(ast.Stmt), start: usize) ParseError!void {
+        self.index += 1;
+        if (!self.at(.identifier)) return error.MissingName;
+        const name = self.tokens[self.index].lexeme;
+        self.index += 1;
+        const body = try self.parseSuite(module);
+        try out.append(self.allocator, .{ .span = .{ .first = start, .last = self.index, .line = self.tokens[start].line }, .kind = .{ .class_decl = .{ .name = name, .body_first = body.first, .body_count = body.count, .visibility = .public } } });
     }
 
     fn parseImport(self: *Parser, module: *ast.Module, out: *std.ArrayListUnmanaged(ast.Stmt), start: usize) ParseError!void {

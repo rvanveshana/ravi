@@ -1,0 +1,17 @@
+# Comprehensive Gradual Typing (Dynamic vs Static typed speed path) Example
+# Statically annotated variables skip dynamic type checks for maximum performance
+
+# Dynamic variable (freedom)
+dynamic_val = 100
+dynamic_val = dynamic_val + 50
+mudrisu(dynamic_val)
+
+# Static integer annotation (speed path)
+static_val: int = 500
+static_val = static_val * 2
+mudrisu(static_val)
+
+# Static homogeneous array
+numbers: int[] = [10, 20, 30]
+mudrisu(numbers[0])
+mudrisu(numbers.gatra())

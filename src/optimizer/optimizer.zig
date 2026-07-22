@@ -23,6 +23,22 @@ pub const Optimizer = struct {
                     _ = chunk.source_map.orderedRemove(i + 1);
                     _ = chunk.source_map.orderedRemove(i + 1);
                 }
+                // Fix jump targets and function entry points after instruction removal
+                for (chunk.code.items) |*inst| {
+                    switch (inst.op) {
+                        .jump, .jump_if_false, .try_begin => {
+                            if (inst.operand > i + 1) {
+                                inst.operand -= 2;
+                            }
+                        },
+                        else => {},
+                    }
+                }
+                for (chunk.functions.items) |*func| {
+                    if (func.entry > i + 1) {
+                        func.entry -= 2;
+                    }
+                }
                 stats.folded_operations += 1;
             }
         }

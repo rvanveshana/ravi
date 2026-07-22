@@ -38,6 +38,9 @@ pub const Analyzer = struct {
                 const end = function.params_first + function.params_count;
                 for (module.parameters.items[function.params_first..end]) |parameter| try self.declare(child, parameter.name, types.fromName(parameter.annotation orelse "dinamika"), .private);
             },
+            .class_decl => |class_decl| {
+                try self.declare(root, class_decl.name, types.fromName("kriya"), .internal);
+            },
             .expression => |expression_id| {
                 switch (module.expressions.items[expression_id].kind) {
                     .assignment => |assignment| if (assignment.array_type) try self.validateTypedArray(module, assignment.value, assignment.annotation orelse "dinamika"),

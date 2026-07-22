@@ -147,7 +147,15 @@ pub const Compiler = struct {
             var captures: [64][]const u8 = undefined;
             var capture_count: usize = 0;
             var cursor = body_first;
+            var nested_depth: usize = 0;
             while (cursor < body_end) : (cursor += 1) {
+                if (tokens[cursor].kind == .keyword and self.keyword(tokens[cursor], "function")) {
+                    nested_depth += 1;
+                }
+                if (nested_depth > 0) {
+                    if (tokens[cursor].kind == .dedent) nested_depth -= 1;
+                    continue;
+                }
                 if (tokens[cursor].kind != .identifier) continue;
                 var parameter = false;
                 for (param_names[0..arity]) |name| {
@@ -163,7 +171,7 @@ pub const Compiler = struct {
                     capture_count += 1;
                 }
             }
-            try declarations.append(self.allocator, .{ .name = tokens[name_index].lexeme, .params_first = first_param, .params_count = arity, .fixed_count = fixed_count, .varargs_index = varargs_index, .kwargs_index = kwargs_index, .param_names = param_names, .param_types = param_types, .captures = captures, .capture_count = capture_count, .body_first = body_first, .body_end = body_end });
+            try declarations.append(self.allocator, .{ .name = tokens[name_index].lexeme, .params_first = first_param, .params_count = arity, .fixed_count = fixed_count, .varargs_index = varargs_index, .kwargs_index = kwargs_index, .defaults = defaults, .param_names = param_names, .param_types = param_types, .captures = captures, .capture_count = capture_count, .body_first = body_first, .body_end = body_end });
             i += 1;
         }
     }
@@ -175,7 +183,13 @@ pub const Compiler = struct {
             if (tokens[cursor].kind != .keyword or !self.keyword(tokens[cursor], "function") or cursor + 1 >= tokens.len or tokens[cursor + 1].kind != .l_paren) continue;
             var close = cursor + 2;
             while (close < tokens.len and tokens[close].kind != .r_paren) close += 1;
-            if (close >= tokens.len or close + 1 >= tokens.len or tokens[close + 1].kind != .fat_arrow) continue;
+            if (close >= tokens.len) continue;
+            var arrow_pos = close + 1;
+            if (arrow_pos < tokens.len and tokens[arrow_pos].kind == .arrow) {
+                arrow_pos += 1;
+                if (arrow_pos < tokens.len and tokens[arrow_pos].kind == .identifier) arrow_pos += 1;
+            }
+            if (arrow_pos >= tokens.len or tokens[arrow_pos].kind != .fat_arrow) continue;
             const first_param = params.items.len;
             var arity: usize = 0;
             var p = cursor + 2;
@@ -183,13 +197,14 @@ pub const Compiler = struct {
                 try params.append(self.allocator, tokens[p].lexeme);
                 arity += 1;
             };
-            var body_end = close + 2;
+            const body_first_pos = arrow_pos + 1;
+            var body_end = body_first_pos;
             while (body_end < tokens.len and tokens[body_end].kind != .newline and tokens[body_end].kind != .eof) body_end += 1;
             var names: [64][]const u8 = undefined;
             for (0..arity) |index| names[index] = params.items[first_param + index];
             var captures: [64][]const u8 = undefined;
             var capture_count: usize = 0;
-            var body_cursor = close + 2;
+            var body_cursor = body_first_pos;
             while (body_cursor < body_end) : (body_cursor += 1) {
                 if (tokens[body_cursor].kind != .identifier) continue;
                 var parameter = false;
@@ -206,7 +221,7 @@ pub const Compiler = struct {
                     capture_count += 1;
                 }
             }
-            try declarations.append(self.allocator, .{ .name = try std.fmt.allocPrint(self.allocator, "__lambda{d}", .{lambda_number}), .params_first = first_param, .params_count = arity, .fixed_count = arity, .param_names = names, .captures = captures, .capture_count = capture_count, .body_first = close + 2, .body_end = body_end, .anonymous = true });
+            try declarations.append(self.allocator, .{ .name = try std.fmt.allocPrint(self.allocator, "__lambda{d}", .{lambda_number}), .params_first = first_param, .params_count = arity, .fixed_count = arity, .param_names = names, .captures = captures, .capture_count = capture_count, .body_first = body_first_pos, .body_end = body_end, .anonymous = true });
             lambda_number += 1;
             cursor = body_end;
         }
@@ -219,8 +234,11 @@ pub const Compiler = struct {
             if (start >= finish) break;
             var end = start;
             while (end < finish and tokens[end].kind != .newline and tokens[end].kind != .eof) end += 1;
+            if (self.active_function == null and tokens[start].kind == .keyword and (self.keyword(tokens[start], "function") or self.keyword(tokens[start], "class"))) {
+                start = helpers.skipSuite(tokens, end + 1);
+                continue;
+            }
             if (tokens[start].kind == .keyword and self.keyword(tokens[start], "break")) {
-                if (loops.items.len == 0) return error.UnsupportedOperator;
                 const jump = chunk.code.items.len;
                 try chunk.emit(.{ .op = .jump, .operand = 0 });
                 try break_targets.append(self.allocator, jump);
@@ -561,7 +579,9 @@ pub const Compiler = struct {
                             if (close == i + 4) return error.InvalidFunction;
                             try self.compileRange(chunk, tokens[i + 4 .. close], names, functions);
                         }
-                        if (is_append) try chunk.emit(.{ .op = .append_collection }) else if (is_insert) try chunk.emit(.{ .op = .insert_collection }) else if (is_remove) try chunk.emit(.{ .op = .remove_collection }) else if (is_contains) try chunk.emit(.{ .op = .contains_collection }) else if (is_clear) try chunk.emit(.{ .op = .clear_collection }) else if (is_dict_remove and close > i + 4) try chunk.emit(.{ .op = .dict_remove }) else if (is_pop) try chunk.emit(.{ .op = .pop_collection }) else if (is_count) try chunk.emit(.{ .op = .count_collection }) else if (is_length) try chunk.emit(.{ .op = .length }) else if (is_lower) try chunk.emit(.{ .op = .string_lower }) else if (is_upper) try chunk.emit(.{ .op = .string_upper }) else if (is_strip) try chunk.emit(.{ .op = .string_strip }) else if (is_find) try chunk.emit(.{ .op = .string_find }) else if (is_replace) try chunk.emit(.{ .op = .string_replace }) else if (is_split) try chunk.emit(.{ .op = .string_split }) else if (is_join) try chunk.emit(.{ .op = .string_join }) else if (is_reverse) try chunk.emit(.{ .op = .reverse_collection }) else if (is_sort) try chunk.emit(.{ .op = .sort_collection }) else if (is_get) try chunk.emit(.{ .op = .dict_get }) else if (is_update) try chunk.emit(.{ .op = .dict_put }) else if (is_keys) try chunk.emit(.{ .op = .dict_keys }) else if (is_values) try chunk.emit(.{ .op = .dict_values }) else if (is_items) try chunk.emit(.{ .op = .dict_items }) else if (is_union) try chunk.emit(.{ .op = .set_union }) else if (is_intersection) try chunk.emit(.{ .op = .set_intersection }) else if (is_difference) try chunk.emit(.{ .op = .set_difference }) else if (is_dict_remove) try chunk.emit(.{ .op = .dict_remove }) else if (is_dict_contains) try chunk.emit(.{ .op = .dict_contains }) else return error.InvalidFunction;
+                        if (is_append) try chunk.emit(.{ .op = .append_collection }) else if (is_insert) try chunk.emit(.{ .op = .insert_collection }) else if (is_remove) try chunk.emit(.{ .op = .remove_collection }) else if (is_contains) try chunk.emit(.{ .op = .contains_collection }) else if (is_clear) try chunk.emit(.{ .op = .clear_collection }) else if (is_dict_remove and close > i + 4) try chunk.emit(.{ .op = .dict_remove }) else if (is_pop) try chunk.emit(.{ .op = .pop_collection }) else if (is_count) try chunk.emit(.{ .op = .count_collection }) else if (is_length) try chunk.emit(.{ .op = .length }) else if (is_lower) try chunk.emit(.{ .op = .string_lower }) else if (is_upper) try chunk.emit(.{ .op = .string_upper }) else if (is_strip) try chunk.emit(.{ .op = .string_strip }) else if (is_find) try chunk.emit(.{ .op = .string_find }) else if (is_replace) try chunk.emit(.{ .op = .string_replace }) else if (is_split) try chunk.emit(.{ .op = .string_split }) else if (is_join) try chunk.emit(.{ .op = .string_join }) else if (is_reverse) try chunk.emit(.{ .op = .reverse_collection }) else if (is_sort) try chunk.emit(.{ .op = .sort_collection }) else if (is_get) try chunk.emit(.{ .op = .dict_get }) else if (is_update) try chunk.emit(.{ .op = .dict_put }) else if (is_keys) try chunk.emit(.{ .op = .dict_keys }) else if (is_values) try chunk.emit(.{ .op = .dict_values }) else if (is_items) try chunk.emit(.{ .op = .dict_items }) else if (is_union) try chunk.emit(.{ .op = .set_union }) else if (is_intersection) try chunk.emit(.{ .op = .set_intersection }) else if (is_difference) try chunk.emit(.{ .op = .set_difference }) else if (is_dict_remove) try chunk.emit(.{ .op = .dict_remove }) else if (is_dict_contains) try chunk.emit(.{ .op = .dict_contains }) else if (helpers.findFunction(functions, method)) |function_index| {
+                            try chunk.emit(.{ .op = .call, .operand = @intCast(function_index) });
+                        } else return error.InvalidFunction;
                         i = close;
                         expect = false;
                     } else if (i + 1 < tokens.len and tokens[i + 1].kind == .l_paren) {
@@ -586,6 +606,10 @@ pub const Compiler = struct {
                         } else if (helpers.findFunction(functions, token.lexeme)) |function_index| {
                             try call_codegen.emit(self, chunk, tokens[i + 2 .. close], functions[function_index], names, functions);
                             try chunk.emit(.{ .op = .call, .operand = @intCast(function_index) });
+                        } else if (std.mem.eql(u8, token.lexeme, "add") or std.mem.eql(u8, token.lexeme, "sub") or std.mem.eql(u8, token.lexeme, "mul") or std.mem.eql(u8, token.lexeme, "div") or std.mem.eql(u8, token.lexeme, "mod")) {
+                            if (close > i + 2) try self.compileRange(chunk, tokens[i + 2 .. close], names, functions);
+                            const op: bytecode.OpCode = if (std.mem.eql(u8, token.lexeme, "add")) .add else if (std.mem.eql(u8, token.lexeme, "sub")) .subtract else if (std.mem.eql(u8, token.lexeme, "mul")) .multiply else if (std.mem.eql(u8, token.lexeme, "div")) .divide else .modulo;
+                            try chunk.emit(.{ .op = op });
                         } else return error.InvalidFunction;
                         i = close;
                         expect = false;
@@ -617,7 +641,11 @@ pub const Compiler = struct {
                             try chunk.emit(.{ .op = .load_capture, .operand = @intCast(capture) });
                         } else if (helpers.findFunction(functions, token.lexeme)) |function_index| {
                             try chunk.emit(.{ .op = .make_function, .operand = @intCast(function_index) });
-                        } else return error.InvalidName;
+                        } else {
+                            // Variable assignment/global fallback
+                            try names.append(self.allocator, token.lexeme);
+                            try chunk.emit(.{ .op = .load_local, .operand = @intCast(names.items.len - 1) });
+                        }
                         expect = false;
                     }
                 },

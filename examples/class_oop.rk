@@ -1,0 +1,9 @@
+# Comprehensive Object-Oriented Class Declaration Example in Ravi
+# Kannada syntax: roopa (class), saarva (public), swanta (private)
+
+roopa Person:
+    saarva kriya speak():
+        mudrisu("Hello from Person class")
+
+p = Person()
+p.speak()

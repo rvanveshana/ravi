@@ -5,6 +5,7 @@ pub fn operator(text: []const u8) ?bytecode.OpCode {
     if (std.mem.eql(u8, text, "-")) return .subtract;
     if (std.mem.eql(u8, text, "*")) return .multiply;
     if (std.mem.eql(u8, text, "/")) return .divide;
+    if (std.mem.eql(u8, text, "%")) return .modulo;
     if (std.mem.eql(u8, text, "==")) return .equal;
     if (std.mem.eql(u8, text, "!=")) return .not_equal;
     if (std.mem.eql(u8, text, "<")) return .less;
@@ -19,7 +20,7 @@ pub fn precedence(op: bytecode.OpCode) u8 {
         .logic_or => 1,
         .logic_and => 2,
         .equal, .not_equal, .less, .less_equal, .greater, .greater_equal => 3,
-        .multiply, .divide => 5,
+        .multiply, .divide, .modulo => 5,
         .add, .subtract => 4,
         else => 0,
     };

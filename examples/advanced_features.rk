@@ -1,0 +1,36 @@
+# Advanced Language Features: Input, Classes, and OOP Specs in Ravi
+# Note: Feature specifications for input (kelu), classes (roopa), self (tanna), and visibility (saarva, swanta)
+
+# 1. Output & Basic String Operations
+msg = "Namaskara, Ravi!"
+mudrisu(msg)
+
+text = "Ravi Language"
+mudrisu(text.huduk("Lang") >= 0)
+new_text = text.badla("Ravi", "Fast Ravi")
+mudrisu(new_text)
+
+# 2. Dynamic Collections & Set operations
+set_a = {1, 2, 3}
+set_b = {3, 4, 5}
+union_set = set_a.koodu(set_b)
+mudrisu(union_set[0])
+
+# 3. Gradual Typing arrays
+numbers: int[] = [100, 200, 300]
+mudrisu(numbers[0])
+mudrisu(numbers.gatra())
+
+# 4. Input Specification (kelu for user input in Kannada profile)
+# User prompt using 'kelu':
+# user_name = kelu("Nimma hesaru enu? ")
+
+# 5. Class & Object-Oriented Syntax Design (roopa, saarva, swanta, tanna)
+# saarva roopa Person:
+#     swanta name: string
+#
+#     saarva kriya huttu(name: string):
+#         tanna.name = name
+#
+#     saarva kriya speak():
+#         mudrisu(tanna.name)

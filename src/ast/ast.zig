@@ -47,6 +47,7 @@ pub const Stmt = struct {
         return_stmt: ?ExprId,
         import: struct { module: []const u8, names_first: usize, names_count: usize },
         function: struct { name: []const u8, params_first: usize, params_count: usize, return_type: ?[]const u8, body_first: usize, body_count: usize, decorators_first: usize, decorators_count: usize, visibility: Visibility },
+        class_decl: struct { name: []const u8, body_first: usize, body_count: usize, visibility: Visibility },
         control: struct { keyword: []const u8, condition: ?ExprId, body_first: usize, body_count: usize },
         context: struct { value: ExprId, body_first: usize, body_count: usize },
         transfer: []const u8,

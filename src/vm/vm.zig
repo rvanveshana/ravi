@@ -578,6 +578,16 @@ pub const Vm = struct {
                     self.stack[self.stack_top - 2] = @divTrunc(self.stack[self.stack_top - 2], rhs);
                     self.stack_top -= 1;
                 },
+                .modulo => {
+                    if (self.stack_top < 2) return error.StackUnderflow;
+                    const rhs = self.stack[self.stack_top - 1];
+                    if (rhs == 0) {
+                        if (!self.handleFault(&ip)) return error.DivisionByZero;
+                        continue;
+                    }
+                    self.stack[self.stack_top - 2] = @rem(self.stack[self.stack_top - 2], rhs);
+                    self.stack_top -= 1;
+                },
                 .negate => {
                     if (self.stack_top == 0) return error.StackUnderflow;
                     self.stack[self.stack_top - 1] = -self.stack[self.stack_top - 1];

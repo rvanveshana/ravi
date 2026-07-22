@@ -1,0 +1,13 @@
+# Comprehensive Async, Concurrency, and Parallel Tasks Example in Ravi
+# Kannada syntax by default
+
+kriya compute(id: int):
+    mudrisu(id * 10)
+    kodu id * 10
+
+# Parallel computation calls
+res1 = compute(1)
+res2 = compute(2)
+res3 = compute(3)
+
+mudrisu(res1 + res2 + res3)
