@@ -1,0 +1,15 @@
+# Iterate over a direct integer: values are 0, 1, and 2.
+prati i alli 3:
+    mudrisu(i)
+
+# `shreni` is the Kannada range function.
+prati i alli shreni(3):
+    mudrisu(i)
+
+# Range with start and end stops before the end value.
+prati i alli shreni(1, 4):
+    mudrisu(i)
+
+# Range with start, end, and step.
+prati i alli shreni(0, 7, 2):
+    mudrisu(i)

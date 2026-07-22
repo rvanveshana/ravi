@@ -1,0 +1,6 @@
+# Conditional execution uses `adre` and `illa`.
+x = 4
+adre x > 5:
+    mudrisu(0)
+illa:
+    mudrisu(1)

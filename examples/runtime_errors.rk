@@ -1,0 +1,5 @@
+# Runtime faults can enter the same exception handler path as yese.
+nodu:
+    5 / 0
+tappu:
+    mudrisu(1)

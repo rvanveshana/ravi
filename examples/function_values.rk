@@ -1,0 +1,6 @@
+# Named functions can be stored in variables and called indirectly.
+kriya double(value: int):
+    kodu value * 2
+
+operation = double
+mudrisu(operation(3))

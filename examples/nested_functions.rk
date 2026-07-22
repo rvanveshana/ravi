@@ -1,0 +1,7 @@
+# Named functions may be nested and capture enclosing parameters.
+kriya outer(value: int):
+    kriya inner(extra: int):
+        kodu value + extra
+    kodu inner(4)
+
+mudrisu(outer(5))

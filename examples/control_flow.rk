@@ -1,0 +1,6 @@
+# A while loop updates a variable until its condition becomes false.
+x = 0
+vargu x < 3:
+    x = x + 1
+
+mudrisu(x)

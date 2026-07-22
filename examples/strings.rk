@@ -1,0 +1,11 @@
+# Managed strings support indexing, length, concatenation, and comparison.
+name = "Ravi"
+greeting = "Hello, " + name
+mudrisu(greeting)
+mudrisu(name[1])
+mudrisu(name.gatra())
+mudrisu(name == "Ravi")
+spaced = "  Ravi  "
+mudrisu(spaced.kadi())
+mudrisu(name.doddu())
+mudrisu(name.chikku())

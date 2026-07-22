@@ -1,0 +1,5 @@
+# Extra positional values are packed into a tuple and extra keywords into a dictionary.
+kriya combine(first: int, *values, **options):
+    kodu first + values[0] + options["bonus"]
+
+mudrisu(combine(1, 2, 3, bonus = 4))

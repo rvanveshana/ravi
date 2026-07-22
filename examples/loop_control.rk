@@ -1,0 +1,6 @@
+prati i alli 5:
+    adre i == 1:
+        munde
+    adre i == 3:
+        nillu
+    mudrisu(i)

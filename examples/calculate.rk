@@ -1,0 +1,10 @@
+math inda add tago
+
+kriya calculate(a: int, b: int):
+    nodu:
+        adre a > 10:
+            kodu add(a, b)
+        illa:
+            kodu a
+    tappu:
+        kodu none

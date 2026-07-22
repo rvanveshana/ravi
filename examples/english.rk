@@ -1,0 +1,16 @@
+# ravi: language=en
+# The header selects English for this entire file.
+function double(value: int):
+    return value * 2
+
+# Typed function call.
+print(double(3))
+
+# Range iteration uses start, end, and step.
+for i in range(1, 4, 1):
+    print(i)
+
+# Collection methods use English names in an English file.
+values = [1, 2]
+values.append(3)
+print(values.contains(3))

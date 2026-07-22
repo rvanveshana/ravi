@@ -1,0 +1,7 @@
+# Default values are used when trailing positional arguments are omitted.
+kriya greet(name: int, repeat: int = 2):
+    kodu name * repeat
+
+mudrisu(greet(3))
+mudrisu(greet(3, 4))
+mudrisu(greet(name = 3, repeat = 5))

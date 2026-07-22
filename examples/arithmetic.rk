@@ -1,0 +1,2 @@
+# Arithmetic follows normal precedence: multiplication before addition.
+mudrisu(1 + 2 * 3)

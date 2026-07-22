@@ -1,0 +1,42 @@
+const std = @import("std");
+const lexer = @import("ravi_lexer");
+const config = @import("ravi_config");
+
+test "language profiles and mixed keywords" {
+    try std.testing.expectEqual(config.SourceLanguage.en, (try config.languageFromHeader("# ravi: language=en\nfunction x():\n")).?);
+    try std.testing.expect((try config.languageFromHeader("function x():\n")) == null);
+    var english = try lexer.Lexer.initWithLanguage(std.testing.allocator, "function value():\n    return 1\n", .en);
+    defer english.deinit();
+    const tokens = try english.tokenize();
+    try std.testing.expectEqual(lexer.TokenKind.keyword, tokens[0].kind);
+    try std.testing.expectEqualStrings("function", config.keywordCanonicalFor(.en, tokens[0].lexeme).?);
+    var mixed = try lexer.Lexer.initWithLanguage(std.testing.allocator, "function kriya\n", .en);
+    defer mixed.deinit();
+    try std.testing.expectError(error.MixedLanguageKeyword, mixed.tokenize());
+}
+
+test "keyword spellings remain valid member names" {
+    var scan = try lexer.Lexer.init(std.testing.allocator, "object.tago(1)\nobject.if()\n");
+    defer scan.deinit();
+    const tokens = try scan.tokenize();
+    var saw_tago = false;
+    for (tokens) |token| if (std.mem.eql(u8, token.lexeme, "tago")) {
+        saw_tago = true;
+        try std.testing.expectEqual(lexer.TokenKind.identifier, token.kind);
+    };
+    try std.testing.expect(saw_tago);
+}
+
+test "lexer preserves comments and collection punctuation" {
+    var scan = try lexer.Lexer.init(std.testing.allocator, "# comment\nx = [1, 2]\ny = {1: 2}\n");
+    defer scan.deinit();
+    const tokens = try scan.tokenize();
+    var comments: usize = 0;
+    var punctuation: usize = 0;
+    for (tokens) |token| {
+        if (token.kind == .comment) comments += 1;
+        if (token.kind == .l_bracket or token.kind == .r_bracket or token.kind == .l_brace or token.kind == .r_brace) punctuation += 1;
+    }
+    try std.testing.expectEqual(@as(usize, 1), comments);
+    try std.testing.expectEqual(@as(usize, 4), punctuation);
+}

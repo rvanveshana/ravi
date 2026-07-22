@@ -1,0 +1,59 @@
+# Tuples support positional indexing.
+pair = (10, 20)
+mudrisu(pair[1])
+
+# Sets keep unique values and can be indexed by their stored position.
+unique = {4, 4, 5}
+mudrisu(unique[0])
+
+# Dictionaries use key/value pairs and are indexed by key.
+scores = {1: 90, 2: 80}
+mudrisu(scores[2])
+mudrisu(scores.tago(1))
+scores.badala(3, 70)
+mudrisu(scores.olagide(3))
+scores.tegi(1)
+mudrisu(scores.olagide(1))
+keys = scores.kili()
+values = scores.bele()
+items = scores.jodi()
+mudrisu(keys[0])
+mudrisu(values[0])
+mudrisu(items[0])
+scores.tegi(2)
+
+# Set operations return new duplicate-free sets.
+left = {1, 2, 2, 3}
+right = {2, 3, 4}
+combined = left.koodu(right)
+common = left.ondu(right)
+only_left = left.bere(right)
+mudrisu(combined[0])
+mudrisu(common[0])
+mudrisu(only_left[0])
+
+# Sets and dictionary views can be iterated with prati/alli.
+prati item alli {8, 8, 9}:
+    mudrisu(item)
+prati key alli scores.kili():
+    mudrisu(key)
+
+# Typed and dynamic lists can coexist.
+typed_pair: int[] = [7, 8]
+dynamic_values = {11, 12, 13}
+mudrisu(typed_pair[0])
+mudrisu(dynamic_values[2])
+
+# Append, membership, sorting, reversing, counting, and popping.
+typed_pair.serisu(9)
+mudrisu(typed_pair.olagide(9))
+typed_pair.jodisu()
+mudrisu(typed_pair[0])
+typed_pair.ultha()
+mudrisu(typed_pair[0])
+mudrisu(typed_pair.enisu())
+mudrisu(typed_pair.kithu())
+typed_pair.haku(1, 8)
+mudrisu(typed_pair[1])
+typed_pair.tegi(8)
+mudrisu(typed_pair.olagide(8))

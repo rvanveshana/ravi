@@ -1,0 +1,6 @@
+# A function can declare the type of its parameter and return a value.
+kriya double(value: int):
+    kodu value * 2
+
+# Call the function and print its result.
+mudrisu(double(3))

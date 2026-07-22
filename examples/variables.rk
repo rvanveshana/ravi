@@ -1,0 +1,4 @@
+# Variables can be introduced dynamically and reused in expressions.
+x = 4
+y = x * 2 + 1
+mudrisu(y)

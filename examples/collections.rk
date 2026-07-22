@@ -1,0 +1,11 @@
+# A typed list requires integer elements.
+values: int[] = [4, 5, 6]
+mudrisu(values[1])
+
+# An unannotated list is dynamically typed by the front end.
+dynamic_values = [7, 8, 9]
+mudrisu(dynamic_values[2])
+
+# Lists can be iterated directly.
+prati value alli [1, 2, 3]:
+    mudrisu(value)

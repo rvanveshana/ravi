@@ -1,0 +1,8 @@
+# Check-only example for front-end features not yet executable in the VM.
+"Ravi feature module"
+
+numbers = [1, 2, 3]
+lookup = {1: 10, 2: 20}
+first = numbers[0]
+window = numbers[0:2]
+double_value = kriya(value: int) -> int => value * 2

@@ -1,0 +1,5 @@
+# Ravi closures capture values from the surrounding scope.
+factor = 3
+scale = kriya(value: int) => value * factor
+mudrisu(scale(4))
+

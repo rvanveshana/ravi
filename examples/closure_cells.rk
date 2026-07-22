@@ -1,0 +1,8 @@
+# Captured variables use shared closure cells and can be updated.
+kriya outer(value: int):
+    kriya increment(dummy: int):
+        value = value + 1
+        kodu value
+    kodu increment(0) + increment(0)
+
+mudrisu(outer(5))

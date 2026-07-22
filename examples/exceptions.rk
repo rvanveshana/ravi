@@ -1,0 +1,8 @@
+# Explicit exception flow: nodu (try), tappu (except), kone (finally).
+nodu:
+    yese 7
+tappu:
+    mudrisu(9)
+kone:
+    mudrisu(10)
+
