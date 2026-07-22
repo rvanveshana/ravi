@@ -1,2 +1,6 @@
 # Arithmetic follows normal precedence: multiplication before addition.
 mudrisu(1 + 2 * 3)
+mudrisu((1 + 2) * 3)
+mudrisu(10 - 3 - 2)
+mudrisu(20 / 4)
+

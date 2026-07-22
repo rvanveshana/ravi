@@ -1,7 +1,15 @@
-# Default values are used when trailing positional arguments are omitted.
+# Comprehensive Function Defaults Test - default values, keyword arguments, missing trailing args
 kriya greet(name: int, repeat: int = 2):
     kodu name * repeat
 
-mudrisu(greet(3))
-mudrisu(greet(3, 4))
-mudrisu(greet(name = 3, repeat = 5))
+mudrisu(greet(3))       # 6 (uses repeat default 2)
+mudrisu(greet(3, 4))    # 12 (overrides default)
+mudrisu(greet(name = 3, repeat = 5)) # 15 (named keyword args)
+
+kriya multi_defaults(a: int = 10, b: int = 20, c: int = 30):
+    kodu a + b + c
+
+mudrisu(multi_defaults(1, 2, 3))   # 6
+mudrisu(multi_defaults(5, 5))      # 40 (uses c default 30)
+mudrisu(multi_defaults(100))       # 150 (uses b=20, c=30 defaults)
+

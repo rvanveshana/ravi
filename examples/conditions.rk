@@ -1,6 +1,21 @@
-# Conditional execution uses `adre` and `illa`.
+# Comprehensive Conditionals Test - if/else, nested, logical operators
 x = 4
 adre x > 5:
     mudrisu(0)
 illa:
     mudrisu(1)
+
+# Multiple boolean checks with and/or/alla
+adre x > 2 and x < 10:
+    mudrisu(10)
+
+adre alla (x == 5):
+    mudrisu(20)
+
+# Nested conditionals
+adre x >= 4:
+    adre x <= 4:
+        mudrisu(30)
+    illa:
+        mudrisu(0)
+

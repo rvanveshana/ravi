@@ -1,6 +1,24 @@
-# A function can declare the type of its parameter and return a value.
+# Comprehensive Functions Test - parameters, return values, recursion
 kriya double(value: int):
     kodu value * 2
 
-# Call the function and print its result.
 mudrisu(double(3))
+
+kriya add_three(a: int, b: int, c: int):
+    kodu a + b + c
+
+mudrisu(add_three(1, 2, 3))
+
+kriya zero_args():
+    kodu 42
+
+mudrisu(zero_args())
+
+# Recursive function
+kriya factorial(n: int):
+    adre n <= 1:
+        kodu 1
+    kodu n * factorial(n - 1)
+
+mudrisu(factorial(5))
+
