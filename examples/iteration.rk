@@ -13,3 +13,8 @@ prati i alli shreni(1, 4):
 # Range with start, end, and step.
 prati i alli shreni(0, 7, 2):
     mudrisu(i)
+
+# Edge cases: single element range & step
+prati i alli shreni(5, 6):
+    mudrisu(i)
+

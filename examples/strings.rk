@@ -9,3 +9,10 @@ spaced = "  Ravi  "
 mudrisu(spaced.kadi())
 mudrisu(name.doddu())
 mudrisu(name.chikku())
+
+# String search & replacement
+sample = "Hello World"
+mudrisu(sample.huduk("World") >= 0)
+replaced = sample.badla("World", "Ravi")
+mudrisu(replaced)
+

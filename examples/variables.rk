@@ -2,3 +2,9 @@
 x = 4
 y = x * 2 + 1
 mudrisu(y)
+
+# Variable re-assignment with updated types/values
+x = 10
+x = x + y
+mudrisu(x)   # 19
+

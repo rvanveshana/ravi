@@ -4,3 +4,22 @@ vargu x < 3:
     x = x + 1
 
 mudrisu(x)
+
+# Zero-iteration while loop
+zero_count = 0
+vargu zero_count > 10:
+    zero_count = zero_count + 1
+mudrisu(zero_count)    # 0
+
+# Nested while loop execution
+outer_count = 0
+total_steps = 0
+vargu outer_count < 2:
+    inner_count = 0
+    vargu inner_count < 3:
+        total_steps = total_steps + 1
+        inner_count = inner_count + 1
+    outer_count = outer_count + 1
+
+mudrisu(total_steps)   # 6
+

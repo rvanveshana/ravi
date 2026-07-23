@@ -6,3 +6,13 @@ tappu:
 kone:
     mudrisu(10)
 
+# Nested exception handler recovery
+nodu:
+    nodu:
+        yese 42
+    tappu:
+        mudrisu(100)
+tappu:
+    mudrisu(0)
+kone:
+    mudrisu(200)

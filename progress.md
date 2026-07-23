@@ -161,57 +161,28 @@ zig build test
   specialization remain pending.
 - [x] Decoded strings are managed VM handles with UTF-8 indexing and slicing;
   formatting and larger managed allocation remain future work.
-- [ ] Docstrings/decorators and visibility metadata are represented; context
-  manager lowering and access enforcement remain incomplete.
-- [ ] The collector is an arena skeleton, not a tracing generational GC.
-- [ ] Debugger breakpoint/request APIs and source-map entries exist; VM stack
-  trace collection and transport protocol remain pending.
-- [x] Multi-threaded M:N work-stealing scheduler without GIL implemented in
-  `src/concurrency/scheduler.zig`.
-- [ ] Backend and optimizer contracts exist; native lowering, linker
-  integration, and production binary-size tuning remain pending.
+.\test.ps1
+```
 
-## Next implementation sequence
+---
 
-### Phase 1: Complete AST and expressions
+## Task Roadmap: Lacking Features
 
-- [x] Replace generic parser nodes with owned, typed AST structures.
-- [x] Extend Pratt parsing with lambdas, assignment, richer literals, maps,
-  indexing, and slices.
-- [x] Preserve docstrings, decorators, and source spans in AST nodes.
-- [x] Preserve comments and all lossless trivia in a separate syntax tree.
+### OOP & Class System Implementation
+- [ ] **Parser Support for Class Definitions:** Parse `roopa` classes, fields, visibility modifiers (`saarva`/`swanta`), and constructor methods (`huttu`).
+- [ ] **VM Object Storage & Layout:** Add instance objects struct/layout supporting property access, method table dispatch, and `tanna` (self) binding.
+- [ ] **Property & Method Bytecode Opcodes:** Add `get_property`, `set_property`, and `call_method` bytecode instructions.
 
-### Phase 2: Name resolution and types
+### Module Import Resolution & Symbol Linking
+- [ ] **Module Loader:** File system import resolution for `module_name inda symbol1, symbol2 tago` syntax.
+- [ ] **Symbol Export Table:** Track module exports and bind imported symbols into caller local frames.
 
-- [x] Add nested scopes for modules and functions, with closure-ready scope
-  identities.
-- [x] Add explicit access metadata with internal/private defaults.
-- [x] Infer unresolved annotations as dynamic while validating declared types.
-- [x] Insert semantic runtime-guard records and conversion classification.
-- [x] Emit guard operations into executable bytecode and record closure captures.
-- [x] Connect automatic scalar guards and anonymous closure objects to source
-  function lowering; dynamic specialization and typed mutation metadata remain.
+### Memory Management & Concurrency
+- [ ] **Tracing Generational GC:** Replace arena-only memory allocator with mark-sweep or generational tracing collector.
+- [ ] **GC Safepoints & Write Barriers:** Implement safepoint polling in VM loop and write barriers for collection mutations.
 
-### Phase 3: Executable language core
+### Tooling & Native Code Generation
+- [ ] **MIR / SSA Lowering:** Lower bytecode chunks into Machine Intermediate Representation (MIR).
+- [ ] **Native Backend & Linker:** Native machine code generation (x86_64 / ARM64) and executable compilation.
+- [ ] **Language Server Protocol (LSP):** Build LSP server utilizing lossless syntax tree (`SyntaxTree`).
 
-- [x] Add VM values, locals, globals, closures, and call frames.
-- [x] Lower `kriya`, `kodu`, `adre`, `illa`, loops, and exceptions.
-- [x] Implement string objects, formatting, and built-in calls.
-- [x] Add import/module resolution and standard-library boundaries.
-
-### Phase 4: Memory and concurrency
-
-- [ ] Replace arena-only lifetime management with tracing/generational GC.
-- [ ] Add write barriers, safepoints, finalizers, and per-thread allocation
-  regions.
-- [x] Add event-loop primitives, async functions, futures, channels, and a
-  multicore scheduler without a global interpreter lock.
-- [ ] Define safe shared-memory and message-passing APIs.
-
-### Phase 5: Tooling and production backend
-
-- [ ] Add structured diagnostics, source maps, stack traces, and debugger API.
-- [ ] Add `dev`, `check`, `build`, `run`, `test`, and `debug` CLI workflows.
-- [ ] Add bytecode verifier, profiling, caching, and deterministic builds.
-- [ ] Add MIR/SSA optimizer and native lowering contract.
-- [ ] Add release-size and startup-time benchmarks for optimized binaries.

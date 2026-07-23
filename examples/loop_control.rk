@@ -4,3 +4,14 @@ prati i alli 5:
     adre i == 3:
         nillu
     mudrisu(i)
+
+# While loop with break and continue
+k = 0
+vargu k < 10:
+    k = k + 1
+    adre k == 2:
+        munde
+    adre k == 5:
+        nillu
+    mudrisu(k)
+

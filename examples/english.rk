@@ -14,3 +14,7 @@ for i in range(1, 4, 1):
 values = [1, 2]
 values.append(3)
 print(values.contains(3))
+values.reverse()
+print(values[0])
+print(values.length())
+

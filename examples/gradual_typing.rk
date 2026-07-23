@@ -11,7 +11,13 @@ static_val: int = 500
 static_val = static_val * 2
 mudrisu(static_val)
 
+# Static boolean & string annotations
+flag: bool = true
+adre flag:
+    mudrisu(1)
+
 # Static homogeneous array
 numbers: int[] = [10, 20, 30]
 mudrisu(numbers[0])
 mudrisu(numbers.gatra())
+

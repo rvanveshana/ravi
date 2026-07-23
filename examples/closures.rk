@@ -3,3 +3,10 @@ factor = 3
 scale = kriya(value: int) => value * factor
 mudrisu(scale(4))
 
+# Multiple closed-over environment bindings
+multiplier = 10
+adder = 5
+compute = kriya(x: int) => (x * multiplier) + adder
+mudrisu(compute(2))    # 25
+
+
