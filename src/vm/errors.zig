@@ -1,4 +1,5 @@
 pub const RuntimeError = error{
+    OutOfMemory,
     StackOverflow,
     StackUnderflow,
     DivisionByZero,
@@ -13,6 +14,8 @@ pub const RuntimeError = error{
     MissingKey,
     StringTooLong,
     RaisedException,
+    IntegerOutOfRange,
+    DebuggerPaused,
 };
 
 pub const TypeId = enum(i64) {
@@ -21,4 +24,5 @@ pub const TypeId = enum(i64) {
     dictionary = 3,
     string = 4,
     function = 5,
+    instance = 6,
 };

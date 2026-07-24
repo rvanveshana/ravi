@@ -8,7 +8,7 @@ const helpers = @import("helpers.zig");
 const call_codegen = @import("calls.zig");
 const builtins = @import("builtins.zig");
 
-pub const CompileError = std.mem.Allocator.Error || error{ NoExecutableExpression, InvalidNumber, UnsupportedOperator, InvalidName, InvalidFunction, UnterminatedCall };
+pub const CompileError = std.mem.Allocator.Error || error{ NoExecutableExpression, InvalidNumber, UnsupportedOperator, InvalidName, InvalidFunction, PrivateAccess, UnterminatedCall };
 
 const FunctionDecl = model.FunctionDecl;
 const LoopContext = model.LoopContext;
@@ -20,6 +20,13 @@ pub const Compiler = struct {
     active_captures: [64][]const u8 = undefined,
     active_capture_count: usize = 0,
     active_function: ?[]const u8 = null,
+    active_class: ?usize = null,
+    last_location: bytecode.SourceLocation = .{ .start_offset = 0, .end_offset = 0, .line = 1, .column = 1 },
+    class_names: [64][]const u8 = undefined,
+    class_bases: [64]?[]const u8 = undefined,
+    class_body_first: [64]usize = undefined,
+    class_body_end: [64]usize = undefined,
+    class_count: usize = 0,
     pub fn init(allocator: std.mem.Allocator) Compiler {
         return .{ .allocator = allocator };
     }
@@ -53,9 +60,27 @@ pub const Compiler = struct {
         defer declarations.deinit(self.allocator);
         var params: std.ArrayListUnmanaged([]const u8) = .empty;
         defer params.deinit(self.allocator);
+        self.class_count = 0;
+        try self.collectClasses(tokens);
+        for (self.class_names[0..self.class_count], 0..) |name, class_index| {
+            const base_name = self.class_bases[class_index] orelse {
+                _ = try chunk.addClass(.{ .name = name });
+                continue;
+            };
+            const base_index = self.findClass(base_name) orelse return error.InvalidName;
+            _ = try chunk.addClass(.{ .name = name, .base = base_index });
+        }
         try self.collectFunctions(tokens, &declarations, &params);
         try self.collectLambdas(tokens, &declarations, &params);
-        for (declarations.items) |decl| _ = try chunk.addFunction(.{ .entry = 0, .arity = decl.params_count, .name = decl.name, .capture_count = decl.capture_count });
+        for (declarations.items) |decl| _ = try chunk.addFunction(.{ .entry = 0, .arity = decl.params_count, .name = decl.name, .capture_count = decl.capture_count, .resumable = decl.resumable, .suspension_count = decl.suspension_count });
+        for (declarations.items, 0..) |decl, function_index| if (decl.method) {
+            for (0..self.class_count) |class_index| {
+                if (decl.body_first >= self.class_body_first[class_index] and decl.body_first < self.class_body_end[class_index]) {
+                    try chunk.methods.append(self.allocator, .{ .class_index = class_index, .name = decl.name, .function_index = function_index, .visibility = @intFromEnum(decl.visibility) });
+                    break;
+                }
+            }
+        };
         var names: std.ArrayListUnmanaged([]const u8) = .empty;
         defer names.deinit(self.allocator);
         var loops: std.ArrayListUnmanaged(LoopContext) = .empty;
@@ -69,6 +94,7 @@ pub const Compiler = struct {
         for (declarations.items, 0..) |decl, function_index| {
             chunk.functions.items[function_index].entry = chunk.code.items.len;
             names.clearRetainingCapacity();
+            if (decl.method) try names.append(self.allocator, "tanna");
             const p_end = decl.params_first + decl.params_count;
             try names.appendSlice(self.allocator, params.items[decl.params_first..p_end]);
             loops.clearRetainingCapacity();
@@ -77,6 +103,12 @@ pub const Compiler = struct {
             self.active_captures = decl.captures;
             self.active_capture_count = decl.capture_count;
             self.active_function = decl.name;
+            self.active_class = if (decl.method) blk: {
+                for (0..self.class_count) |class_index| {
+                    if (decl.body_first >= self.class_body_first[class_index] and decl.body_first < self.class_body_end[class_index]) break :blk class_index;
+                }
+                break :blk null;
+            } else null;
             if (decl.anonymous) {
                 try self.compileRange(&chunk, tokens[decl.body_first..decl.body_end], &names, declarations.items);
                 try chunk.emit(.{ .op = .return_value });
@@ -88,7 +120,33 @@ pub const Compiler = struct {
         }
         self.active_capture_count = 0;
         self.active_function = null;
+        self.active_class = null;
         return chunk;
+    }
+
+    fn collectClasses(self: *Compiler, tokens: []const lexer.Token) CompileError!void {
+        var index: usize = 0;
+        while (index + 1 < tokens.len) : (index += 1) {
+            if (tokens[index].kind != .keyword or !self.keyword(tokens[index], "class") or tokens[index + 1].kind != .identifier) continue;
+            if (self.class_count == self.class_names.len) return error.InvalidFunction;
+            var header_end = index + 2;
+            while (header_end < tokens.len and tokens[header_end].kind != .newline and tokens[header_end].kind != .eof) header_end += 1;
+            var body_first = header_end + 1;
+            if (body_first < tokens.len and tokens[body_first].kind == .indent) body_first += 1;
+            const body_after = helpers.skipSuite(tokens, header_end + 1);
+            self.class_names[self.class_count] = tokens[index + 1].lexeme;
+            self.class_bases[self.class_count] = null;
+            var header_cursor = index + 2;
+            while (header_cursor < header_end) : (header_cursor += 1) {
+                if (self.keyword(tokens[header_cursor], "guru") and header_cursor + 1 < header_end and tokens[header_cursor + 1].kind == .identifier) {
+                    self.class_bases[self.class_count] = tokens[header_cursor + 1].lexeme;
+                    break;
+                }
+            }
+            self.class_body_first[self.class_count] = body_first;
+            self.class_body_end[self.class_count] = if (body_after > 0) body_after - 1 else body_first;
+            self.class_count += 1;
+        }
     }
 
     fn collectFunctions(self: *Compiler, tokens: []const lexer.Token, declarations: *std.ArrayListUnmanaged(FunctionDecl), params: *std.ArrayListUnmanaged([]const u8)) !void {
@@ -146,6 +204,8 @@ pub const Compiler = struct {
             while (name_index_in_params < arity) : (name_index_in_params += 1) param_names[name_index_in_params] = params.items[first_param + name_index_in_params];
             var captures: [64][]const u8 = undefined;
             var capture_count: usize = 0;
+            var resumable = false;
+            var suspension_count: usize = 0;
             var cursor = body_first;
             var nested_depth: usize = 0;
             while (cursor < body_end) : (cursor += 1) {
@@ -171,7 +231,25 @@ pub const Compiler = struct {
                     capture_count += 1;
                 }
             }
-            try declarations.append(self.allocator, .{ .name = tokens[name_index].lexeme, .params_first = first_param, .params_count = arity, .fixed_count = fixed_count, .varargs_index = varargs_index, .kwargs_index = kwargs_index, .defaults = defaults, .param_names = param_names, .param_types = param_types, .captures = captures, .capture_count = capture_count, .body_first = body_first, .body_end = body_end });
+            for (tokens[body_first..body_end]) |token| {
+                if (token.kind == .keyword and (self.keyword(token, "yield") or self.keyword(token, "taru"))) {
+                    resumable = true;
+                    suspension_count += 1;
+                }
+            }
+            var method = false;
+            var visibility: model.Visibility = .public;
+            if (i > 0) {
+                const modifier = tokens[i - 1].lexeme;
+                if (std.mem.eql(u8, modifier, "swanta") or std.mem.eql(u8, modifier, "private")) visibility = .private
+                else if (std.mem.eql(u8, modifier, "vansha") or std.mem.eql(u8, modifier, "protected")) visibility = .protected
+                else if (std.mem.eql(u8, modifier, "olage") or std.mem.eql(u8, modifier, "internal")) visibility = .internal;
+            }
+            for (0..self.class_count) |class_index| if (i >= self.class_body_first[class_index] and i < self.class_body_end[class_index]) {
+                method = true;
+                break;
+            };
+            try declarations.append(self.allocator, .{ .name = tokens[name_index].lexeme, .params_first = first_param, .params_count = arity, .fixed_count = fixed_count, .varargs_index = varargs_index, .kwargs_index = kwargs_index, .defaults = defaults, .param_names = param_names, .param_types = param_types, .captures = captures, .capture_count = capture_count, .body_first = body_first, .body_end = body_end, .method = method, .visibility = visibility, .resumable = resumable, .suspension_count = suspension_count });
             i += 1;
         }
     }
@@ -234,6 +312,12 @@ pub const Compiler = struct {
             if (start >= finish) break;
             var end = start;
             while (end < finish and tokens[end].kind != .newline and tokens[end].kind != .eof) end += 1;
+            self.last_location = sourceLocation(tokens[start]);
+            chunk.setSourceLocation(self.last_location);
+            if (tokens[start].kind == .identifier and start + 1 < end and tokens[start + 1].kind == .keyword and self.keyword(tokens[start + 1], "from")) {
+                start = end + 1;
+                continue;
+            }
             if (self.active_function == null and tokens[start].kind == .keyword and (self.keyword(tokens[start], "function") or self.keyword(tokens[start], "class"))) {
                 start = helpers.skipSuite(tokens, end + 1);
                 continue;
@@ -312,7 +396,17 @@ pub const Compiler = struct {
                 const step_slot = try helpers.localSlot(names, self.allocator, step_name);
                 const current_slot = try helpers.localSlot(names, self.allocator, current_name);
                 const iterable_tokens = tokens[iterable_at + 1 .. colon];
-                if (iterable_tokens.len > 0 and (iterable_tokens[0].kind == .l_bracket or iterable_tokens[0].kind == .l_brace)) {
+                var is_collection_expression = iterable_tokens.len > 0 and (iterable_tokens[0].kind == .l_bracket or iterable_tokens[0].kind == .l_brace);
+                if (!is_collection_expression and helpers.parseRangeCall(iterable_tokens) == null) {
+                    // Method/function calls can produce iterable collections (for example
+                    // `for key in scores.kili()`).  Keep the numeric shorthand (`for i in n`)
+                    // on the range path, but lower call expressions through collection indexing.
+                    for (iterable_tokens) |token| if (token.kind == .l_paren) {
+                        is_collection_expression = true;
+                        break;
+                    };
+                }
+                if (is_collection_expression) {
                     const iterable_name = try std.fmt.allocPrint(self.allocator, "__ravi_iterable_{d}", .{loop_id});
                     const index_name = try std.fmt.allocPrint(self.allocator, "__ravi_index_{d}", .{loop_id});
                     const iterable_slot = try helpers.localSlot(names, self.allocator, iterable_name);
@@ -362,15 +456,25 @@ pub const Compiler = struct {
                 const initial_tokens = if (range) |parts| if (parts.count == 1) empty_tokens[0..] else parts.args[0] else empty_tokens[0..];
                 const limit_tokens = if (range) |parts| if (parts.count == 1) parts.args[0] else parts.args[1] else iterable_tokens;
                 const step_tokens = if (range) |parts| if (parts.count == 3) parts.args[2] else empty_tokens[0..] else empty_tokens[0..];
+                const literal_limit = limit_tokens.len == 1 and limit_tokens[0].kind == .number;
+                const limit_slot = if (literal_limit) blk: {
+                    const limit_name = try std.fmt.allocPrint(self.allocator, "__ravi_limit_{d}", .{loop_id});
+                    break :blk try helpers.localSlot(names, self.allocator, limit_name);
+                } else 0;
                 if (initial_tokens.len == 0) try chunk.emit(.{ .op = .constant, .operand = 0 }) else try self.compileRange(chunk, initial_tokens, names, functions);
                 try chunk.emit(.{ .op = .store_local, .operand = @intCast(current_slot) });
                 try chunk.emit(.{ .op = .pop });
                 if (step_tokens.len == 0) try chunk.emit(.{ .op = .constant, .operand = 1 }) else try self.compileRange(chunk, step_tokens, names, functions);
                 try chunk.emit(.{ .op = .store_local, .operand = @intCast(step_slot) });
                 try chunk.emit(.{ .op = .pop });
+                if (literal_limit) {
+                    try self.compileRange(chunk, limit_tokens, names, functions);
+                    try chunk.emit(.{ .op = .store_local, .operand = @intCast(limit_slot) });
+                    try chunk.emit(.{ .op = .pop });
+                }
                 const loop_start = chunk.code.items.len;
                 try chunk.emit(.{ .op = .load_local, .operand = @intCast(current_slot) });
-                try self.compileRange(chunk, limit_tokens, names, functions);
+                if (literal_limit) try chunk.emit(.{ .op = .load_local, .operand = @intCast(limit_slot) }) else try self.compileRange(chunk, limit_tokens, names, functions);
                 try chunk.emit(.{ .op = .load_local, .operand = @intCast(step_slot) });
                 try chunk.emit(.{ .op = .range_condition });
                 const exit_jump = chunk.code.items.len;
@@ -388,11 +492,8 @@ pub const Compiler = struct {
                 const increment_start = chunk.code.items.len;
                 for (continue_targets.items[continue_start..]) |target| chunk.code.items[target].operand = @intCast(increment_start);
                 continue_targets.shrinkRetainingCapacity(continue_start);
-                try chunk.emit(.{ .op = .load_local, .operand = @intCast(current_slot) });
-                try chunk.emit(.{ .op = .load_local, .operand = @intCast(step_slot) });
-                try chunk.emit(.{ .op = .add });
-                try chunk.emit(.{ .op = .store_local, .operand = @intCast(current_slot) });
-                try chunk.emit(.{ .op = .pop });
+                const packed_range_slots = (@as(i64, @intCast(current_slot)) << 32) | @as(i64, @intCast(step_slot));
+                try chunk.emit(.{ .op = .range_step, .operand = packed_range_slots });
                 try chunk.emit(.{ .op = .jump, .operand = @intCast(loop_start) });
                 chunk.code.items[exit_jump].operand = @intCast(chunk.code.items.len);
                 for (break_targets.items[context_start..]) |target| chunk.code.items[target].operand = @intCast(chunk.code.items.len);
@@ -469,6 +570,15 @@ pub const Compiler = struct {
             var expression_start = start;
             var store: ?usize = null;
             var capture_store: ?usize = null;
+            if (tokens[start].kind == .identifier and start + 4 < end and tokens[start + 1].kind == .dot and tokens[start + 2].kind == .identifier and tokens[start + 3].kind == .operator and std.mem.eql(u8, tokens[start + 3].lexeme, "=")) {
+                const object_slot = helpers.findLocal(names.items, tokens[start].lexeme) orelse return error.InvalidName;
+                try chunk.emit(.{ .op = .load_local, .operand = @intCast(object_slot) });
+                try self.compileRange(chunk, tokens[start + 4 .. end], names, functions);
+                const property = try chunk.addString(tokens[start + 2].lexeme);
+                try chunk.emit(.{ .op = .set_property, .operand = @intCast(property) });
+                start = end + 1;
+                continue;
+            }
             if (tokens[start].kind == .identifier and start + 1 < end and tokens[start + 1].kind == .l_bracket) {
                 var close_index = start + 2;
                 while (close_index < end and tokens[close_index].kind != .r_bracket) close_index += 1;
@@ -514,18 +624,64 @@ pub const Compiler = struct {
                 try chunk.emit(.{ .op = .store_capture, .operand = @intCast(capture) });
                 try chunk.emit(.{ .op = .pop });
             }
-            if (tokens[start].kind == .keyword and self.keyword(tokens[start], "return")) try chunk.emit(.{ .op = .return_value });
+            if (tokens[start].kind == .keyword and self.keyword(tokens[start], "return")) {
+                try chunk.emit(.{ .op = .return_value });
+            } else if (tokens[start].kind == .keyword and (self.keyword(tokens[start], "yield") or self.keyword(tokens[start], "taru"))) {
+                try chunk.emit(.{ .op = .suspend_point, .operand = @intCast(tokens[start].line) });
+            }
             start = end + 1;
         }
     }
 
     pub fn compileRange(self: *Compiler, chunk: *bytecode.Chunk, tokens: []const lexer.Token, names: *std.ArrayListUnmanaged([]const u8), functions: []const FunctionDecl) CompileError!void {
+        if (self.findLogical(tokens, "or")) |operator| {
+            try self.compileRange(chunk, tokens[0..operator], names, functions);
+            const evaluate_right = chunk.code.items.len;
+            try chunk.emit(.{ .op = .jump_if_false, .operand = 0 });
+            try chunk.emit(.{ .op = .constant, .operand = 1 });
+            const finish = chunk.code.items.len;
+            try chunk.emit(.{ .op = .jump, .operand = 0 });
+            chunk.code.items[evaluate_right].operand = @intCast(chunk.code.items.len);
+            try self.compileRange(chunk, tokens[operator + 1 ..], names, functions);
+            try chunk.emit(.{ .op = .not });
+            try chunk.emit(.{ .op = .not });
+            chunk.code.items[finish].operand = @intCast(chunk.code.items.len);
+            return;
+        }
+        if (self.findLogical(tokens, "and")) |operator| {
+            try self.compileRange(chunk, tokens[0..operator], names, functions);
+            const false_jump = chunk.code.items.len;
+            try chunk.emit(.{ .op = .jump_if_false, .operand = 0 });
+            try self.compileRange(chunk, tokens[operator + 1 ..], names, functions);
+            try chunk.emit(.{ .op = .not });
+            try chunk.emit(.{ .op = .not });
+            const finish = chunk.code.items.len;
+            try chunk.emit(.{ .op = .jump, .operand = 0 });
+            chunk.code.items[false_jump].operand = @intCast(chunk.code.items.len);
+            try chunk.emit(.{ .op = .constant, .operand = 0 });
+            chunk.code.items[finish].operand = @intCast(chunk.code.items.len);
+            return;
+        }
+        if (try self.compileChainedComparison(chunk, tokens, names, functions)) return;
+        if (tokens.len != 0 and tokens[0].kind == .keyword and self.keyword(tokens[0], "not")) {
+            const inner = if (tokens.len >= 3 and tokens[1].kind == .l_paren and tokens[tokens.len - 1].kind == .r_paren) tokens[2 .. tokens.len - 1] else tokens[1..];
+            try self.compileRange(chunk, inner, names, functions);
+            try chunk.emit(.{ .op = .not });
+            return;
+        }
+        if (tokens.len > 1 and tokens[0].kind == .operator and std.mem.eql(u8, tokens[0].lexeme, "-")) {
+            try self.compileRange(chunk, tokens[1..], names, functions);
+            try chunk.emit(.{ .op = .negate });
+            return;
+        }
         var operators: std.ArrayListUnmanaged(bytecode.OpCode) = .empty;
         defer operators.deinit(self.allocator);
         var expect = true;
         var i: usize = 0;
         while (i < tokens.len) : (i += 1) {
             const token = tokens[i];
+            self.last_location = sourceLocation(token);
+            chunk.setSourceLocation(self.last_location);
             switch (token.kind) {
                 .number => {
                     if (!expect) continue;
@@ -541,7 +697,14 @@ pub const Compiler = struct {
                 },
                 .identifier => {
                     if (!expect) continue;
-                    if (i + 3 < tokens.len and tokens[i + 1].kind == .dot and tokens[i + 2].kind == .identifier and tokens[i + 3].kind == .l_paren) {
+                    if (i + 2 < tokens.len and tokens[i + 1].kind == .dot and tokens[i + 2].kind == .identifier and (i + 3 >= tokens.len or tokens[i + 3].kind != .l_paren)) {
+                        const slot = helpers.findLocal(names.items, token.lexeme) orelse return error.InvalidName;
+                        try chunk.emit(.{ .op = .load_local, .operand = @intCast(slot) });
+                        const property = try chunk.addString(tokens[i + 2].lexeme);
+                        try chunk.emit(.{ .op = .get_property, .operand = @intCast(property) });
+                        i += 2;
+                        expect = false;
+                    } else if (i + 3 < tokens.len and tokens[i + 1].kind == .dot and tokens[i + 2].kind == .identifier and tokens[i + 3].kind == .l_paren) {
                         const method = tokens[i + 2].lexeme;
                         const slot = helpers.findLocal(names.items, token.lexeme) orelse return error.InvalidName;
                         try chunk.emit(.{ .op = .load_local, .operand = @intCast(slot) });
@@ -580,7 +743,9 @@ pub const Compiler = struct {
                             try self.compileRange(chunk, tokens[i + 4 .. close], names, functions);
                         }
                         if (is_append) try chunk.emit(.{ .op = .append_collection }) else if (is_insert) try chunk.emit(.{ .op = .insert_collection }) else if (is_remove) try chunk.emit(.{ .op = .remove_collection }) else if (is_contains) try chunk.emit(.{ .op = .contains_collection }) else if (is_clear) try chunk.emit(.{ .op = .clear_collection }) else if (is_dict_remove and close > i + 4) try chunk.emit(.{ .op = .dict_remove }) else if (is_pop) try chunk.emit(.{ .op = .pop_collection }) else if (is_count) try chunk.emit(.{ .op = .count_collection }) else if (is_length) try chunk.emit(.{ .op = .length }) else if (is_lower) try chunk.emit(.{ .op = .string_lower }) else if (is_upper) try chunk.emit(.{ .op = .string_upper }) else if (is_strip) try chunk.emit(.{ .op = .string_strip }) else if (is_find) try chunk.emit(.{ .op = .string_find }) else if (is_replace) try chunk.emit(.{ .op = .string_replace }) else if (is_split) try chunk.emit(.{ .op = .string_split }) else if (is_join) try chunk.emit(.{ .op = .string_join }) else if (is_reverse) try chunk.emit(.{ .op = .reverse_collection }) else if (is_sort) try chunk.emit(.{ .op = .sort_collection }) else if (is_get) try chunk.emit(.{ .op = .dict_get }) else if (is_update) try chunk.emit(.{ .op = .dict_put }) else if (is_keys) try chunk.emit(.{ .op = .dict_keys }) else if (is_values) try chunk.emit(.{ .op = .dict_values }) else if (is_items) try chunk.emit(.{ .op = .dict_items }) else if (is_union) try chunk.emit(.{ .op = .set_union }) else if (is_intersection) try chunk.emit(.{ .op = .set_intersection }) else if (is_difference) try chunk.emit(.{ .op = .set_difference }) else if (is_dict_remove) try chunk.emit(.{ .op = .dict_remove }) else if (is_dict_contains) try chunk.emit(.{ .op = .dict_contains }) else if (helpers.findFunction(functions, method)) |function_index| {
-                            try chunk.emit(.{ .op = .call, .operand = @intCast(function_index) });
+                            if (functions[function_index].visibility == .private and self.active_function == null) return error.PrivateAccess;
+                            try call_codegen.emit(self, chunk, tokens[i + 4 .. close], functions[function_index], names, functions);
+                            try chunk.emit(.{ .op = .call_method, .operand = @intCast(function_index) });
                         } else return error.InvalidFunction;
                         i = close;
                         expect = false;
@@ -606,6 +771,15 @@ pub const Compiler = struct {
                         } else if (helpers.findFunction(functions, token.lexeme)) |function_index| {
                             try call_codegen.emit(self, chunk, tokens[i + 2 .. close], functions[function_index], names, functions);
                             try chunk.emit(.{ .op = .call, .operand = @intCast(function_index) });
+                        } else if (self.findClass(token.lexeme)) |class_index| {
+                            try chunk.emit(.{ .op = .make_instance, .operand = @intCast(class_index) });
+                            const constructor = helpers.findFunction(functions, "huttu") orelse helpers.findFunction(functions, "init");
+                            if (constructor) |function_index| {
+                                try chunk.emit(.{ .op = .dup });
+                                try call_codegen.emit(self, chunk, tokens[i + 2 .. close], functions[function_index], names, functions);
+                                try chunk.emit(.{ .op = .call_method, .operand = @intCast(function_index) });
+                                try chunk.emit(.{ .op = .pop });
+                            } else if (close > i + 2) return error.InvalidFunction;
                         } else if (std.mem.eql(u8, token.lexeme, "add") or std.mem.eql(u8, token.lexeme, "sub") or std.mem.eql(u8, token.lexeme, "mul") or std.mem.eql(u8, token.lexeme, "div") or std.mem.eql(u8, token.lexeme, "mod")) {
                             if (close > i + 2) try self.compileRange(chunk, tokens[i + 2 .. close], names, functions);
                             const op: bytecode.OpCode = if (std.mem.eql(u8, token.lexeme, "add")) .add else if (std.mem.eql(u8, token.lexeme, "sub")) .subtract else if (std.mem.eql(u8, token.lexeme, "mul")) .multiply else if (std.mem.eql(u8, token.lexeme, "div")) .divide else .modulo;
@@ -742,7 +916,34 @@ pub const Compiler = struct {
                 },
                 .keyword => {
                     const canonical = config.keywordCanonicalFor(self.language, token.lexeme) orelse token.lexeme;
-                    if (std.mem.eql(u8, canonical, "function") and i + 1 < tokens.len and tokens[i + 1].kind == .l_paren) {
+                    if (std.mem.eql(u8, canonical, "super") and i + 4 < tokens.len and tokens[i + 1].kind == .dot and tokens[i + 2].kind == .identifier and tokens[i + 3].kind == .l_paren) {
+                        const class_index = self.active_class orelse return error.InvalidFunction;
+                        const base_name = self.class_bases[class_index] orelse return error.InvalidFunction;
+                        const base_index = self.findClass(base_name) orelse return error.InvalidFunction;
+                        const method_name = tokens[i + 2].lexeme;
+                        var function_index: ?usize = null;
+                        for (functions, 0..) |function, candidate| {
+                            if (!function.method or !std.mem.eql(u8, function.name, method_name)) continue;
+                            if (function.body_first >= self.class_body_first[base_index] and function.body_first < self.class_body_end[base_index]) {
+                                function_index = candidate;
+                                break;
+                            }
+                        }
+                        const resolved = function_index orelse return error.InvalidFunction;
+                        const receiver = helpers.findLocal(names.items, "tanna") orelse return error.InvalidName;
+                        try chunk.emit(.{ .op = .load_local, .operand = @intCast(receiver) });
+                        var close = i + 4;
+                        var nesting: usize = 1;
+                        while (close < tokens.len and nesting != 0) : (close += 1) {
+                            if (tokens[close].kind == .l_paren) nesting += 1 else if (tokens[close].kind == .r_paren) nesting -= 1;
+                        }
+                        if (nesting != 0) return error.UnterminatedCall;
+                        close -= 1;
+                        try call_codegen.emit(self, chunk, tokens[i + 4 .. close], functions[resolved], names, functions);
+                        try chunk.emit(.{ .op = .call_super, .operand = @intCast(resolved) });
+                        i = close;
+                        expect = false;
+                    } else if (std.mem.eql(u8, canonical, "function") and i + 1 < tokens.len and tokens[i + 1].kind == .l_paren) {
                         const lambda = helpers.firstLambda(functions) orelse return error.InvalidFunction;
                         const lambda_index = helpers.findFunction(functions, lambda.name) orelse return error.InvalidFunction;
                         for (lambda.captures[0..lambda.capture_count]) |capture_name| {
@@ -760,7 +961,10 @@ pub const Compiler = struct {
                         try chunk.emit(.{ .op = .constant, .operand = if (std.mem.eql(u8, canonical, "true")) 1 else 0 });
                         expect = false;
                     } else if (std.mem.eql(u8, canonical, "not")) {
+                        try self.compileRange(chunk, tokens[i + 1 ..], names, functions);
                         try chunk.emit(.{ .op = .not });
+                        while (operators.items.len > 0) try chunk.emit(.{ .op = operators.pop().? });
+                        return;
                     } else if (std.mem.eql(u8, canonical, "and") or std.mem.eql(u8, canonical, "or")) {
                         const op: bytecode.OpCode = if (std.mem.eql(u8, canonical, "and")) .logic_and else .logic_or;
                         while (operators.items.len > 0 and expression_runtime.precedence(operators.items[operators.items.len - 1]) >= expression_runtime.precedence(op)) try chunk.emit(.{ .op = operators.pop().? });
@@ -770,7 +974,12 @@ pub const Compiler = struct {
                 },
                 .operator => {
                     if (expect) {
-                        if (std.mem.eql(u8, token.lexeme, "-")) try chunk.emit(.{ .op = .negate });
+                        if (std.mem.eql(u8, token.lexeme, "-")) {
+                            try self.compileRange(chunk, tokens[i + 1 ..], names, functions);
+                            try chunk.emit(.{ .op = .negate });
+                            while (operators.items.len > 0) try chunk.emit(.{ .op = operators.pop().? });
+                            return;
+                        }
                     } else {
                         const op = expression_runtime.operator(token.lexeme) orelse return error.UnsupportedOperator;
                         while (operators.items.len > 0 and expression_runtime.precedence(operators.items[operators.items.len - 1]) >= expression_runtime.precedence(op)) try chunk.emit(.{ .op = operators.pop().? });
@@ -783,6 +992,108 @@ pub const Compiler = struct {
             }
         }
         while (operators.items.len > 0) try chunk.emit(.{ .op = operators.pop().? });
+    }
+
+    fn sourceLocation(token: lexer.Token) bytecode.SourceLocation {
+        return .{
+            .start_offset = token.start_offset,
+            .end_offset = token.end_offset,
+            .line = token.line,
+            .column = token.column,
+        };
+    }
+
+    fn findLogical(self: *const Compiler, tokens: []const lexer.Token, canonical: []const u8) ?usize {
+        var depth: usize = 0;
+        for (tokens, 0..) |token, index| {
+            switch (token.kind) {
+                .l_paren, .l_bracket, .l_brace => depth += 1,
+                .r_paren, .r_bracket, .r_brace => if (depth > 0) {
+                    depth -= 1;
+                },
+                .keyword => if (depth == 0 and self.keyword(token, canonical)) return index,
+                else => {},
+            }
+        }
+        return null;
+    }
+
+    fn compileChainedComparison(self: *Compiler, chunk: *bytecode.Chunk, tokens: []const lexer.Token, names: *std.ArrayListUnmanaged([]const u8), functions: []const FunctionDecl) CompileError!bool {
+        var operators: [16]usize = undefined;
+        var count: usize = 0;
+        var depth: usize = 0;
+        for (tokens, 0..) |token, index| {
+            switch (token.kind) {
+                .l_paren, .l_bracket, .l_brace => depth += 1,
+                .r_paren, .r_bracket, .r_brace => if (depth > 0) {
+                    depth -= 1;
+                },
+                .operator => if (depth == 0 and comparisonOpcode(token.lexeme) != null) {
+                    if (count == operators.len) return error.UnsupportedOperator;
+                    operators[count] = index;
+                    count += 1;
+                },
+                else => {},
+            }
+        }
+        if (count < 2) return false;
+
+        const left_slot = try helpers.localSlot(names, self.allocator, "__ravi_chain_left");
+        const right_slot = try helpers.localSlot(names, self.allocator, "__ravi_chain_right");
+        try self.compileRange(chunk, tokens[0..operators[0]], names, functions);
+        try chunk.emit(.{ .op = .store_local, .operand = @intCast(left_slot) });
+        try chunk.emit(.{ .op = .pop });
+        var false_jumps: [16]usize = undefined;
+        var false_count: usize = 0;
+
+        for (operators[0..count], 0..) |operator_index, comparison| {
+            const right_end = if (comparison + 1 < count) operators[comparison + 1] else tokens.len;
+            if (comparison + 1 < count) {
+                try self.compileRange(chunk, tokens[operator_index + 1 .. right_end], names, functions);
+                try chunk.emit(.{ .op = .store_local, .operand = @intCast(right_slot) });
+                try chunk.emit(.{ .op = .pop });
+                try chunk.emit(.{ .op = .load_local, .operand = @intCast(left_slot) });
+                try chunk.emit(.{ .op = .load_local, .operand = @intCast(right_slot) });
+            } else {
+                try chunk.emit(.{ .op = .load_local, .operand = @intCast(left_slot) });
+                try self.compileRange(chunk, tokens[operator_index + 1 .. right_end], names, functions);
+            }
+            try chunk.emit(.{ .op = comparisonOpcode(tokens[operator_index].lexeme).? });
+            if (comparison + 1 < count) {
+                false_jumps[false_count] = chunk.code.items.len;
+                false_count += 1;
+                try chunk.emit(.{ .op = .jump_if_false, .operand = 0 });
+                try chunk.emit(.{ .op = .load_local, .operand = @intCast(right_slot) });
+                try chunk.emit(.{ .op = .store_local, .operand = @intCast(left_slot) });
+                try chunk.emit(.{ .op = .pop });
+            }
+        }
+        const finish = chunk.code.items.len;
+        try chunk.emit(.{ .op = .jump, .operand = 0 });
+        const false_target = chunk.code.items.len;
+        try chunk.emit(.{ .op = .constant, .operand = 0 });
+        const end = chunk.code.items.len;
+        chunk.code.items[finish].operand = @intCast(end);
+        for (false_jumps[0..false_count]) |jump| chunk.code.items[jump].operand = @intCast(false_target);
+        return true;
+    }
+
+    fn comparisonOpcode(text: []const u8) ?bytecode.OpCode {
+        if (std.mem.eql(u8, text, "==")) return .equal;
+        if (std.mem.eql(u8, text, "!=")) return .not_equal;
+        if (std.mem.eql(u8, text, "<")) return .less;
+        if (std.mem.eql(u8, text, "<=")) return .less_equal;
+        if (std.mem.eql(u8, text, ">")) return .greater;
+        if (std.mem.eql(u8, text, ">=")) return .greater_equal;
+        return null;
+    }
+
+
+    fn findClass(self: *const Compiler, name: []const u8) ?usize {
+        for (self.class_names[0..self.class_count], 0..) |class_name, index| {
+            if (std.mem.eql(u8, class_name, name)) return index;
+        }
+        return null;
     }
 
     fn keyword(self: *const Compiler, token: lexer.Token, canonical: []const u8) bool {

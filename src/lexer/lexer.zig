@@ -48,6 +48,9 @@ pub const Lexer = struct {
     column: usize = 1,
     at_line_start: bool = true,
     language: config.SourceLanguage = .kn,
+    error_line: usize = 1,
+    error_column: usize = 1,
+    error_offset: usize = 0,
 
     pub fn init(allocator: std.mem.Allocator, source: []const u8) !Lexer {
         var indents: std.ArrayListUnmanaged(usize) = .empty;
@@ -68,6 +71,9 @@ pub const Lexer = struct {
 
     pub fn tokenize(self: *Lexer) LexError![]const Token {
         while (self.index < self.source.len) {
+            self.error_line = self.line;
+            self.error_column = self.column;
+            self.error_offset = self.index;
             if (self.at_line_start) try self.consumeIndent();
             if (self.index >= self.source.len) break;
             const c = self.source[self.index];
@@ -86,11 +92,12 @@ pub const Lexer = struct {
             }
             if (c == '#') {
                 const comment_start = self.index;
+                const comment_column = self.column;
                 while (self.index < self.source.len and self.source[self.index] != '\n') {
                     self.index += 1;
                     self.column += 1;
                 }
-                try self.emit(.comment, comment_start, self.index - comment_start);
+                try self.emitAt(.comment, comment_start, self.index - comment_start, self.line, comment_column, self.line, self.column);
                 continue;
             }
             if (std.ascii.isAlphabetic(c) or c == '_') {
@@ -98,7 +105,7 @@ pub const Lexer = struct {
                 continue;
             }
             if (std.ascii.isDigit(c)) {
-                self.scanNumber();
+                try self.scanNumber();
                 continue;
             }
             if (c == '\'' or c == '"') {
@@ -121,7 +128,11 @@ pub const Lexer = struct {
         var width: usize = 0;
         const start = self.index;
         while (self.index < self.source.len and (self.source[self.index] == ' ' or self.source[self.index] == '\t')) : (self.index += 1) {
-            if (self.source[self.index] == '\t') return error.TabIndentation;
+            if (self.source[self.index] == '\t') {
+                self.error_offset = self.index;
+                self.error_column = width + 1;
+                return error.TabIndentation;
+            }
             width += 1;
         }
         if (self.index < self.source.len and self.source[self.index] == '\n') return;
@@ -150,37 +161,47 @@ pub const Lexer = struct {
         const member_name = self.tokens.items.len > 0 and self.tokens.items[self.tokens.items.len - 1].kind == .dot;
         const active = if (member_name) null else config.keywordCanonicalFor(self.language, text);
         if (!member_name and active == null and config.belongsToOtherLanguage(self.language, text)) return error.MixedLanguageKeyword;
-        self.tokens.append(self.allocator, .{ .kind = if (active != null) .keyword else .identifier, .lexeme = text, .line = self.line, .column = self.column }) catch unreachable;
+        try self.emit(if (active != null) .keyword else .identifier, start, self.index - start);
         self.column += self.index - start;
     }
-    fn scanNumber(self: *Lexer) void {
+    fn scanNumber(self: *Lexer) LexError!void {
         const start = self.index;
         while (self.index < self.source.len and (std.ascii.isDigit(self.source[self.index]) or self.source[self.index] == '.')) : (self.index += 1) {}
-        self.tokens.append(self.allocator, .{ .kind = .number, .lexeme = self.source[start..self.index], .line = self.line, .column = self.column }) catch unreachable;
+        try self.emit(.number, start, self.index - start);
         self.column += self.index - start;
     }
     fn scanString(self: *Lexer, quote: u8) LexError!void {
         const start = self.index;
+        const start_line = self.line;
+        const start_column = self.column;
         const triple = self.index + 2 < self.source.len and self.source[self.index + 1] == quote and self.source[self.index + 2] == quote;
-        self.index += if (triple) 3 else 1;
+        const delimiter: usize = if (triple) 3 else 1;
+        self.index += delimiter;
+        self.column += delimiter;
         while (self.index < self.source.len) {
             if (self.index - start > config.max_string_bytes) return error.StringTooLong;
             if (triple) {
                 if (self.index + 2 < self.source.len and self.source[self.index] == quote and self.source[self.index + 1] == quote and self.source[self.index + 2] == quote) {
                     self.index += 3;
-                    try self.emit(.string, start, self.index - start);
+                    self.column += 3;
+                    try self.emitAt(.string, start, self.index - start, start_line, start_column, self.line, self.column);
                     return;
                 }
             } else if (self.source[self.index] == quote) {
                 self.index += 1;
-                try self.emit(.string, start, self.index - start);
-                self.column += self.index - start;
+                self.column += 1;
+                try self.emitAt(.string, start, self.index - start, start_line, start_column, self.line, self.column);
                 return;
             }
-            if (self.source[self.index] == '\\' and self.index + 1 < self.source.len) self.index += 2 else {
+            if (self.source[self.index] == '\\' and self.index + 1 < self.source.len) {
+                self.index += 2;
+                self.column += 2;
+            } else {
                 if (self.source[self.index] == '\n') {
                     self.line += 1;
                     self.column = 1;
+                } else {
+                    self.column += 1;
                 }
                 self.index += 1;
             }
@@ -227,6 +248,10 @@ pub const Lexer = struct {
         self.column += self.index - start;
     }
     fn emit(self: *Lexer, kind: TokenKind, start: usize, length: usize) !void {
-        try self.tokens.append(self.allocator, .{ .kind = kind, .lexeme = self.source[start..@min(start + length, self.source.len)], .line = self.line, .column = self.column, .end_line = self.line, .end_column = self.column + length, .start_offset = start, .end_offset = @min(start + length, self.source.len) });
+        try self.emitAt(kind, start, length, self.line, self.column, self.line, self.column + length);
+    }
+
+    fn emitAt(self: *Lexer, kind: TokenKind, start: usize, length: usize, line: usize, column: usize, end_line: usize, end_column: usize) !void {
+        try self.tokens.append(self.allocator, .{ .kind = kind, .lexeme = self.source[start..@min(start + length, self.source.len)], .line = line, .column = column, .end_line = end_line, .end_column = end_column, .start_offset = start, .end_offset = @min(start + length, self.source.len) });
     }
 };

@@ -1,0 +1,35 @@
+name: Ravi CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build-and-test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+        optimize: [Debug, ReleaseSafe, ReleaseFast]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.17.0-dev.1415+64dfaa568
+      - name: Check formatting
+        shell: pwsh
+        run: zig fmt --check build.zig config src tests
+      - name: Enforce source size budgets
+        shell: pwsh
+        run: ./tools/check_src_sizes.ps1
+      - name: Build
+        shell: pwsh
+        run: zig build -Doptimize=${{ matrix.optimize }}
+      - name: Unit and integration tests
+        shell: pwsh
+        run: zig build test -Doptimize=${{ matrix.optimize }}
+      - name: Executable examples
+        if: matrix.optimize == 'Debug'
+        shell: pwsh
+        run: ./test.ps1

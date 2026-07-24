@@ -6,7 +6,7 @@ pub const TypeId = u32;
 pub const Guard = enum { none, check_integer, check_float, check_boolean, check_string, box_dynamic };
 
 pub fn fromName(name: []const u8) Type {
-    const kind: Kind = if (std.mem.eql(u8, name, "int")) .integer else if (std.mem.eql(u8, name, "float")) .float else if (std.mem.eql(u8, name, "bool")) .boolean else if (std.mem.eql(u8, name, "str")) .string else if (std.mem.eql(u8, name, "none")) .none else if (std.mem.eql(u8, name, "dinamika")) .dynamic else if (std.mem.eql(u8, name, "never")) .never else .unknown;
+    const kind: Kind = if (std.mem.eql(u8, name, "int") or std.mem.eql(u8, name, "integer")) .integer else if (std.mem.eql(u8, name, "float")) .float else if (std.mem.eql(u8, name, "bool") or std.mem.eql(u8, name, "boolean")) .boolean else if (std.mem.eql(u8, name, "str") or std.mem.eql(u8, name, "string")) .string else if (std.mem.eql(u8, name, "none")) .none else if (std.mem.eql(u8, name, "dinamika") or std.mem.eql(u8, name, "dynamic")) .dynamic else if (std.mem.eql(u8, name, "function") or std.mem.eql(u8, name, "kriya")) .function else if (std.mem.eql(u8, name, "never")) .never else .unknown;
     return .{ .kind = kind, .name = name };
 }
 

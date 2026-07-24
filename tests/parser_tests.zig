@@ -40,3 +40,44 @@ test "parser accepts function defaults and variadic parameters" {
     defer module.deinit();
     try std.testing.expectEqual(@as(usize, 0), module.diagnostics.items.len);
 }
+
+test "parser accepts none return annotations" {
+    const source = "kriya run(limit: int) -> none:\n    munde\n";
+    var scan = try lexer.Lexer.init(std.testing.allocator, source);
+    defer scan.deinit();
+    const tokens = try scan.tokenize();
+    var instance = parser.Parser.init(std.testing.allocator, tokens);
+    var module = try instance.parseRecovering();
+    defer module.deinit();
+    try std.testing.expectEqual(@as(usize, 0), module.diagnostics.items.len);
+}
+
+test "parser retains optional class base names" {
+    const source = "roopa Child guru Parent:\n    kodu none\n";
+    var scan = try lexer.Lexer.init(std.testing.allocator, source);
+    defer scan.deinit();
+    const tokens = try scan.tokenize();
+    var instance = parser.Parser.init(std.testing.allocator, tokens);
+    var module = try instance.parseRecovering();
+    defer module.deinit();
+    try std.testing.expectEqual(@as(usize, 0), module.diagnostics.items.len);
+    switch (module.statements.items[0].kind) {
+        .class_decl => |class_decl| try std.testing.expectEqualStrings("Parent", class_decl.base.? ),
+        else => return error.TestExpectedEqual,
+    }
+}
+
+test "parser preserves visibility modifiers" {
+    const source = "swanta roopa Hidden:\n    saarva kriya open():\n        kodu none\n";
+    var scan = try lexer.Lexer.init(std.testing.allocator, source);
+    defer scan.deinit();
+    const tokens = try scan.tokenize();
+    var instance = parser.Parser.init(std.testing.allocator, tokens);
+    var module = try instance.parseRecovering();
+    defer module.deinit();
+    try std.testing.expectEqual(@as(usize, 0), module.diagnostics.items.len);
+    switch (module.statements.items[0].kind) {
+        .class_decl => |class_decl| try std.testing.expectEqualStrings("private", @tagName(class_decl.visibility)),
+        else => return error.TestExpectedEqual,
+    }
+}

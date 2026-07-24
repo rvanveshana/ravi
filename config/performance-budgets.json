@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "notes": "Initial budgets are recorded after a stable CI benchmark runner is available. Regressions must compare like-for-like hardware and Zig versions.",
+  "metrics": {
+    "compile_latency_ms": null,
+    "runtime_median_ms": null,
+    "peak_memory_bytes": null,
+    "gc_pause_p95_ms": null,
+    "release_binary_bytes": null
+  }
+}

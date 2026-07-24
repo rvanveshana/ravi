@@ -68,23 +68,32 @@ pub const Parser = struct {
 
     fn parseStatement(self: *Parser, module: *ast.Module, out: *std.ArrayListUnmanaged(ast.Stmt)) ParseError!void {
         const start = self.index;
+        var visibility: ast.Visibility = .public;
         if (self.word("saarva") or self.word("swanta") or self.word("vansha") or self.word("olage") or self.word("public") or self.word("private") or self.word("protected") or self.word("internal")) {
+            visibility = if (self.word("swanta") or self.word("private")) .private else if (self.word("vansha") or self.word("protected")) .protected else if (self.word("olage") or self.word("internal")) .internal else .public;
             self.index += 1;
         }
-        if (self.isImportStart()) try self.parseImport(module, out, start) else if (self.word("roopa")) try self.parseClass(module, out, start) else if (self.word("kriya")) try self.parseFunction(module, out, start) else if (self.word("kodu") or self.word("taru")) try self.parseReturn(module, out, start) else if (self.word("nillu") or self.word("munde") or self.word("yese")) try self.parseTransfer(module, out, start) else if (self.isControl()) try self.parseControl(module, out, start) else if (self.at(.identifier) and self.index + 1 < self.tokens.len and self.tokens[self.index + 1].kind == .colon) try self.parseTypedAssignment(module, out, start) else {
+        if (self.isImportStart()) try self.parseImport(module, out, start) else if (self.word("roopa")) try self.parseClass(module, out, start, visibility) else if (self.word("kriya")) try self.parseFunction(module, out, start, visibility) else if (self.word("kodu") or self.word("taru")) try self.parseReturn(module, out, start) else if (self.word("nillu") or self.word("munde") or self.word("yese")) try self.parseTransfer(module, out, start) else if (self.isControl()) try self.parseControl(module, out, start) else if (self.at(.identifier) and self.index + 1 < self.tokens.len and self.tokens[self.index + 1].kind == .colon) try self.parseTypedAssignment(module, out, start) else {
             const value = try self.parseExpression(module, 0);
             if (self.at(.newline)) self.index += 1;
             try out.append(self.allocator, .{ .span = .{ .first = start, .last = self.index, .line = self.tokens[start].line }, .kind = .{ .expression = value } });
         }
     }
 
-    fn parseClass(self: *Parser, module: *ast.Module, out: *std.ArrayListUnmanaged(ast.Stmt), start: usize) ParseError!void {
+    fn parseClass(self: *Parser, module: *ast.Module, out: *std.ArrayListUnmanaged(ast.Stmt), start: usize, visibility: ast.Visibility) ParseError!void {
         self.index += 1;
         if (!self.at(.identifier)) return error.MissingName;
         const name = self.tokens[self.index].lexeme;
         self.index += 1;
+        var base: ?[]const u8 = null;
+        if (self.word("guru")) {
+            self.index += 1;
+            if (!self.at(.identifier)) return error.MissingName;
+            base = self.tokens[self.index].lexeme;
+            self.index += 1;
+        }
         const body = try self.parseSuite(module);
-        try out.append(self.allocator, .{ .span = .{ .first = start, .last = self.index, .line = self.tokens[start].line }, .kind = .{ .class_decl = .{ .name = name, .body_first = body.first, .body_count = body.count, .visibility = .public } } });
+        try out.append(self.allocator, .{ .span = .{ .first = start, .last = self.index, .line = self.tokens[start].line }, .kind = .{ .class_decl = .{ .name = name, .base = base, .body_first = body.first, .body_count = body.count, .visibility = visibility } } });
     }
 
     fn parseImport(self: *Parser, module: *ast.Module, out: *std.ArrayListUnmanaged(ast.Stmt), start: usize) ParseError!void {
@@ -104,7 +113,7 @@ pub const Parser = struct {
         try out.append(self.allocator, .{ .span = .{ .first = start, .last = self.index, .line = self.tokens[start].line }, .kind = .{ .import = .{ .module = module_name, .names_first = first, .names_count = module.import_names.items.len - first } } });
     }
 
-    fn parseFunction(self: *Parser, module: *ast.Module, out: *std.ArrayListUnmanaged(ast.Stmt), start: usize) ParseError!void {
+    fn parseFunction(self: *Parser, module: *ast.Module, out: *std.ArrayListUnmanaged(ast.Stmt), start: usize, visibility: ast.Visibility) ParseError!void {
         self.index += 1;
         if (!self.at(.identifier)) return error.MissingName;
         const name = self.tokens[self.index].lexeme;
@@ -141,12 +150,14 @@ pub const Parser = struct {
         var return_type: ?[]const u8 = null;
         if (self.at(.arrow)) {
             self.index += 1;
-            if (!self.at(.identifier)) return error.MissingName;
+            // Built-in `none` is lexed as a keyword, while user-defined and
+            // other primitive return types are identifiers.
+            if (!self.at(.identifier) and !(self.at(.keyword) and std.mem.eql(u8, self.tokens[self.index].lexeme, "none"))) return error.MissingName;
             return_type = self.tokens[self.index].lexeme;
             self.index += 1;
         }
         const body = try self.parseSuite(module);
-        try out.append(self.allocator, .{ .span = .{ .first = start, .last = self.index, .line = self.tokens[start].line }, .kind = .{ .function = .{ .name = name, .params_first = params_first, .params_count = module.parameters.items.len - params_first, .return_type = return_type, .body_first = body.first, .body_count = body.count, .decorators_first = 0, .decorators_count = module.decorators.items.len, .visibility = .internal } } });
+        try out.append(self.allocator, .{ .span = .{ .first = start, .last = self.index, .line = self.tokens[start].line }, .kind = .{ .function = .{ .name = name, .params_first = params_first, .params_count = module.parameters.items.len - params_first, .return_type = return_type, .body_first = body.first, .body_count = body.count, .decorators_first = 0, .decorators_count = module.decorators.items.len, .visibility = visibility } } });
     }
 
     fn parseReturn(self: *Parser, module: *ast.Module, out: *std.ArrayListUnmanaged(ast.Stmt), start: usize) ParseError!void {

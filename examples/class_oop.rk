@@ -2,8 +2,11 @@
 # Kannada syntax: roopa (class), saarva (public), swanta (private)
 
 roopa Person:
-    saarva kriya speak():
-        mudrisu("Hello from Person class")
+    saarva kriya huttu(name: string):
+        tanna.name = name
 
-p = Person()
+    saarva kriya speak():
+        mudrisu(tanna.name)
+
+p = Person("Hello from Person class")
 p.speak()

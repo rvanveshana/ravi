@@ -1,4 +1,5 @@
 const lexer = @import("ravi_lexer");
+pub const Visibility = enum(u8) { public, private, protected, internal };
 
 pub const FunctionDecl = struct {
     name: []const u8,
@@ -15,6 +16,10 @@ pub const FunctionDecl = struct {
     body_first: usize,
     body_end: usize,
     anonymous: bool = false,
+    method: bool = false,
+    visibility: Visibility = .public,
+    resumable: bool = false,
+    suspension_count: usize = 0,
 };
 
 pub const LoopContext = struct {

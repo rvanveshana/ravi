@@ -6,7 +6,7 @@ illa:
     mudrisu(1)
 
 # Multiple boolean checks with and/or/alla
-adre x > 2 and x < 10:
+adre x > 2 mattu x < 10:
     mudrisu(10)
 
 adre alla (x == 5):
@@ -18,4 +18,3 @@ adre x >= 4:
         mudrisu(30)
     illa:
         mudrisu(0)
-

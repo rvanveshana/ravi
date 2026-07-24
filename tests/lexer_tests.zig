@@ -40,3 +40,15 @@ test "lexer preserves comments and collection punctuation" {
     try std.testing.expectEqual(@as(usize, 1), comments);
     try std.testing.expectEqual(@as(usize, 4), punctuation);
 }
+
+test "all material tokens carry byte and line spans" {
+    const source = "value = 42\n";
+    var scan = try lexer.Lexer.init(std.testing.allocator, source);
+    defer scan.deinit();
+    const tokens = try scan.tokenize();
+    try std.testing.expectEqual(@as(usize, 0), tokens[0].start_offset);
+    try std.testing.expectEqual(@as(usize, 5), tokens[0].end_offset);
+    try std.testing.expectEqual(@as(usize, 1), tokens[0].line);
+    try std.testing.expectEqual(@as(usize, 1), tokens[0].column);
+    try std.testing.expectEqualStrings("42", source[tokens[2].start_offset..tokens[2].end_offset]);
+}

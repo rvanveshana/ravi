@@ -4,7 +4,7 @@ const types = @import("ravi_types");
 const ast = @import("ravi_ast");
 const config = @import("ravi_config");
 
-pub const SemanticError = std.mem.Allocator.Error || error{ DuplicateDeclaration, MissingFunctionType, UnknownVisibilityTarget, UnknownType, TypeMismatch };
+pub const SemanticError = std.mem.Allocator.Error || error{ DuplicateDeclaration, MissingFunctionType, UnknownVisibilityTarget, UnknownType, UnknownBaseClass, TypeMismatch };
 pub const Visibility = enum { public, private, protected, internal };
 pub const Symbol = struct { name: []const u8, type: types.Type, visibility: Visibility, scope_depth: usize };
 pub const Scope = struct { parent: ?usize, symbols: std.ArrayListUnmanaged(Symbol) = .empty, captures: std.ArrayListUnmanaged([]const u8) = .empty };
@@ -15,6 +15,7 @@ pub const Analyzer = struct {
     declarations: std.ArrayListUnmanaged([]const u8) = .empty,
     scopes: std.ArrayListUnmanaged(Scope) = .empty,
     boundaries: std.ArrayListUnmanaged(Boundary) = .empty,
+    last_token: ?lexer.Token = null,
 
     pub fn init(allocator: std.mem.Allocator) Analyzer {
         return .{ .allocator = allocator };
@@ -31,6 +32,12 @@ pub const Analyzer = struct {
 
     pub fn analyzeModule(self: *Analyzer, module: *const ast.Module) SemanticError!void {
         const root = try self.pushScope(null);
+        // Register all class names before validating bases so declaration order
+        // does not change the meaning of a hierarchy.
+        for (module.statements.items) |statement| switch (statement.kind) {
+            .class_decl => |class_decl| try self.declare(root, class_decl.name, types.fromName("kriya"), .internal),
+            else => {},
+        };
         for (module.statements.items) |statement| switch (statement.kind) {
             .function => |function| {
                 try self.declare(root, function.name, types.fromName(function.return_type orelse "dinamika"), .internal);
@@ -39,7 +46,23 @@ pub const Analyzer = struct {
                 for (module.parameters.items[function.params_first..end]) |parameter| try self.declare(child, parameter.name, types.fromName(parameter.annotation orelse "dinamika"), .private);
             },
             .class_decl => |class_decl| {
-                try self.declare(root, class_decl.name, types.fromName("kriya"), .internal);
+                if (class_decl.base) |base| {
+                    var found = false;
+                    for (self.scopes.items[root].symbols.items) |symbol| {
+                        if (std.mem.eql(u8, symbol.name, base)) found = true;
+                    }
+                    if (!found) return error.UnknownBaseClass;
+                }
+                var method_names: std.ArrayListUnmanaged([]const u8) = .empty;
+                defer method_names.deinit(self.allocator);
+                const end = @min(class_decl.body_first + class_decl.body_count, module.statements.items.len);
+                for (module.statements.items[class_decl.body_first..end]) |member| switch (member.kind) {
+                    .function => |function| {
+                        for (method_names.items) |existing| if (std.mem.eql(u8, existing, function.name)) return error.DuplicateDeclaration;
+                        try method_names.append(self.allocator, function.name);
+                    },
+                    else => {},
+                };
             },
             .expression => |expression_id| {
                 switch (module.expressions.items[expression_id].kind) {
@@ -98,16 +121,21 @@ pub const Analyzer = struct {
     pub fn analyzeWithLanguage(self: *Analyzer, tokens: []const lexer.Token, language: config.SourceLanguage) SemanticError!void {
         var index: usize = 0;
         while (index < tokens.len) : (index += 1) {
+            self.last_token = tokens[index];
             const canonical = config.keywordCanonicalFor(language, tokens[index].lexeme) orelse tokens[index].lexeme;
             if (!std.mem.eql(u8, canonical, "function")) continue;
             index += 1;
             if (index >= tokens.len or tokens[index].kind != .identifier) continue;
             const name = tokens[index].lexeme;
+            self.last_token = tokens[index];
             for (self.declarations.items) |existing| if (std.mem.eql(u8, existing, name)) return error.DuplicateDeclaration;
             try self.declarations.append(self.allocator, name);
             while (index < tokens.len and tokens[index].kind != .newline) : (index += 1) {
                 if (tokens[index].kind != .colon) continue;
-                if (index + 1 < tokens.len and tokens[index + 1].kind == .identifier and !types.isValid(types.fromName(tokens[index + 1].lexeme))) return error.UnknownType;
+                if (index + 1 < tokens.len and tokens[index + 1].kind == .identifier and !types.isValid(types.fromName(tokens[index + 1].lexeme))) {
+                    self.last_token = tokens[index + 1];
+                    return error.UnknownType;
+                }
             }
         }
     }
