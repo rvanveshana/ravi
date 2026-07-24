@@ -59,7 +59,10 @@ pub fn main(init: std.process.Init) !void {
             std.debug.print("missing language after --lang\n", .{});
             std.process.exit(2);
         };
-        if (std.mem.eql(u8, name, "kn")) language_override = .kn else if (std.mem.eql(u8, name, "en")) language_override = .en;
+        if (std.mem.eql(u8, name, "kn")) language_override = .kn else if (std.mem.eql(u8, name, "en")) language_override = .en else {
+            std.debug.print("unknown language: {s}\n", .{name});
+            std.process.exit(2);
+        }
     } else {
         path = first_arg;
         mode = "run";

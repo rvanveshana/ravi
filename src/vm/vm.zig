@@ -158,7 +158,9 @@ pub const Vm = struct {
                 // polling interval keeps allocation-free numeric loops from
                 // repeatedly rebuilding the full root set.
                 safepoint_ticks = 4095;
-            } else safepoint_ticks -= 1;
+            } else if (safepoint_ticks > 0) {
+                safepoint_ticks -= 1;
+            }
             if (self.debugger) |debugger| if (debugger.onInstruction(ip, self.frame_top)) return error.DebuggerPaused;
             self.fault_ip = ip;
             if (self.trace_count > 0) self.trace[self.trace_count - 1].instruction = ip;

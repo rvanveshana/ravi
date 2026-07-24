@@ -94,7 +94,7 @@ pub const Loader = struct {
         const id = try self.graph.register(path);
         const source = try self.provider(self.provider_context, self.allocator, path);
         errdefer self.allocator.free(source);
-        const language = (config.languageFromHeader(source) catch .kn) orelse .kn;
+        const language = (config.languageFromHeader(source) catch |err| return err) orelse .kn;
         var scan = try lexer.Lexer.initWithLanguage(self.allocator, source, language);
         defer scan.deinit();
         const tokens = try scan.tokenize();
@@ -109,8 +109,8 @@ pub const Loader = struct {
         // resolver owns stable symbol names; the loader only supplies the
         // source-level declarations that are safe to import.
         for (syntax.statements.items) |statement| switch (statement.kind) {
-            .function => |function| try self.graph.exportSymbol(id, function.name, .public),
-            .class_decl => |class_decl| try self.graph.exportSymbol(id, class_decl.name, .public),
+            .function => |function| try self.graph.exportSymbol(id, function.name, resolverVisibility(function.visibility)),
+            .class_decl => |class_decl| try self.graph.exportSymbol(id, class_decl.name, resolverVisibility(class_decl.visibility)),
             else => {},
         };
         for (syntax.statements.items) |statement| if (statement.kind == .import) {
@@ -131,6 +131,14 @@ pub const Loader = struct {
             self.allocator.free(dependency_path);
         };
         return id;
+    }
+
+    fn resolverVisibility(visibility: ast.Visibility) resolver.Visibility {
+        return switch (visibility) {
+            .public => .public,
+            .internal => .internal,
+            .private, .protected => .private,
+        };
     }
 
     fn resolvePath(self: *Loader, importer: []const u8, module_name: []const u8) ![]u8 {
