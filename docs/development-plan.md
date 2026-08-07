@@ -256,8 +256,9 @@ Goal: improve speed using reproducible evidence, not isolated claims.
 - [x] Integrate the allocation-free dispatcher into `Vm.runValue` for its
   verified opcode subset with reference fallback and differential tests.
 - ReleaseFast benchmark tooling now emits versioned JSON reports with timing
-  distributions and reproducibility metadata, and can compare a run against a
-  baseline with a configurable median-regression threshold. The standalone
+  distributions, interpolated percentile estimates, warmup/sample counts, and
+  reproducibility metadata, and can compare a run against a baseline with a
+  configurable median-regression threshold. The standalone
   comparison report (`tools/compare_benchmark.ps1`) provides machine-readable
   historical comparisons; a hosted dashboard UI remains optional follow-up.
 - [x] Redesign bytecode operands and instruction layout for compact decoding;

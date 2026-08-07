@@ -52,6 +52,7 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
+    compiler_module.addImport("ravi_ast", ast_module);
     const compiler_expressions_module = b.createModule(.{ .root_source_file = b.path("src/compiler/expressions.zig"), .target = target, .optimize = optimize });
     compiler_module.addImport("ravi_lexer", lexer_module);
     compiler_module.addImport("ravi_bytecode", bytecode_module);
@@ -167,6 +168,7 @@ pub fn build(b: *std.Build) void {
 
     const compiler_tests_module = b.createModule(.{ .root_source_file = b.path("tests/compiler_vm_tests.zig"), .target = target, .optimize = optimize });
     compiler_tests_module.addImport("ravi_lexer", lexer_module);
+    compiler_tests_module.addImport("ravi_ast", ast_module);
     compiler_tests_module.addImport("ravi_bytecode", bytecode_module);
     compiler_tests_module.addImport("ravi_vm", vm_module);
     compiler_tests_module.addImport("ravi_compiler", compiler_module);

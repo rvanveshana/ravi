@@ -1,6 +1,6 @@
 const std = @import("std");
 
-pub const OpCode = enum(u8) { halt, suspend_point, constant, make_string, make_function, make_instance, get_property, set_property, load_local, store_local, load_capture, load_capture_ref, store_capture, make_closure, make_array, make_tuple, make_set, make_dict, index, slice, store_index, length, type_query, string_lower, string_upper, string_strip, string_find, string_replace, string_split, string_join, append_collection, insert_collection, remove_collection, contains_collection, clear_collection, pop_collection, count_collection, reverse_collection, sort_collection, dict_get, dict_put, dict_remove, dict_contains, dict_keys, dict_values, dict_items, set_union, set_intersection, set_difference, range_condition, range_step, dup, guard_integer, guard_float, guard_boolean, guard_string, box_dynamic, unbox_integer, print, pop, add, subtract, multiply, divide, modulo, negate, not, equal, not_equal, less, less_equal, greater, greater_equal, logic_and, logic_or, jump_if_false, jump, try_begin, try_end, call, call_method, call_super, call_value, return_value, raise_value };
+pub const OpCode = enum(u8) { halt, suspend_point, constant, make_string, make_function, make_instance, get_property, set_property, load_local, store_local, load_capture, load_capture_ref, store_capture, make_closure, make_array, make_tuple, make_set, make_dict, index, slice, store_index, length, type_query, string_lower, string_upper, string_strip, string_find, string_replace, string_split, string_join, append_collection, insert_collection, remove_collection, contains_collection, clear_collection, pop_collection, count_collection, reverse_collection, sort_collection, dict_get, dict_put, dict_remove, dict_contains, dict_keys, dict_values, dict_items, set_union, set_intersection, set_difference, range_condition, range_step, dup, guard_integer, guard_float, guard_boolean, guard_string, box_dynamic, unbox_integer, print, pop, add, subtract, multiply, divide, modulo, negate, not, equal, not_equal, less, less_equal, greater, greater_equal, logic_and, logic_or, jump_if_false, jump, try_begin, try_end, call, call_method, call_super, call_value, return_value, raise_value, true_value, false_value };
 pub const Instruction = struct { op: OpCode, operand: i64 = 0 };
 
 /// Compact on-disk/cache representation: one opcode byte plus a signed
@@ -244,7 +244,7 @@ pub const Chunk = struct {
         var depth: isize = 0;
         for (self.code.items, 0..) |instruction, index| {
             switch (instruction.op) {
-                .constant, .make_string, .make_function, .make_instance, .load_local, .load_capture, .load_capture_ref => depth += 1,
+                .constant, .make_string, .make_function, .make_instance, .load_local, .load_capture, .load_capture_ref, .true_value, .false_value => depth += 1,
                 .get_property, .guard_integer, .guard_float, .guard_boolean, .guard_string, .box_dynamic, .unbox_integer => {},
                 .make_closure => {
                     if (instruction.operand < 0 or instruction.operand >= @as(i64, @intCast(self.functions.items.len))) return error.InvalidInstruction;
@@ -437,7 +437,7 @@ pub const Chunk = struct {
         var required: isize = 0;
         var delta: isize = 0;
         switch (instruction.op) {
-            .constant => delta = 1,
+            .constant, .true_value, .false_value => delta = 1,
             .make_string => {
                 if (instruction.operand < 0 or instruction.operand >= @as(i64, @intCast(self.strings.items.len))) return error.InvalidInstruction;
                 delta = 1;

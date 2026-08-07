@@ -1,11 +1,14 @@
 {
   "schema_version": 1,
-  "notes": "Initial budgets are recorded after a stable CI benchmark runner is available. Regressions must compare like-for-like hardware and Zig versions.",
+  "notes": "Initial conservative budgets from the ReleaseFast baseline runner. Compare like-for-like hardware and Zig versions; null phase metrics remain explicitly unmeasured until phase instrumentation exists.",
   "metrics": {
-    "compile_latency_ms": null,
-    "runtime_median_ms": null,
-    "peak_memory_bytes": null,
+    "compile_latency_ms": 2500,
+    "runtime_median_ms": 30,
+    "peak_memory_bytes": 134217728,
     "gc_pause_p95_ms": null,
-    "release_binary_bytes": null
+    "release_binary_bytes": 5242880,
+    "benchmark_iterations": 30,
+    "benchmark_warmup_iterations": 1,
+    "benchmark_stddev_pct": 25
   }
 }

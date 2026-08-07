@@ -7,8 +7,9 @@ const model = @import("model.zig");
 const helpers = @import("helpers.zig");
 const call_codegen = @import("calls.zig");
 const builtins = @import("builtins.zig");
+const ast = @import("ravi_ast");
 
-pub const CompileError = std.mem.Allocator.Error || error{ NoExecutableExpression, InvalidNumber, UnsupportedOperator, InvalidName, InvalidFunction, PrivateAccess, UnterminatedCall };
+pub const CompileError = std.mem.Allocator.Error || error{ NoExecutableExpression, InvalidNumber, UnsupportedOperator, InvalidName, InvalidFunction, InvalidExpression, PrivateAccess, UnterminatedCall };
 
 const FunctionDecl = model.FunctionDecl;
 const LoopContext = model.LoopContext;
@@ -51,6 +52,131 @@ pub const Compiler = struct {
         try self.compileRange(&chunk, tokens, &names, &.{});
         try chunk.emit(.{ .op = .return_value });
         return chunk;
+    }
+
+    /// Compile the scalar AST subset without consulting source tokens.
+    pub fn compileAstModule(self: *Compiler, module: *const ast.Module) CompileError!bytecode.Chunk {
+        var chunk = bytecode.Chunk.init(self.allocator);
+        errdefer chunk.deinit();
+        var names: std.ArrayListUnmanaged([]const u8) = .empty;
+        defer names.deinit(self.allocator);
+        for (module.statements.items) |statement| switch (statement.kind) {
+            .expression => |expression| try self.compileAstExpression(&chunk, module, expression, &names),
+            .return_stmt => |expression| {
+                if (expression) |value| try self.compileAstExpression(&chunk, module, value, &names) else try chunk.emit(.{ .op = .constant, .operand = 0 });
+                try chunk.emit(.{ .op = .return_value });
+            },
+            else => return error.UnsupportedOperator,
+        };
+        try chunk.emit(.{ .op = .halt });
+        return chunk;
+    }
+
+    fn compileAstExpression(self: *Compiler, chunk: *bytecode.Chunk, module: *const ast.Module, expression_id: ast.ExprId, names: *std.ArrayListUnmanaged([]const u8)) CompileError!void {
+        if (@as(usize, expression_id) >= module.expressions.items.len) return error.InvalidExpression;
+        const expression = module.expressions.items[expression_id];
+        switch (expression.kind) {
+            .integer => |value| try chunk.emit(.{ .op = .constant, .operand = value }),
+            .string => |value| {
+                const string_index = try chunk.addString(value);
+                try chunk.emit(.{ .op = .make_string, .operand = @intCast(string_index) });
+            },
+            .boolean => |value| try chunk.emit(.{ .op = if (value) .true_value else .false_value }),
+            .none => try chunk.emit(.{ .op = .constant, .operand = 0 }),
+            .assignment => |assignment| {
+                try self.compileAstExpression(chunk, module, assignment.value, names);
+                const slot = try helpers.localSlot(names, self.allocator, assignment.name);
+                try chunk.emit(.{ .op = .store_local, .operand = @intCast(slot) });
+                try chunk.emit(.{ .op = .load_local, .operand = @intCast(slot) });
+            },
+            .name => |name| {
+                const slot = helpers.findLocal(names.items, name) orelse return error.InvalidName;
+                try chunk.emit(.{ .op = .load_local, .operand = @intCast(slot) });
+            },
+            .unary => |unary| {
+                try self.compileAstExpression(chunk, module, unary.operand, names);
+                try chunk.emit(.{ .op = switch (unary.op) {
+                    .negate => .negate,
+                    .not => .not,
+                } });
+            },
+            .binary => |binary| {
+                try self.compileAstExpression(chunk, module, binary.left, names);
+                try self.compileAstExpression(chunk, module, binary.right, names);
+                const op: bytecode.OpCode = switch (binary.op) {
+                    .add => .add,
+                    .subtract => .subtract,
+                    .multiply => .multiply,
+                    .divide => .divide,
+                    .equal => .equal,
+                    .not_equal => .not_equal,
+                    .less => .less,
+                    .less_equal => .less_equal,
+                    .greater => .greater,
+                    .greater_equal => .greater_equal,
+                    .logic_and => .logic_and,
+                    .logic_or => .logic_or,
+                    else => return error.UnsupportedOperator,
+                };
+                try chunk.emit(.{ .op = op });
+            },
+            .array => |array| {
+                if (array.first > module.expressions.items.len or array.count > module.expressions.items.len - array.first) return error.InvalidExpression;
+                for (module.expressions.items[array.first .. array.first + array.count], array.first..) |_, element_id| {
+                    try self.compileAstExpression(chunk, module, @intCast(element_id), names);
+                }
+                try chunk.emit(.{ .op = .make_array, .operand = @intCast(array.count) });
+            },
+            .tuple => |tuple| {
+                if (tuple.first > module.expressions.items.len or tuple.count > module.expressions.items.len - tuple.first) return error.InvalidExpression;
+                for (module.expressions.items[tuple.first .. tuple.first + tuple.count], tuple.first..) |_, element_id| {
+                    try self.compileAstExpression(chunk, module, @intCast(element_id), names);
+                }
+                try chunk.emit(.{ .op = .make_tuple, .operand = @intCast(tuple.count) });
+            },
+            .set => |set| {
+                if (set.first > module.expressions.items.len or set.count > module.expressions.items.len - set.first) return error.InvalidExpression;
+                for (module.expressions.items[set.first .. set.first + set.count], set.first..) |_, element_id| {
+                    try self.compileAstExpression(chunk, module, @intCast(element_id), names);
+                }
+                try chunk.emit(.{ .op = .make_set, .operand = @intCast(set.count) });
+            },
+            .map => |map| {
+                if (map.first > module.expressions.items.len or map.count > module.expressions.items.len - map.first or map.count % 2 != 0) return error.InvalidExpression;
+                for (module.expressions.items[map.first .. map.first + map.count], map.first..) |_, element_id| {
+                    try self.compileAstExpression(chunk, module, @intCast(element_id), names);
+                }
+                try chunk.emit(.{ .op = .make_dict, .operand = @intCast(map.count / 2) });
+            },
+            .index => |index| {
+                try self.compileAstExpression(chunk, module, index.object, names);
+                try self.compileAstExpression(chunk, module, index.index, names);
+                try chunk.emit(.{ .op = .index });
+            },
+            .slice => |slice| {
+                try self.compileAstExpression(chunk, module, slice.object, names);
+                if (slice.start) |start| {
+                    try self.compileAstExpression(chunk, module, start, names);
+                } else {
+                    try chunk.emit(.{ .op = .constant, .operand = -1 });
+                }
+                if (slice.end) |end| {
+                    try self.compileAstExpression(chunk, module, end, names);
+                } else {
+                    try chunk.emit(.{ .op = .constant, .operand = -1 });
+                }
+                try chunk.emit(.{ .op = .slice });
+            },
+            .call => |call| {
+                if (call.first_arg > module.expressions.items.len or call.arg_count > module.expressions.items.len - call.first_arg) return error.InvalidExpression;
+                try self.compileAstExpression(chunk, module, call.callee, names);
+                for (module.expressions.items[call.first_arg .. call.first_arg + call.arg_count], call.first_arg..) |_, argument_id| {
+                    try self.compileAstExpression(chunk, module, @intCast(argument_id), names);
+                }
+                try chunk.emit(.{ .op = .call_value, .operand = @intCast(call.arg_count) });
+            },
+            else => return error.UnsupportedOperator,
+        }
     }
 
     pub fn compileProgram(self: *Compiler, tokens: []const lexer.Token) CompileError!bytecode.Chunk {
@@ -241,9 +367,7 @@ pub const Compiler = struct {
             var visibility: model.Visibility = .public;
             if (i > 0) {
                 const modifier = tokens[i - 1].lexeme;
-                if (std.mem.eql(u8, modifier, "swanta") or std.mem.eql(u8, modifier, "private")) visibility = .private
-                else if (std.mem.eql(u8, modifier, "vansha") or std.mem.eql(u8, modifier, "protected")) visibility = .protected
-                else if (std.mem.eql(u8, modifier, "olage") or std.mem.eql(u8, modifier, "internal")) visibility = .internal;
+                if (std.mem.eql(u8, modifier, "swanta") or std.mem.eql(u8, modifier, "private")) visibility = .private else if (std.mem.eql(u8, modifier, "vansha") or std.mem.eql(u8, modifier, "protected")) visibility = .protected else if (std.mem.eql(u8, modifier, "olage") or std.mem.eql(u8, modifier, "internal")) visibility = .internal;
             }
             for (0..self.class_count) |class_index| if (i >= self.class_body_first[class_index] and i < self.class_body_end[class_index]) {
                 method = true;
@@ -1087,7 +1211,6 @@ pub const Compiler = struct {
         if (std.mem.eql(u8, text, ">=")) return .greater_equal;
         return null;
     }
-
 
     fn findClass(self: *const Compiler, name: []const u8) ?usize {
         for (self.class_names[0..self.class_count], 0..) |class_name, index| {

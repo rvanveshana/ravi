@@ -99,7 +99,8 @@ pub const Vm = struct {
         const decoded = bytecode.decodePackedCode(self.allocator, bytes) catch return error.InvalidInstruction;
         defer self.allocator.free(decoded);
         if (template.functions.items.len == 0 and template.classes.items.len == 0 and
-            self.debugger == null and dispatch.FastDispatcher.supports(decoded)) {
+            self.debugger == null and dispatch.FastDispatcher.supports(decoded))
+        {
             var fast_stack: [256]Value = undefined;
             return switch (dispatch.FastDispatcher.dispatchLoop(decoded, &fast_stack)) {
                 .ok => |value| value,
@@ -169,6 +170,8 @@ pub const Vm = struct {
                 .halt => return if (self.stack_top == 0) Value.nil() else self.stack[self.stack_top - 1],
                 .suspend_point => {},
                 .constant => try self.push(try integer(instruction.operand)),
+                .true_value => try self.push(Value.fromBool(true)),
+                .false_value => try self.push(Value.fromBool(false)),
                 .make_string => {
                     if (instruction.operand < 0 or instruction.operand >= @as(i64, @intCast(chunk.strings.items.len))) return error.InvalidInstruction;
                     const raw = chunk.strings.items[@intCast(instruction.operand)];
