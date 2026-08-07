@@ -25,6 +25,7 @@ pub const Function = struct {
     instructions: std.ArrayListUnmanaged(Instruction) = .empty,
     next_value: u32 = 0,
     resumable: bool = false,
+    suspension_count: usize = 0,
 
     pub fn init(allocator: std.mem.Allocator, name: []const u8) Function {
         return .{ .allocator = allocator, .name = name };
@@ -57,7 +58,9 @@ test "HIR records resumable suspension source identity" {
     var function = Function.init(std.testing.allocator, "async_main");
     defer function.deinit();
     function.resumable = true;
+    function.suspension_count = 1;
     try function.appendEffect(.{ .suspend_point = .{ .resume_line = 12 } }, 12);
     try std.testing.expect(function.resumable);
     try std.testing.expectEqual(@as(usize, 12), function.instructions.items[0].operation.suspend_point.resume_line);
+    try std.testing.expectEqual(@as(usize, 1), function.suspension_count);
 }

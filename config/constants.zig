@@ -78,6 +78,10 @@ pub fn keywordCanonicalFor(language: SourceLanguage, spelling: []const u8) ?[]co
     return null;
 }
 
+pub fn keywordIsCanonical(language: SourceLanguage, spelling: []const u8, canonical: []const u8) bool {
+    return std.mem.eql(u8, keywordCanonicalFor(language, spelling) orelse "", canonical);
+}
+
 pub fn belongsToOtherLanguage(language: SourceLanguage, spelling: []const u8) bool {
     const other = if (language == .kn) english_keywords[0..] else keywords[0..];
     for (other) |keyword| if (std.mem.eql(u8, keyword.spelling, spelling)) return true;

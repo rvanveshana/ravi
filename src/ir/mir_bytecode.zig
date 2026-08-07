@@ -14,7 +14,9 @@ pub const BlockLabels = struct {
         for (function.blocks.items, 0..) |block, index| offsets[index] = block.first_instruction;
         return .{ .allocator = allocator, .offsets = offsets };
     }
-    pub fn deinit(self: *BlockLabels) void { self.allocator.free(self.offsets); }
+    pub fn deinit(self: *BlockLabels) void {
+        self.allocator.free(self.offsets);
+    }
     pub fn offset(self: *const BlockLabels, block: mir.BlockId) !usize {
         const index = @intFromEnum(block);
         if (index >= self.offsets.len) return error.InvalidBlock;
@@ -42,8 +44,13 @@ pub fn lower(allocator: anytype, function: *const mir.Function) !bytecode.Chunk 
                 try chunk.emit(.{ .op = .load_local, .operand = @intCast(@intFromEnum(binary.left)) });
                 try chunk.emit(.{ .op = .load_local, .operand = @intCast(@intFromEnum(binary.right)) });
                 try chunk.emit(.{ .op = switch (binary.operator) {
-                    .add => .add, .subtract => .subtract, .multiply => .multiply,
-                    .divide => .divide, .modulo => .modulo, .equal => .equal, .less => .less,
+                    .add => .add,
+                    .subtract => .subtract,
+                    .multiply => .multiply,
+                    .divide => .divide,
+                    .modulo => .modulo,
+                    .equal => .equal,
+                    .less => .less,
                 } });
                 if (instruction.result) |result| try chunk.emit(.{ .op = .store_local, .operand = @intCast(@intFromEnum(result)) });
             },
@@ -124,6 +131,7 @@ test "MIR lowering preserves suspension markers" {
     var source = @import("ravi_hir").Function.init(std.testing.allocator, "async_main");
     defer source.deinit();
     source.resumable = true;
+    source.suspension_count = 1;
     try source.appendEffect(.{ .suspend_point = .{ .resume_line = 12 } }, 12);
     var lowered = try mir.Function.lower(std.testing.allocator, &source);
     defer lowered.deinit();
@@ -131,4 +139,18 @@ test "MIR lowering preserves suspension markers" {
     defer chunk.deinit();
     try std.testing.expectEqual(bytecode.OpCode.suspend_point, chunk.code.items[0].op);
     try std.testing.expectEqual(@as(i64, 12), chunk.code.items[0].operand);
+}
+
+test "MIR lowering rejects inconsistent suspension metadata" {
+    var source = @import("ravi_hir").Function.init(std.testing.allocator, "broken_async");
+    defer source.deinit();
+    source.resumable = true;
+    source.suspension_count = 2;
+    try source.appendEffect(.{ .suspend_point = .{ .resume_line = 4 } }, 4);
+    var lowered = mir.Function.lower(std.testing.allocator, &source) catch |err| {
+        try std.testing.expectEqual(error.InvalidResumableMetadata, err);
+        return;
+    };
+    defer lowered.deinit();
+    try std.testing.expectError(error.InvalidResumableMetadata, lowered.verify());
 }

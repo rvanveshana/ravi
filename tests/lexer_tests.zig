@@ -15,6 +15,13 @@ test "language profiles and mixed keywords" {
     try std.testing.expectError(error.MixedLanguageKeyword, mixed.tokenize());
 }
 
+test "keyword canonical matching is restricted to the active language" {
+    try std.testing.expect(config.keywordIsCanonical(.en, "function", "function"));
+    try std.testing.expect(!config.keywordIsCanonical(.en, "kriya", "function"));
+    try std.testing.expect(config.keywordIsCanonical(.kn, "kriya", "function"));
+    try std.testing.expect(!config.keywordIsCanonical(.kn, "function", "function"));
+}
+
 test "keyword spellings remain valid member names" {
     var scan = try lexer.Lexer.init(std.testing.allocator, "object.tago(1)\nobject.if()\n");
     defer scan.deinit();
@@ -39,6 +46,36 @@ test "lexer preserves comments and collection punctuation" {
     }
     try std.testing.expectEqual(@as(usize, 1), comments);
     try std.testing.expectEqual(@as(usize, 4), punctuation);
+}
+
+test "lexer rejects numeric literals with multiple decimal points" {
+    var scan = try lexer.Lexer.init(std.testing.allocator, "value = 1.2.3\n");
+    defer scan.deinit();
+    try std.testing.expectError(error.InvalidNumber, scan.tokenize());
+}
+
+test "lexer keeps raw string prefixes attached to string tokens" {
+    var scan = try lexer.Lexer.init(std.testing.allocator, "path = r'C:\\data\\input.rk'\n");
+    defer scan.deinit();
+    const tokens = try scan.tokenize();
+    try std.testing.expectEqual(lexer.TokenKind.string, tokens[2].kind);
+    try std.testing.expectEqualStrings("r'C:\\data\\input.rk'", tokens[2].lexeme);
+}
+
+test "lexer keeps formatted string prefixes attached to string tokens" {
+    var scan = try lexer.Lexer.init(std.testing.allocator, "message = f\"Result: {value}\"\n");
+    defer scan.deinit();
+    const tokens = try scan.tokenize();
+    try std.testing.expectEqual(lexer.TokenKind.string, tokens[2].kind);
+    try std.testing.expectEqualStrings("f\"Result: {value}\"", tokens[2].lexeme);
+}
+
+test "lexer keeps standalone f identifiers unchanged" {
+    var scan = try lexer.Lexer.init(std.testing.allocator, "f = 1\n");
+    defer scan.deinit();
+    const tokens = try scan.tokenize();
+    try std.testing.expectEqual(lexer.TokenKind.identifier, tokens[0].kind);
+    try std.testing.expectEqualStrings("f", tokens[0].lexeme);
 }
 
 test "all material tokens carry byte and line spans" {

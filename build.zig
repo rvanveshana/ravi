@@ -173,6 +173,7 @@ pub fn build(b: *std.Build) void {
     compiler_tests_module.addImport("ravi_vm", vm_module);
     compiler_tests_module.addImport("ravi_compiler", compiler_module);
     compiler_tests_module.addImport("ravi_dispatch", dispatch_module);
+    compiler_tests_module.addImport("ravi_parser", parser_module);
     const compiler_tests = b.addTest(.{ .root_module = compiler_tests_module });
 
     const semantic_tests_module = b.createModule(.{ .root_source_file = b.path("tests/semantic_tests.zig"), .target = target, .optimize = optimize });

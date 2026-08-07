@@ -36,7 +36,7 @@ pub const Token = struct {
     end_offset: usize = 0,
 };
 
-pub const LexError = std.mem.Allocator.Error || error{ InvalidIndentation, TabIndentation, UnterminatedString, InvalidCharacter, MixedLanguageKeyword, LineTooLong, StringTooLong };
+pub const LexError = std.mem.Allocator.Error || error{ InvalidIndentation, TabIndentation, UnterminatedString, InvalidCharacter, InvalidNumber, MixedLanguageKeyword, LineTooLong, StringTooLong };
 
 pub const Lexer = struct {
     source: []const u8,
@@ -108,6 +108,16 @@ pub const Lexer = struct {
                 try self.scanNumber();
                 continue;
             }
+            if ((c == 'r' or c == 'R' or c == 'f' or c == 'F') and self.index + 1 < self.source.len and (self.source[self.index + 1] == '\'' or self.source[self.index + 1] == '"')) {
+                self.index += 1;
+                self.column += 1;
+                try self.scanString(self.source[self.index]);
+                const token = &self.tokens.items[self.tokens.items.len - 1];
+                token.start_offset -= 1;
+                token.column -= 1;
+                token.lexeme = self.source[token.start_offset..token.end_offset];
+                continue;
+            }
             if (c == '\'' or c == '"') {
                 try self.scanString(c);
                 continue;
@@ -166,7 +176,13 @@ pub const Lexer = struct {
     }
     fn scanNumber(self: *Lexer) LexError!void {
         const start = self.index;
-        while (self.index < self.source.len and (std.ascii.isDigit(self.source[self.index]) or self.source[self.index] == '.')) : (self.index += 1) {}
+        var dots: usize = 0;
+        while (self.index < self.source.len and (std.ascii.isDigit(self.source[self.index]) or self.source[self.index] == '.')) : (self.index += 1) {
+            if (self.source[self.index] == '.') {
+                dots += 1;
+                if (dots > 1) return error.InvalidNumber;
+            }
+        }
         try self.emit(.number, start, self.index - start);
         self.column += self.index - start;
     }

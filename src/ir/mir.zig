@@ -30,6 +30,7 @@ pub const Function = struct {
     blocks: std.ArrayListUnmanaged(Block) = .empty,
     value_count: u32 = 0,
     resumable: bool = false,
+    suspension_count: usize = 0,
 
     pub fn init(allocator: std.mem.Allocator) Function {
         return .{ .allocator = allocator };
@@ -59,6 +60,7 @@ pub const Function = struct {
         }
         result.value_count = source.next_value;
         result.resumable = source.resumable;
+        result.suspension_count = source.suspension_count;
         try result.blocks.append(allocator, .{ .first_instruction = 0, .instruction_count = result.instructions.items.len });
         try result.verify();
         return result;
@@ -66,6 +68,11 @@ pub const Function = struct {
 
     pub fn verify(self: *const Function) !void {
         if (self.blocks.items.len == 0) return error.NoEntryBlock;
+        var suspension_count: usize = 0;
+        for (self.instructions.items) |instruction| {
+            if (instruction.operation == .suspend_point) suspension_count += 1;
+        }
+        if (suspension_count != self.suspension_count or (self.resumable and suspension_count == 0) or (!self.resumable and suspension_count != 0)) return error.InvalidResumableMetadata;
         // The first block is the function entry; allowing a non-zero offset
         // would leave instructions outside the CFG and make source/debug
         // identities ambiguous.
@@ -214,10 +221,12 @@ test "MIR preserves resumable machine metadata" {
     var source = hir.Function.init(std.testing.allocator, "async_main");
     defer source.deinit();
     source.resumable = true;
+    source.suspension_count = 1;
     try source.appendEffect(.{ .suspend_point = .{ .resume_line = 8 } }, 8);
     var lowered = try Function.lower(std.testing.allocator, &source);
     defer lowered.deinit();
     try std.testing.expect(lowered.resumable);
+    try std.testing.expectEqual(@as(usize, 1), lowered.suspension_count);
     try std.testing.expectEqual(@as(usize, 8), lowered.instructions.items[0].operation.suspend_point.resume_line);
 }
 

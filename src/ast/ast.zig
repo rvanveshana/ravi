@@ -17,13 +17,15 @@ pub const Expr = struct {
         integer: i64,
         float: f64,
         string: []const u8,
+        formatted_string: struct { template: []const u8, first_arg: usize, arg_count: usize },
         boolean: bool,
         none,
         name: []const u8,
+        member: struct { object: ExprId, name: []const u8 },
         unary: struct { op: UnaryOp, operand: ExprId },
         binary: struct { op: BinaryOp, left: ExprId, right: ExprId },
         call: struct { callee: ExprId, first_arg: usize, arg_count: usize },
-        assignment: struct { name: []const u8, value: ExprId, annotation: ?[]const u8 = null, array_type: bool = false },
+        assignment: struct { name: []const u8, value: ExprId, target: ?ExprId = null, annotation: ?[]const u8 = null, array_type: bool = false },
         lambda: struct { params_first: usize, params_count: usize, body: ExprId },
         array: struct { first: usize, count: usize },
         tuple: struct { first: usize, count: usize },
@@ -34,7 +36,7 @@ pub const Expr = struct {
     };
 };
 
-pub const Parameter = struct { name: []const u8, annotation: ?[]const u8, span: Span };
+pub const Parameter = struct { name: []const u8, annotation: ?[]const u8, span: Span, default_value: ?i64 = null };
 pub const Decorator = struct { name: []const u8, span: Span };
 pub const ParseDiagnostic = struct { message: []const u8, span: Span };
 
@@ -45,11 +47,13 @@ pub const Stmt = struct {
     pub const Kind = union(enum) {
         expression: ExprId,
         return_stmt: ?ExprId,
+        raise_stmt: ?ExprId,
         import: struct { module: []const u8, names_first: usize, names_count: usize },
         function: struct { name: []const u8, params_first: usize, params_count: usize, return_type: ?[]const u8, body_first: usize, body_count: usize, decorators_first: usize, decorators_count: usize, visibility: Visibility },
         class_decl: struct { name: []const u8, base: ?[]const u8 = null, body_first: usize, body_count: usize, visibility: Visibility },
-        control: struct { keyword: []const u8, condition: ?ExprId, body_first: usize, body_count: usize },
-        context: struct { value: ExprId, body_first: usize, body_count: usize },
+        control: struct { keyword: []const u8, condition: ?ExprId, body_first: usize, body_count: usize, else_first: usize = 0, else_count: usize = 0, target: ?[]const u8 = null, iterable: ?ExprId = null },
+        try_stmt: struct { body_first: usize, body_count: usize, except_first: usize = 0, except_count: usize = 0, except_binding: ?[]const u8 = null, except_match: ?ExprId = null, finally_first: usize = 0, finally_count: usize = 0 },
+        context: struct { value: ExprId, binding: ?[]const u8 = null, body_first: usize, body_count: usize },
         transfer: []const u8,
     };
 };
@@ -57,6 +61,7 @@ pub const Stmt = struct {
 pub const Module = struct {
     allocator: std.mem.Allocator,
     expressions: std.ArrayListUnmanaged(Expr) = .empty,
+    format_args: std.ArrayListUnmanaged(ExprId) = .empty,
     statements: std.ArrayListUnmanaged(Stmt) = .empty,
     parameters: std.ArrayListUnmanaged(Parameter) = .empty,
     import_names: std.ArrayListUnmanaged([]const u8) = .empty,
@@ -66,6 +71,7 @@ pub const Module = struct {
 
     pub fn deinit(self: *Module) void {
         self.expressions.deinit(self.allocator);
+        self.format_args.deinit(self.allocator);
         self.statements.deinit(self.allocator);
         self.parameters.deinit(self.allocator);
         self.import_names.deinit(self.allocator);

@@ -14,6 +14,16 @@ pub const CompileError = std.mem.Allocator.Error || error{ NoExecutableExpressio
 const FunctionDecl = model.FunctionDecl;
 const LoopContext = model.LoopContext;
 const RangeParts = model.RangeParts;
+const AstLoopContext = struct { continue_target: usize, breaks_first: usize, continues_first: usize = 0 };
+const AstFinallyContext = struct { first: usize, count: usize };
+const AstLambdaInfo = struct {
+    expression: ast.ExprId,
+    params_first: usize,
+    params_count: usize,
+    body: ast.ExprId,
+    captures: [64][]const u8 = undefined,
+    capture_count: usize = 0,
+};
 
 pub const Compiler = struct {
     allocator: std.mem.Allocator,
@@ -28,6 +38,13 @@ pub const Compiler = struct {
     class_body_first: [64]usize = undefined,
     class_body_end: [64]usize = undefined,
     class_count: usize = 0,
+    ast_lambdas: []const AstLambdaInfo = &.{},
+    ast_function_count: usize = 0,
+    ast_active_captures: []const []const u8 = &.{},
+    ast_function_statements: []const usize = &.{},
+    ast_continue_targets: ?*std.ArrayListUnmanaged(usize) = null,
+    ast_finalizers: ?*std.ArrayListUnmanaged(AstFinallyContext) = null,
+    ast_finalizer_limit: ?usize = null,
     pub fn init(allocator: std.mem.Allocator) Compiler {
         return .{ .allocator = allocator };
     }
@@ -60,16 +77,395 @@ pub const Compiler = struct {
         errdefer chunk.deinit();
         var names: std.ArrayListUnmanaged([]const u8) = .empty;
         defer names.deinit(self.allocator);
-        for (module.statements.items) |statement| switch (statement.kind) {
-            .expression => |expression| try self.compileAstExpression(&chunk, module, expression, &names),
-            .return_stmt => |expression| {
-                if (expression) |value| try self.compileAstExpression(&chunk, module, value, &names) else try chunk.emit(.{ .op = .constant, .operand = 0 });
-                try chunk.emit(.{ .op = .return_value });
+        var function_statements: std.ArrayListUnmanaged(usize) = .empty;
+        defer function_statements.deinit(self.allocator);
+        for (module.statements.items, 0..) |statement, index| switch (statement.kind) {
+            .function => |function| {
+                try function_statements.append(self.allocator, index);
+                var defaults: [64]?i64 = @splat(null);
+                for (module.parameters.items[function.params_first .. function.params_first + function.params_count], 0..) |parameter, parameter_index| defaults[parameter_index] = parameter.default_value;
+                _ = try chunk.addFunction(.{ .entry = 0, .arity = function.params_count, .name = function.name, .defaults = defaults });
             },
-            else => return error.UnsupportedOperator,
+            else => {},
         };
+        var lambdas: std.ArrayListUnmanaged(AstLambdaInfo) = .empty;
+        defer lambdas.deinit(self.allocator);
+        for (module.expressions.items, 0..) |expression, expression_id| switch (expression.kind) {
+            .lambda => |lambda| {
+                var info = AstLambdaInfo{ .expression = @intCast(expression_id), .params_first = lambda.params_first, .params_count = lambda.params_count, .body = lambda.body };
+                try self.collectAstLambdaCaptures(module, lambda.body, module.parameters.items[lambda.params_first .. lambda.params_first + lambda.params_count], &info);
+                try lambdas.append(self.allocator, info);
+            },
+            else => {},
+        };
+        for (lambdas.items) |lambda| _ = try chunk.addFunction(.{ .entry = 0, .arity = lambda.params_count, .name = "<lambda>", .capture_count = lambda.capture_count });
+        self.ast_lambdas = lambdas.items;
+        self.ast_function_count = function_statements.items.len;
+        defer {
+            self.ast_lambdas = &.{};
+            self.ast_function_count = 0;
+            self.ast_active_captures = &.{};
+            self.ast_function_statements = &.{};
+        }
+        self.ast_function_statements = function_statements.items;
+        var loops: std.ArrayListUnmanaged(AstLoopContext) = .empty;
+        defer loops.deinit(self.allocator);
+        var break_targets: std.ArrayListUnmanaged(usize) = .empty;
+        defer break_targets.deinit(self.allocator);
+        var continue_targets: std.ArrayListUnmanaged(usize) = .empty;
+        defer continue_targets.deinit(self.allocator);
+        self.ast_continue_targets = &continue_targets;
+        defer self.ast_continue_targets = null;
+        var finalizers: std.ArrayListUnmanaged(AstFinallyContext) = .empty;
+        defer finalizers.deinit(self.allocator);
+        self.ast_finalizers = &finalizers;
+        defer self.ast_finalizers = null;
+        try self.compileAstTopLevel(&chunk, module, &names, &function_statements, &loops, &break_targets);
         try chunk.emit(.{ .op = .halt });
+        for (function_statements.items, 0..) |statement_index, function_index| {
+            const function = module.statements.items[statement_index].kind.function;
+            chunk.functions.items[function_index].entry = chunk.code.items.len;
+            var function_names: std.ArrayListUnmanaged([]const u8) = .empty;
+            defer function_names.deinit(self.allocator);
+            for (module.parameters.items[function.params_first .. function.params_first + function.params_count]) |parameter| try function_names.append(self.allocator, parameter.name);
+            try self.compileAstStatements(&chunk, module, function.body_first, function.body_count, &function_names, true, &loops, &break_targets);
+            try chunk.emit(.{ .op = .constant, .operand = 0 });
+            try chunk.emit(.{ .op = .return_value });
+        }
+        for (lambdas.items, 0..) |lambda, lambda_index| {
+            chunk.functions.items[self.ast_function_count + lambda_index].entry = chunk.code.items.len;
+            var lambda_names: std.ArrayListUnmanaged([]const u8) = .empty;
+            defer lambda_names.deinit(self.allocator);
+            for (module.parameters.items[lambda.params_first .. lambda.params_first + lambda.params_count]) |parameter| try lambda_names.append(self.allocator, parameter.name);
+            self.ast_active_captures = lambda.captures[0..lambda.capture_count];
+            try self.compileAstExpression(&chunk, module, lambda.body, &lambda_names);
+            self.ast_active_captures = &.{};
+            try chunk.emit(.{ .op = .return_value });
+        }
         return chunk;
+    }
+
+    fn compileAstFinalizers(self: *Compiler, chunk: *bytecode.Chunk, module: *const ast.Module, names: *std.ArrayListUnmanaged([]const u8), loops: *std.ArrayListUnmanaged(AstLoopContext), break_targets: *std.ArrayListUnmanaged(usize)) CompileError!void {
+        const finalizer_list = self.ast_finalizers orelse return;
+        const original_limit = self.ast_finalizer_limit;
+        const limit = @min(original_limit orelse finalizer_list.items.len, finalizer_list.items.len);
+        var index = limit;
+        while (index > 0) {
+            index -= 1;
+            const finalizer = finalizer_list.items[index];
+            self.ast_finalizer_limit = index;
+            try self.compileAstStatements(chunk, module, finalizer.first, finalizer.count, names, true, loops, break_targets);
+        }
+        self.ast_finalizer_limit = original_limit;
+    }
+
+    fn collectAstLambdaCaptures(self: *Compiler, module: *const ast.Module, expression_id: ast.ExprId, parameters: []const ast.Parameter, info: *AstLambdaInfo) CompileError!void {
+        if (@as(usize, expression_id) >= module.expressions.items.len) return error.InvalidExpression;
+        switch (module.expressions.items[expression_id].kind) {
+            .name => |name| {
+                for (parameters) |parameter| if (std.mem.eql(u8, parameter.name, name)) return;
+                for (info.captures[0..info.capture_count]) |capture| if (std.mem.eql(u8, capture, name)) return;
+                if (info.capture_count == info.captures.len) return error.InvalidFunction;
+                info.captures[info.capture_count] = name;
+                info.capture_count += 1;
+            },
+            .member => |value| try self.collectAstLambdaCaptures(module, value.object, parameters, info),
+            .unary => |value| try self.collectAstLambdaCaptures(module, value.operand, parameters, info),
+            .binary => |value| {
+                try self.collectAstLambdaCaptures(module, value.left, parameters, info);
+                try self.collectAstLambdaCaptures(module, value.right, parameters, info);
+            },
+            .call => |value| {
+                try self.collectAstLambdaCaptures(module, value.callee, parameters, info);
+                if (value.first_arg > module.expressions.items.len or value.arg_count > module.expressions.items.len - value.first_arg) return error.InvalidExpression;
+                for (module.expressions.items[value.first_arg .. value.first_arg + value.arg_count], value.first_arg..) |_, argument_id| try self.collectAstLambdaCaptures(module, @intCast(argument_id), parameters, info);
+            },
+            .assignment => |value| try self.collectAstLambdaCaptures(module, value.value, parameters, info),
+            .array => |value| for (value.first..value.first + value.count) |element_id| try self.collectAstLambdaCaptures(module, @intCast(element_id), parameters, info),
+            .tuple => |value| for (value.first..value.first + value.count) |element_id| try self.collectAstLambdaCaptures(module, @intCast(element_id), parameters, info),
+            .set => |value| for (value.first..value.first + value.count) |element_id| try self.collectAstLambdaCaptures(module, @intCast(element_id), parameters, info),
+            .map => |value| for (value.first..value.first + value.count) |element_id| try self.collectAstLambdaCaptures(module, @intCast(element_id), parameters, info),
+            .index => |value| {
+                try self.collectAstLambdaCaptures(module, value.object, parameters, info);
+                try self.collectAstLambdaCaptures(module, value.index, parameters, info);
+            },
+            .slice => |value| {
+                if (value.start) |start| try self.collectAstLambdaCaptures(module, start, parameters, info);
+                if (value.end) |end| try self.collectAstLambdaCaptures(module, end, parameters, info);
+                try self.collectAstLambdaCaptures(module, value.object, parameters, info);
+            },
+            .lambda => |value| try self.collectAstLambdaCaptures(module, value.body, parameters, info),
+            else => {},
+        }
+    }
+
+    fn compileAstTopLevel(self: *Compiler, chunk: *bytecode.Chunk, module: *const ast.Module, names: *std.ArrayListUnmanaged([]const u8), function_statements: *const std.ArrayListUnmanaged(usize), loops: *std.ArrayListUnmanaged(AstLoopContext), break_targets: *std.ArrayListUnmanaged(usize)) CompileError!void {
+        var index: usize = 0;
+        var function_index: usize = 0;
+        while (index < module.statements.items.len) {
+            const statement = module.statements.items[index];
+            switch (statement.kind) {
+                .function => |function| {
+                    if (function_index >= function_statements.items.len or function_statements.items[function_index] != index) return error.InvalidExpression;
+                    try chunk.emit(.{ .op = .make_function, .operand = @intCast(function_index) });
+                    const slot = try helpers.localSlot(names, self.allocator, function.name);
+                    try chunk.emit(.{ .op = .store_local, .operand = @intCast(slot) });
+                    try chunk.emit(.{ .op = .load_local, .operand = @intCast(slot) });
+                    function_index += 1;
+                    index = function.body_first + function.body_count;
+                },
+                .control => |control| {
+                    try self.compileAstStatements(chunk, module, index, 1, names, false, loops, break_targets);
+                    index = @max(index + 1, control.body_first + control.body_count);
+                    if (control.else_count != 0) index = @max(index, control.else_first + control.else_count);
+                },
+                .try_stmt => |try_stmt| {
+                    try self.compileAstStatements(chunk, module, index, 1, names, false, loops, break_targets);
+                    index = @max(index + 1, try_stmt.body_first + try_stmt.body_count);
+                    if (try_stmt.except_count != 0) index = @max(index, try_stmt.except_first + try_stmt.except_count);
+                    if (try_stmt.finally_count != 0) index = @max(index, try_stmt.finally_first + try_stmt.finally_count);
+                },
+                else => {
+                    try self.compileAstStatements(chunk, module, index, 1, names, false, loops, break_targets);
+                    index += 1;
+                },
+            }
+        }
+    }
+
+    fn compileAstStatements(self: *Compiler, chunk: *bytecode.Chunk, module: *const ast.Module, first: usize, count: usize, names: *std.ArrayListUnmanaged([]const u8), discard_expression: bool, loops: *std.ArrayListUnmanaged(AstLoopContext), break_targets: *std.ArrayListUnmanaged(usize)) CompileError!void {
+        if (first > module.statements.items.len or count > module.statements.items.len - first) return error.InvalidExpression;
+        var statement_index = first;
+        while (statement_index < first + count) : (statement_index += 1) {
+            const statement = module.statements.items[statement_index];
+            switch (statement.kind) {
+                .expression => |expression| {
+                    try self.compileAstExpression(chunk, module, expression, names);
+                    if (discard_expression) try chunk.emit(.{ .op = .pop });
+                },
+                .return_stmt => |expression| {
+                    if (expression) |value| try self.compileAstExpression(chunk, module, value, names) else try chunk.emit(.{ .op = .constant, .operand = 0 });
+                    try self.compileAstFinalizers(chunk, module, names, loops, break_targets);
+                    try chunk.emit(.{ .op = .return_value });
+                },
+                .raise_stmt => |expression| {
+                    if (expression) |value| try self.compileAstExpression(chunk, module, value, names) else try chunk.emit(.{ .op = .constant, .operand = 0 });
+                    try chunk.emit(.{ .op = .raise_value });
+                },
+                .function => |function| {
+                    var function_index: ?usize = null;
+                    for (self.ast_function_statements, 0..) |declaration_index, candidate| if (declaration_index == statement_index) {
+                        function_index = candidate;
+                        break;
+                    };
+                    const index = function_index orelse return error.InvalidFunction;
+                    try chunk.emit(.{ .op = .make_function, .operand = @intCast(index) });
+                    const slot = try helpers.localSlot(names, self.allocator, function.name);
+                    try chunk.emit(.{ .op = .store_local, .operand = @intCast(slot) });
+                    statement_index = function.body_first + function.body_count;
+                    if (statement_index > first + count) return error.InvalidExpression;
+                    statement_index -= 1;
+                },
+                .try_stmt => |try_stmt| {
+                    const begin_try = chunk.code.items.len;
+                    try chunk.emit(.{ .op = .try_begin, .operand = 0 });
+                    const finalizer_first = if (self.ast_finalizers) |finalizer_list| finalizer_list.items.len else 0;
+                    if (try_stmt.finally_count != 0) if (self.ast_finalizers) |finalizer_list| try finalizer_list.append(self.allocator, .{ .first = try_stmt.finally_first, .count = try_stmt.finally_count });
+                    try self.compileAstStatements(chunk, module, try_stmt.body_first, try_stmt.body_count, names, true, loops, break_targets);
+                    if (self.ast_finalizers) |finalizer_list| finalizer_list.shrinkRetainingCapacity(finalizer_first);
+                    try chunk.emit(.{ .op = .try_end });
+                    if (try_stmt.finally_count != 0) try self.compileAstStatements(chunk, module, try_stmt.finally_first, try_stmt.finally_count, names, true, loops, break_targets);
+                    const skip_handler = chunk.code.items.len;
+                    try chunk.emit(.{ .op = .jump, .operand = 0 });
+                    chunk.code.items[begin_try].operand = @intCast(chunk.code.items.len);
+                    var no_match: ?usize = null;
+                    if (try_stmt.except_match) |match| {
+                        try chunk.emit(.{ .op = .dup });
+                        try self.compileAstExpression(chunk, module, match, names);
+                        try chunk.emit(.{ .op = .equal });
+                        const match_jump = chunk.code.items.len;
+                        try chunk.emit(.{ .op = .jump_if_false, .operand = 0 });
+                        no_match = match_jump;
+                    }
+                    if (try_stmt.except_binding) |binding| {
+                        const slot = try helpers.localSlot(names, self.allocator, binding);
+                        try chunk.emit(.{ .op = .store_local, .operand = @intCast(slot) });
+                    }
+                    if (try_stmt.except_binding != null or try_stmt.except_match != null) try chunk.emit(.{ .op = .pop });
+                    if (try_stmt.except_count != 0) try self.compileAstStatements(chunk, module, try_stmt.except_first, try_stmt.except_count, names, true, loops, break_targets) else try chunk.emit(.{ .op = .raise_value });
+                    if (try_stmt.finally_count != 0) try self.compileAstStatements(chunk, module, try_stmt.finally_first, try_stmt.finally_count, names, true, loops, break_targets);
+                    if (no_match) |match_jump| {
+                        chunk.code.items[match_jump].operand = @intCast(chunk.code.items.len);
+                        try chunk.emit(.{ .op = .raise_value });
+                    }
+                    chunk.code.items[skip_handler].operand = @intCast(chunk.code.items.len);
+                    statement_index = @max(statement_index + 1, try_stmt.body_first + try_stmt.body_count);
+                    if (try_stmt.except_count != 0) statement_index = @max(statement_index, try_stmt.except_first + try_stmt.except_count);
+                    if (try_stmt.finally_count != 0) statement_index = @max(statement_index, try_stmt.finally_first + try_stmt.finally_count);
+                    if (statement_index > first + count) return error.InvalidExpression;
+                    statement_index -= 1;
+                },
+                .transfer => |transfer_keyword| {
+                    if (std.mem.eql(u8, transfer_keyword, "break")) {
+                        if (loops.items.len == 0) return error.UnsupportedOperator;
+                        try self.compileAstFinalizers(chunk, module, names, loops, break_targets);
+                        const jump = chunk.code.items.len;
+                        try chunk.emit(.{ .op = .jump, .operand = 0 });
+                        try break_targets.append(self.allocator, jump);
+                    } else if (std.mem.eql(u8, transfer_keyword, "continue")) {
+                        if (loops.items.len == 0) return error.UnsupportedOperator;
+                        try self.compileAstFinalizers(chunk, module, names, loops, break_targets);
+                        const context = loops.items[loops.items.len - 1];
+                        const jump = chunk.code.items.len;
+                        const pending = context.continue_target == std.math.maxInt(usize);
+                        try chunk.emit(.{ .op = .jump, .operand = if (pending) 0 else @intCast(context.continue_target) });
+                        if (pending) if (self.ast_continue_targets) |targets| try targets.append(self.allocator, jump);
+                    } else return error.UnsupportedOperator;
+                },
+                .control => |control| {
+                    if (std.mem.eql(u8, control.keyword, "for")) {
+                        const iterable = control.iterable orelse return error.InvalidExpression;
+                        const target = control.target orelse return error.InvalidExpression;
+                        const collection_name = try std.fmt.allocPrint(self.allocator, "__ast_for_collection_{d}", .{names.items.len});
+                        const index_name = try std.fmt.allocPrint(self.allocator, "__ast_for_index_{d}", .{names.items.len});
+                        const collection_slot = try helpers.localSlot(names, self.allocator, collection_name);
+                        const index_slot = try helpers.localSlot(names, self.allocator, index_name);
+                        if (@as(usize, iterable) < module.expressions.items.len and module.expressions.items[iterable].kind == .call) {
+                            const range_call = module.expressions.items[iterable].kind.call;
+                            if (@as(usize, range_call.callee) < module.expressions.items.len and module.expressions.items[range_call.callee].kind == .name) {
+                                const range_name = module.expressions.items[range_call.callee].kind.name;
+                                const is_range = std.mem.eql(u8, range_name, if (self.language == .kn) "shreni" else "range") or std.mem.eql(u8, range_name, "range");
+                                if (is_range and range_call.arg_count >= 1 and range_call.arg_count <= 3) {
+                                    const current_name = try std.fmt.allocPrint(self.allocator, "__ast_range_current_{d}", .{names.items.len});
+                                    const limit_name = try std.fmt.allocPrint(self.allocator, "__ast_range_limit_{d}", .{names.items.len});
+                                    const step_name = try std.fmt.allocPrint(self.allocator, "__ast_range_step_{d}", .{names.items.len});
+                                    const current_slot = try helpers.localSlot(names, self.allocator, current_name);
+                                    const limit_slot = try helpers.localSlot(names, self.allocator, limit_name);
+                                    const step_slot = try helpers.localSlot(names, self.allocator, step_name);
+                                    const argument = struct {
+                                        fn id(call: anytype, offset: usize) ast.ExprId {
+                                            return @intCast(@as(usize, call.first_arg) + offset);
+                                        }
+                                    };
+                                    if (range_call.arg_count == 1) try chunk.emit(.{ .op = .constant, .operand = 0 }) else try self.compileAstExpression(chunk, module, argument.id(range_call, 0), names);
+                                    try chunk.emit(.{ .op = .store_local, .operand = @intCast(current_slot) });
+                                    try chunk.emit(.{ .op = .pop });
+                                    const limit_argument: usize = if (range_call.arg_count == 1) 0 else 1;
+                                    try self.compileAstExpression(chunk, module, argument.id(range_call, limit_argument), names);
+                                    try chunk.emit(.{ .op = .store_local, .operand = @intCast(limit_slot) });
+                                    try chunk.emit(.{ .op = .pop });
+                                    if (range_call.arg_count == 3) try self.compileAstExpression(chunk, module, argument.id(range_call, 2), names) else try chunk.emit(.{ .op = .constant, .operand = 1 });
+                                    try chunk.emit(.{ .op = .store_local, .operand = @intCast(step_slot) });
+                                    try chunk.emit(.{ .op = .pop });
+                                    const loop_start = chunk.code.items.len;
+                                    try chunk.emit(.{ .op = .load_local, .operand = @intCast(current_slot) });
+                                    try chunk.emit(.{ .op = .load_local, .operand = @intCast(limit_slot) });
+                                    try chunk.emit(.{ .op = .load_local, .operand = @intCast(step_slot) });
+                                    try chunk.emit(.{ .op = .range_condition });
+                                    const exit_jump = chunk.code.items.len;
+                                    try chunk.emit(.{ .op = .jump_if_false, .operand = 0 });
+                                    const target_slot = try helpers.localSlot(names, self.allocator, target);
+                                    try chunk.emit(.{ .op = .load_local, .operand = @intCast(current_slot) });
+                                    try chunk.emit(.{ .op = .store_local, .operand = @intCast(target_slot) });
+                                    try chunk.emit(.{ .op = .pop });
+                                    const break_first = break_targets.items.len;
+                                    const continue_first = if (self.ast_continue_targets) |targets| targets.items.len else 0;
+                                    try loops.append(self.allocator, .{ .continue_target = std.math.maxInt(usize), .breaks_first = break_first, .continues_first = continue_first });
+                                    try self.compileAstStatements(chunk, module, control.body_first, control.body_count, names, true, loops, break_targets);
+                                    _ = loops.pop();
+                                    const increment_start = chunk.code.items.len;
+                                    if (self.ast_continue_targets) |targets| {
+                                        for (targets.items[continue_first..]) |target_jump| chunk.code.items[target_jump].operand = @intCast(increment_start);
+                                        targets.shrinkRetainingCapacity(continue_first);
+                                    }
+                                    const packed_slots = (@as(i64, @intCast(current_slot)) << 32) | @as(i64, @intCast(step_slot));
+                                    try chunk.emit(.{ .op = .range_step, .operand = packed_slots });
+                                    try chunk.emit(.{ .op = .jump, .operand = @intCast(loop_start) });
+                                    chunk.code.items[exit_jump].operand = @intCast(chunk.code.items.len);
+                                    for (break_targets.items[break_first..]) |target_jump| chunk.code.items[target_jump].operand = @intCast(chunk.code.items.len);
+                                    break_targets.shrinkRetainingCapacity(break_first);
+                                    statement_index = @max(statement_index + 1, control.body_first + control.body_count);
+                                    if (statement_index > first + count) return error.InvalidExpression;
+                                    statement_index -= 1;
+                                    continue;
+                                }
+                            }
+                        }
+                        try self.compileAstExpression(chunk, module, iterable, names);
+                        try chunk.emit(.{ .op = .iterable });
+                        try chunk.emit(.{ .op = .store_local, .operand = @intCast(collection_slot) });
+                        try chunk.emit(.{ .op = .pop });
+                        try chunk.emit(.{ .op = .constant, .operand = 0 });
+                        try chunk.emit(.{ .op = .store_local, .operand = @intCast(index_slot) });
+                        try chunk.emit(.{ .op = .pop });
+                        const loop_start = chunk.code.items.len;
+                        try chunk.emit(.{ .op = .load_local, .operand = @intCast(collection_slot) });
+                        try chunk.emit(.{ .op = .length });
+                        try chunk.emit(.{ .op = .load_local, .operand = @intCast(index_slot) });
+                        try chunk.emit(.{ .op = .less });
+                        const exit_jump = chunk.code.items.len;
+                        try chunk.emit(.{ .op = .jump_if_false, .operand = 0 });
+                        try chunk.emit(.{ .op = .load_local, .operand = @intCast(collection_slot) });
+                        try chunk.emit(.{ .op = .load_local, .operand = @intCast(index_slot) });
+                        try chunk.emit(.{ .op = .index });
+                        const target_slot = try helpers.localSlot(names, self.allocator, target);
+                        try chunk.emit(.{ .op = .store_local, .operand = @intCast(target_slot) });
+                        try chunk.emit(.{ .op = .pop });
+                        const break_first = break_targets.items.len;
+                        const continue_first = if (self.ast_continue_targets) |targets| targets.items.len else 0;
+                        try loops.append(self.allocator, .{ .continue_target = std.math.maxInt(usize), .breaks_first = break_first, .continues_first = continue_first });
+                        try self.compileAstStatements(chunk, module, control.body_first, control.body_count, names, true, loops, break_targets);
+                        _ = loops.pop();
+                        const increment_start = chunk.code.items.len;
+                        if (self.ast_continue_targets) |targets| {
+                            for (targets.items[continue_first..]) |target_jump| chunk.code.items[target_jump].operand = @intCast(increment_start);
+                            targets.shrinkRetainingCapacity(continue_first);
+                        }
+                        try chunk.emit(.{ .op = .load_local, .operand = @intCast(index_slot) });
+                        try chunk.emit(.{ .op = .constant, .operand = 1 });
+                        try chunk.emit(.{ .op = .add });
+                        try chunk.emit(.{ .op = .store_local, .operand = @intCast(index_slot) });
+                        try chunk.emit(.{ .op = .pop });
+                        try chunk.emit(.{ .op = .jump, .operand = @intCast(loop_start) });
+                        chunk.code.items[exit_jump].operand = @intCast(chunk.code.items.len);
+                        for (break_targets.items[break_first..]) |target_jump| chunk.code.items[target_jump].operand = @intCast(chunk.code.items.len);
+                        break_targets.shrinkRetainingCapacity(break_first);
+                    } else if (std.mem.eql(u8, control.keyword, "if")) {
+                        const condition = control.condition orelse return error.InvalidExpression;
+                        try self.compileAstExpression(chunk, module, condition, names);
+                        const false_jump = chunk.code.items.len;
+                        try chunk.emit(.{ .op = .jump_if_false, .operand = 0 });
+                        try self.compileAstStatements(chunk, module, control.body_first, control.body_count, names, true, loops, break_targets);
+                        if (control.else_count != 0) {
+                            const end_jump = chunk.code.items.len;
+                            try chunk.emit(.{ .op = .jump, .operand = 0 });
+                            chunk.code.items[false_jump].operand = @intCast(chunk.code.items.len);
+                            try self.compileAstStatements(chunk, module, control.else_first, control.else_count, names, true, loops, break_targets);
+                            chunk.code.items[end_jump].operand = @intCast(chunk.code.items.len);
+                        } else chunk.code.items[false_jump].operand = @intCast(chunk.code.items.len);
+                    } else if (std.mem.eql(u8, control.keyword, "while")) {
+                        const loop_start = chunk.code.items.len;
+                        const condition = control.condition orelse return error.InvalidExpression;
+                        try self.compileAstExpression(chunk, module, condition, names);
+                        const exit_jump = chunk.code.items.len;
+                        try chunk.emit(.{ .op = .jump_if_false, .operand = 0 });
+                        const break_first = break_targets.items.len;
+                        try loops.append(self.allocator, .{ .continue_target = loop_start, .breaks_first = break_first });
+                        try self.compileAstStatements(chunk, module, control.body_first, control.body_count, names, true, loops, break_targets);
+                        _ = loops.pop();
+                        try chunk.emit(.{ .op = .jump, .operand = @intCast(loop_start) });
+                        chunk.code.items[exit_jump].operand = @intCast(chunk.code.items.len);
+                        for (break_targets.items[break_first..]) |target| chunk.code.items[target].operand = @intCast(chunk.code.items.len);
+                        break_targets.shrinkRetainingCapacity(break_first);
+                    } else return error.UnsupportedOperator;
+                    statement_index = @max(statement_index + 1, control.body_first + control.body_count);
+                    if (control.else_count != 0) statement_index = @max(statement_index, control.else_first + control.else_count);
+                    if (statement_index > first + count) return error.InvalidExpression;
+                    statement_index -= 1;
+                },
+                else => return error.UnsupportedOperator,
+            }
+        }
     }
 
     fn compileAstExpression(self: *Compiler, chunk: *bytecode.Chunk, module: *const ast.Module, expression_id: ast.ExprId, names: *std.ArrayListUnmanaged([]const u8)) CompileError!void {
@@ -77,22 +473,57 @@ pub const Compiler = struct {
         const expression = module.expressions.items[expression_id];
         switch (expression.kind) {
             .integer => |value| try chunk.emit(.{ .op = .constant, .operand = value }),
+            .float => |value| {
+                const float_index = try chunk.addFloat(value);
+                try chunk.emit(.{ .op = .make_float, .operand = @intCast(float_index) });
+            },
             .string => |value| {
                 const string_index = try chunk.addString(value);
                 try chunk.emit(.{ .op = .make_string, .operand = @intCast(string_index) });
             },
+            .formatted_string => |formatted| {
+                if (formatted.first_arg + formatted.arg_count > module.format_args.items.len) return error.InvalidExpression;
+                for (module.format_args.items[formatted.first_arg .. formatted.first_arg + formatted.arg_count]) |argument| try self.compileAstExpression(chunk, module, argument, names);
+                const format_index = try chunk.addFormat(formatted.template, formatted.arg_count);
+                try chunk.emit(.{ .op = .make_format, .operand = @intCast(format_index) });
+            },
             .boolean => |value| try chunk.emit(.{ .op = if (value) .true_value else .false_value }),
             .none => try chunk.emit(.{ .op = .constant, .operand = 0 }),
             .assignment => |assignment| {
-                try self.compileAstExpression(chunk, module, assignment.value, names);
-                const slot = try helpers.localSlot(names, self.allocator, assignment.name);
-                try chunk.emit(.{ .op = .store_local, .operand = @intCast(slot) });
-                try chunk.emit(.{ .op = .load_local, .operand = @intCast(slot) });
+                if (assignment.target) |target| {
+                    const member = if (@as(usize, target) < module.expressions.items.len) module.expressions.items[target].kind else return error.InvalidExpression;
+                    const member_value = switch (member) {
+                        .member => |value| value,
+                        else => return error.InvalidExpression,
+                    };
+                    try self.compileAstExpression(chunk, module, member_value.object, names);
+                    try chunk.emit(.{ .op = .dup });
+                    try self.compileAstExpression(chunk, module, assignment.value, names);
+                    const property = try chunk.addString(member_value.name);
+                    try chunk.emit(.{ .op = .set_property, .operand = @intCast(property) });
+                    try chunk.emit(.{ .op = .get_property, .operand = @intCast(property) });
+                } else {
+                    try self.compileAstExpression(chunk, module, assignment.value, names);
+                }
+                if (assignment.target == null) {
+                    if (helpers.findCapture(self.ast_active_captures, assignment.name)) |capture| {
+                        try chunk.emit(.{ .op = .store_capture, .operand = @intCast(capture) });
+                        try chunk.emit(.{ .op = .load_capture, .operand = @intCast(capture) });
+                    } else {
+                        const slot = try helpers.localSlot(names, self.allocator, assignment.name);
+                        try chunk.emit(.{ .op = .store_local, .operand = @intCast(slot) });
+                        try chunk.emit(.{ .op = .load_local, .operand = @intCast(slot) });
+                    }
+                }
             },
             .name => |name| {
-                const slot = helpers.findLocal(names.items, name) orelse return error.InvalidName;
-                try chunk.emit(.{ .op = .load_local, .operand = @intCast(slot) });
+                if (helpers.findLocal(names.items, name)) |slot| {
+                    try chunk.emit(.{ .op = .load_local, .operand = @intCast(slot) });
+                } else if (helpers.findCapture(self.ast_active_captures, name)) |capture| {
+                    try chunk.emit(.{ .op = .load_capture, .operand = @intCast(capture) });
+                } else return error.InvalidName;
             },
+            .member => return error.UnsupportedOperator,
             .unary => |unary| {
                 try self.compileAstExpression(chunk, module, unary.operand, names);
                 try chunk.emit(.{ .op = switch (unary.op) {
@@ -169,13 +600,34 @@ pub const Compiler = struct {
             },
             .call => |call| {
                 if (call.first_arg > module.expressions.items.len or call.arg_count > module.expressions.items.len - call.first_arg) return error.InvalidExpression;
+                if (module.expressions.items[call.callee].kind == .member) {
+                    const member = module.expressions.items[call.callee].kind.member;
+                    if (call.arg_count != 0) return error.UnsupportedOperator;
+                    try self.compileAstExpression(chunk, module, member.object, names);
+                    if (builtins.method(self.language, member.name, "keys", "kili")) try chunk.emit(.{ .op = .dict_keys }) else if (builtins.method(self.language, member.name, "values", "bele")) try chunk.emit(.{ .op = .dict_values }) else if (builtins.method(self.language, member.name, "items", "jodi")) try chunk.emit(.{ .op = .dict_items }) else return error.UnsupportedOperator;
+                    return;
+                }
                 try self.compileAstExpression(chunk, module, call.callee, names);
                 for (module.expressions.items[call.first_arg .. call.first_arg + call.arg_count], call.first_arg..) |_, argument_id| {
                     try self.compileAstExpression(chunk, module, @intCast(argument_id), names);
                 }
                 try chunk.emit(.{ .op = .call_value, .operand = @intCast(call.arg_count) });
             },
-            else => return error.UnsupportedOperator,
+            .lambda => |lambda| {
+                for (self.ast_lambdas, 0..) |info, lambda_index| if (info.expression == expression_id) {
+                    if (info.params_first != lambda.params_first or info.params_count != lambda.params_count or info.body != lambda.body) return error.InvalidExpression;
+                    for (info.captures[0..info.capture_count]) |capture| {
+                        if (helpers.findLocal(names.items, capture)) |slot| {
+                            try chunk.emit(.{ .op = .load_local, .operand = @intCast(slot) });
+                        } else if (helpers.findCapture(self.ast_active_captures, capture)) |capture_slot| {
+                            try chunk.emit(.{ .op = .load_capture_ref, .operand = @intCast(capture_slot) });
+                        } else return error.InvalidName;
+                    }
+                    if (info.capture_count == 0) try chunk.emit(.{ .op = .make_function, .operand = @intCast(self.ast_function_count + lambda_index) }) else try chunk.emit(.{ .op = .make_closure, .operand = @intCast(self.ast_function_count + lambda_index) });
+                    return;
+                };
+                return error.InvalidFunction;
+            },
         }
     }
 
@@ -198,7 +650,7 @@ pub const Compiler = struct {
         }
         try self.collectFunctions(tokens, &declarations, &params);
         try self.collectLambdas(tokens, &declarations, &params);
-        for (declarations.items) |decl| _ = try chunk.addFunction(.{ .entry = 0, .arity = decl.params_count, .name = decl.name, .capture_count = decl.capture_count, .resumable = decl.resumable, .suspension_count = decl.suspension_count });
+        for (declarations.items) |decl| _ = try chunk.addFunction(.{ .entry = 0, .arity = decl.params_count, .name = decl.name, .defaults = decl.defaults, .capture_count = decl.capture_count, .resumable = decl.resumable, .suspension_count = decl.suspension_count });
         for (declarations.items, 0..) |decl, function_index| if (decl.method) {
             for (0..self.class_count) |class_index| {
                 if (decl.body_first >= self.class_body_first[class_index] and decl.body_first < self.class_body_end[class_index]) {
@@ -357,7 +809,18 @@ pub const Compiler = struct {
                     capture_count += 1;
                 }
             }
-            for (tokens[body_first..body_end]) |token| {
+            var suspension_cursor = body_first;
+            var suspension_nested_depth: usize = 0;
+            while (suspension_cursor < body_end) : (suspension_cursor += 1) {
+                const token = tokens[suspension_cursor];
+                if (token.kind == .keyword and self.keyword(token, "function")) {
+                    suspension_nested_depth += 1;
+                    continue;
+                }
+                if (suspension_nested_depth > 0) {
+                    if (token.kind == .dedent) suspension_nested_depth -= 1;
+                    continue;
+                }
                 if (token.kind == .keyword and (self.keyword(token, "yield") or self.keyword(token, "taru"))) {
                     resumable = true;
                     suspension_count += 1;

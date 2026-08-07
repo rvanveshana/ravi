@@ -32,6 +32,17 @@ test "dictionary primitives update and remove keys" {
     try std.testing.expectEqual(@as(usize, 0), dictionary.len);
 }
 
+test "dictionary numeric keys share mixed integer and float equality" {
+    var dictionary = collection_primitives.Dict.init(std.testing.allocator);
+    defer dictionary.deinit();
+    try collection_primitives.put(&dictionary, Value.fromInt(3), Value.fromInt(30));
+    try std.testing.expectEqual(@as(usize, 1), dictionary.len);
+    try std.testing.expectEqual(@as(i64, 30), (collection_primitives.get(&dictionary, Value.fromFloat(3.0)).?).asInt());
+    try collection_primitives.put(&dictionary, Value.fromFloat(3.0), Value.fromInt(33));
+    try std.testing.expectEqual(@as(usize, 1), dictionary.len);
+    try std.testing.expectEqual(@as(i64, 33), (collection_primitives.get(&dictionary, Value.fromInt(3)).?).asInt());
+}
+
 test "dictionary hash storage keeps colliding keys reachable" {
     var dictionary = collection_primitives.Dict.init(std.testing.allocator);
     defer dictionary.deinit();

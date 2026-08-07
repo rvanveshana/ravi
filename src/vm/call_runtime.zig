@@ -1,4 +1,5 @@
 const bytecode = @import("ravi_bytecode");
+const Value = @import("ravi_vm_value").Value;
 
 pub fn call(self: anytype, chunk: anytype, operand: i64, ip: *usize) !void {
     if (operand < 0 or operand >= @as(i64, @intCast(chunk.functions.items.len))) return error.InvalidFunction;
@@ -27,12 +28,12 @@ pub fn callValue(self: anytype, chunk: anytype, arity_operand: i64, ip: *usize) 
         if (slot >= self.closure_count) return error.InvalidFunction;
         const closure = self.closures[slot];
         const function = chunk.functions.items[closure.function_index];
-        if (function.arity != arity or self.frame_top + 1 >= self.frames.len) return error.InvalidFunction;
+        if (arity > function.arity or self.frame_top + 1 >= self.frames.len) return error.InvalidFunction;
         const base = self.stack_top - arity;
         self.frame_top += 1;
         self.frames[self.frame_top] = .{ .return_ip = ip.*, .base = base - 1, .captures = closure.captures };
-        try self.frames[self.frame_top].ensureLocals(self.allocator, arity);
-        for (0..arity) |i| self.frames[self.frame_top].locals[i] = self.stack[base + i];
+        try self.frames[self.frame_top].ensureLocals(self.allocator, function.arity);
+        for (0..function.arity) |i| self.frames[self.frame_top].locals[i] = if (i < arity) self.stack[base + i] else if (function.defaults[i]) |default| Value.fromInt(default) else Value.nil();
         if (self.trace_count < self.trace.len) {
             self.trace[self.trace_count] = .{ .function = function.name, .instruction = function.entry };
             self.trace_count += 1;
@@ -45,12 +46,12 @@ pub fn callValue(self: anytype, chunk: anytype, arity_operand: i64, ip: *usize) 
     };
     if (function_index >= chunk.functions.items.len) return error.InvalidFunction;
     const function = chunk.functions.items[function_index];
-    if (function.arity != arity or self.frame_top + 1 >= self.frames.len) return error.InvalidFunction;
+    if (arity > function.arity or self.frame_top + 1 >= self.frames.len) return error.InvalidFunction;
     const base = self.stack_top - arity;
     self.frame_top += 1;
     self.frames[self.frame_top] = .{ .return_ip = ip.*, .base = base - 1 };
-    try self.frames[self.frame_top].ensureLocals(self.allocator, arity);
-    for (0..arity) |i| self.frames[self.frame_top].locals[i] = self.stack[base + i];
+    try self.frames[self.frame_top].ensureLocals(self.allocator, function.arity);
+    for (0..function.arity) |i| self.frames[self.frame_top].locals[i] = if (i < arity) self.stack[base + i] else if (function.defaults[i]) |default| Value.fromInt(default) else Value.nil();
     if (self.trace_count < self.trace.len) {
         self.trace[self.trace_count] = .{ .function = function.name, .instruction = function.entry };
         self.trace_count += 1;

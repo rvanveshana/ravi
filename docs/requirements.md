@@ -97,7 +97,7 @@ APIs never silently interpret arbitrary bytes.
 name = 'Ravi'
 message = "Namaskara, Ravi"
 path = r'C:\data\input.rk'
-report = f"Result: \(value)"
+report = f"Result: {value}"
 
 help_text = """
     First line.
@@ -115,8 +115,9 @@ help_text = """
 - The `r` prefix creates a raw string and the `f` prefix creates an interpolated
   string. Prefixes may be combined only in combinations defined by the language
   specification.
-- Interpolation uses `\(expression)`, contains a normal Ravi expression, and is
+- Interpolation uses `{expression}`, contains a normal Ravi expression, and is
   lowered to a typed formatting operation rather than runtime source evaluation.
+- Literal braces in formatted strings use doubled braces: `{{` and `}}`.
 - Indexing, byte length, Unicode scalar iteration, and grapheme iteration are
   distinct APIs. Text cannot be accidentally sliced through a UTF-8 sequence.
 - Compile-time concatenation and interning avoid duplicate immutable constants.

@@ -5,6 +5,7 @@ const vm_mod = @import("ravi_vm");
 const dispatch = @import("ravi_dispatch");
 const compiler = @import("ravi_compiler");
 const ast = @import("ravi_ast");
+const parser = @import("ravi_parser");
 
 fn run(source: []const u8, language: anytype) !i64 {
     var scan = try lexer.Lexer.initWithLanguage(std.testing.allocator, source, language);
@@ -12,6 +13,22 @@ fn run(source: []const u8, language: anytype) !i64 {
     const tokens = try scan.tokenize();
     var compile = compiler.Compiler.initWithLanguage(std.testing.allocator, language);
     var chunk = try compile.compileProgram(tokens);
+    defer chunk.deinit();
+    var vm = try vm_mod.Vm.init(std.testing.allocator);
+    defer vm.deinit();
+    return vm.run(&chunk);
+}
+
+fn runAst(source: []const u8, language: anytype) !i64 {
+    var scan = try lexer.Lexer.initWithLanguage(std.testing.allocator, source, language);
+    defer scan.deinit();
+    const tokens = try scan.tokenize();
+    var parse = parser.Parser.initWithLanguage(std.testing.allocator, tokens, language);
+    var module = try parse.parseRecovering();
+    defer module.deinit();
+    if (module.diagnostics.items.len != 0) return error.InvalidExpression;
+    var compile = compiler.Compiler.initWithLanguage(std.testing.allocator, language);
+    var chunk = try compile.compileAstModule(&module);
     defer chunk.deinit();
     var vm = try vm_mod.Vm.init(std.testing.allocator);
     defer vm.deinit();
@@ -33,6 +50,21 @@ test "guards and arithmetic execute in the VM" {
     try float_chunk.emit(.{ .op = .guard_float });
     try float_chunk.emit(.{ .op = .return_value });
     try std.testing.expectError(error.TypeGuardFailed, vm.run(&float_chunk));
+}
+
+test "nested generator suspension metadata stays with the nested function" {
+    const source = "kriya outer():\n    kriya inner():\n        taru 1\n    kodu 2\n";
+    var scan = try lexer.Lexer.init(std.testing.allocator, source);
+    defer scan.deinit();
+    const tokens = try scan.tokenize();
+    var compile = compiler.Compiler.init(std.testing.allocator);
+    var chunk = try compile.compileProgram(tokens);
+    defer chunk.deinit();
+    try std.testing.expectEqual(@as(usize, 2), chunk.functions.items.len);
+    try std.testing.expect(!chunk.functions.items[0].resumable);
+    try std.testing.expectEqual(@as(usize, 0), chunk.functions.items[0].suspension_count);
+    try std.testing.expect(chunk.functions.items[1].resumable);
+    try std.testing.expectEqual(@as(usize, 1), chunk.functions.items[1].suspension_count);
 }
 
 test "AST scalar lowering executes through the VM" {
@@ -61,6 +93,484 @@ test "AST scalar lowering rejects invalid expression ids" {
     try std.testing.expectError(error.InvalidExpression, compile.compileAstModule(&module));
 }
 
+test "parsed AST functions bind parameters and return values" {
+    const source = "kriya add(a, b):\n    kodu a + b\nadd(2, 3)\n";
+    var scan = try lexer.Lexer.init(std.testing.allocator, source);
+    defer scan.deinit();
+    const tokens = try scan.tokenize();
+    var parse = parser.Parser.init(std.testing.allocator, tokens);
+    var module = try parse.parseRecovering();
+    defer module.deinit();
+    try std.testing.expectEqual(@as(usize, 0), module.diagnostics.items.len);
+    var compile = compiler.Compiler.init(std.testing.allocator);
+    var chunk = try compile.compileAstModule(&module);
+    defer chunk.deinit();
+    var vm = try vm_mod.Vm.init(std.testing.allocator);
+    defer vm.deinit();
+    try std.testing.expectEqual(@as(i64, 5), try vm.run(&chunk));
+}
+
+test "parsed AST lambdas produce callable function values" {
+    const source = "add = function(a, b) => a + b\nadd(4, 6)\n";
+    var scan = try lexer.Lexer.init(std.testing.allocator, source);
+    defer scan.deinit();
+    const tokens = try scan.tokenize();
+    var parse = parser.Parser.init(std.testing.allocator, tokens);
+    var module = try parse.parseRecovering();
+    defer module.deinit();
+    try std.testing.expectEqual(@as(usize, 0), module.diagnostics.items.len);
+    var compile = compiler.Compiler.init(std.testing.allocator);
+    var chunk = try compile.compileAstModule(&module);
+    defer chunk.deinit();
+    var vm = try vm_mod.Vm.init(std.testing.allocator);
+    defer vm.deinit();
+    try std.testing.expectEqual(@as(i64, 10), try vm.run(&chunk));
+}
+
+test "parsed AST lambdas capture outer locals" {
+    const source = "value = 7\nread = function() => value\nread()\n";
+    var scan = try lexer.Lexer.init(std.testing.allocator, source);
+    defer scan.deinit();
+    const tokens = try scan.tokenize();
+    var parse = parser.Parser.init(std.testing.allocator, tokens);
+    var module = try parse.parseRecovering();
+    defer module.deinit();
+    try std.testing.expectEqual(@as(usize, 0), module.diagnostics.items.len);
+    var compile = compiler.Compiler.init(std.testing.allocator);
+    var chunk = try compile.compileAstModule(&module);
+    defer chunk.deinit();
+    var vm = try vm_mod.Vm.init(std.testing.allocator);
+    defer vm.deinit();
+    try std.testing.expectEqual(@as(i64, 7), try vm.run(&chunk));
+}
+
+test "parsed AST closures preserve multiple capture slots" {
+    const source = "left = 4\nright = 9\ncombine = function() => left + right\ncombine()\n";
+    var scan = try lexer.Lexer.init(std.testing.allocator, source);
+    defer scan.deinit();
+    const tokens = try scan.tokenize();
+    var parse = parser.Parser.init(std.testing.allocator, tokens);
+    var module = try parse.parseRecovering();
+    defer module.deinit();
+    try std.testing.expectEqual(@as(usize, 0), module.diagnostics.items.len);
+    var compile = compiler.Compiler.init(std.testing.allocator);
+    var chunk = try compile.compileAstModule(&module);
+    defer chunk.deinit();
+    var vm = try vm_mod.Vm.init(std.testing.allocator);
+    defer vm.deinit();
+    try std.testing.expectEqual(@as(i64, 13), try vm.run(&chunk));
+}
+
+test "parsed AST nested functions execute only through their own entry" {
+    const source = "kriya outer():\n    kriya inner(value):\n        kodu value + 1\n    kodu inner(4)\nouter()\n";
+    var scan = try lexer.Lexer.init(std.testing.allocator, source);
+    defer scan.deinit();
+    const tokens = try scan.tokenize();
+    var parse = parser.Parser.init(std.testing.allocator, tokens);
+    var module = try parse.parseRecovering();
+    defer module.deinit();
+    try std.testing.expectEqual(@as(usize, 0), module.diagnostics.items.len);
+    var compile = compiler.Compiler.init(std.testing.allocator);
+    var chunk = try compile.compileAstModule(&module);
+    defer chunk.deinit();
+    var vm = try vm_mod.Vm.init(std.testing.allocator);
+    defer vm.deinit();
+    try std.testing.expectEqual(@as(i64, 5), try vm.run(&chunk));
+}
+
+test "parsed AST closures mutate shared captured cells" {
+    const source = "value = 0\ninc = function() => value = value + 1\ninc()\ninc()\n";
+    var scan = try lexer.Lexer.init(std.testing.allocator, source);
+    defer scan.deinit();
+    const tokens = try scan.tokenize();
+    var parse = parser.Parser.init(std.testing.allocator, tokens);
+    var module = try parse.parseRecovering();
+    defer module.deinit();
+    try std.testing.expectEqual(@as(usize, 0), module.diagnostics.items.len);
+    var compile = compiler.Compiler.init(std.testing.allocator);
+    var chunk = try compile.compileAstModule(&module);
+    defer chunk.deinit();
+    var vm = try vm_mod.Vm.init(std.testing.allocator);
+    defer vm.deinit();
+    try std.testing.expectEqual(@as(i64, 2), try vm.run(&chunk));
+}
+
+test "parsed AST functions apply numeric default parameters" {
+    const source = "kriya add(a, b = 3):\n    kodu a + b\nadd(2)\n";
+    var scan = try lexer.Lexer.init(std.testing.allocator, source);
+    defer scan.deinit();
+    const tokens = try scan.tokenize();
+    var parse = parser.Parser.init(std.testing.allocator, tokens);
+    var module = try parse.parseRecovering();
+    defer module.deinit();
+    try std.testing.expectEqual(@as(usize, 0), module.diagnostics.items.len);
+    var compile = compiler.Compiler.init(std.testing.allocator);
+    var chunk = try compile.compileAstModule(&module);
+    defer chunk.deinit();
+    var vm = try vm_mod.Vm.init(std.testing.allocator);
+    defer vm.deinit();
+    try std.testing.expectEqual(@as(i64, 5), try vm.run(&chunk));
+}
+
+test "parsed AST try and except recover VM faults" {
+    const source = "value = 0\nnodu:\n    value = 1 / 0\ntappu:\n    value = 9\nvalue\n";
+    var scan = try lexer.Lexer.init(std.testing.allocator, source);
+    defer scan.deinit();
+    const tokens = try scan.tokenize();
+    var parse = parser.Parser.init(std.testing.allocator, tokens);
+    var module = try parse.parseRecovering();
+    defer module.deinit();
+    try std.testing.expectEqual(@as(usize, 0), module.diagnostics.items.len);
+    var compile = compiler.Compiler.init(std.testing.allocator);
+    var chunk = try compile.compileAstModule(&module);
+    defer chunk.deinit();
+    var vm = try vm_mod.Vm.init(std.testing.allocator);
+    defer vm.deinit();
+    try std.testing.expectEqual(@as(i64, 9), try vm.run(&chunk));
+}
+
+test "parsed AST finally runs on the normal path" {
+    const source = "value = 0\nnodu:\n    value = 1\nkone:\n    value = 2\nvalue\n";
+    var scan = try lexer.Lexer.init(std.testing.allocator, source);
+    defer scan.deinit();
+    const tokens = try scan.tokenize();
+    var parse = parser.Parser.init(std.testing.allocator, tokens);
+    var module = try parse.parseRecovering();
+    defer module.deinit();
+    try std.testing.expectEqual(@as(usize, 0), module.diagnostics.items.len);
+    var compile = compiler.Compiler.init(std.testing.allocator);
+    var chunk = try compile.compileAstModule(&module);
+    defer chunk.deinit();
+    var vm = try vm_mod.Vm.init(std.testing.allocator);
+    defer vm.deinit();
+    try std.testing.expectEqual(@as(i64, 2), try vm.run(&chunk));
+}
+
+test "parsed AST finally runs before function return" {
+    const source = "value = 0\nwork = function():\n    nodu:\n        yese 7\n    kone:\n        value = 9\nwork()\nvalue\n";
+    try std.testing.expectEqual(@as(i64, 9), try runAst(source, .kn));
+}
+
+test "parsed AST finally runs before loop continue" {
+    const source = "value = 0\nprati item alli [1, 2, 3]:\n    nodu:\n        value = value + 1\n        adre item == 2:\n            munde\n        value = value + 10\n    kone:\n        value = value + 100\nvalue\n";
+    try std.testing.expectEqual(@as(i64, 323), try runAst(source, .kn));
+}
+
+test "parsed AST finally runs before loop break" {
+    const source = "value = 0\nprati item alli [1, 2, 3]:\n    nodu:\n        value = value + 1\n        adre item == 2:\n            nillu\n        value = value + 10\n    kone:\n        value = value + 100\nvalue\n";
+    try std.testing.expectEqual(@as(i64, 212), try runAst(source, .kn));
+}
+
+test "parsed AST nested closures forward enclosing captures" {
+    const source = "value = 7\nouter = function() => function() => value\ninner = outer()\ninner()\n";
+    var scan = try lexer.Lexer.init(std.testing.allocator, source);
+    defer scan.deinit();
+    const tokens = try scan.tokenize();
+    var parse = parser.Parser.init(std.testing.allocator, tokens);
+    var module = try parse.parseRecovering();
+    defer module.deinit();
+    try std.testing.expectEqual(@as(usize, 0), module.diagnostics.items.len);
+    var compile = compiler.Compiler.init(std.testing.allocator);
+    var chunk = try compile.compileAstModule(&module);
+    defer chunk.deinit();
+    var vm = try vm_mod.Vm.init(std.testing.allocator);
+    defer vm.deinit();
+    try std.testing.expectEqual(@as(i64, 7), try vm.run(&chunk));
+}
+
+test "parsed AST explicit raise payloads recover through except" {
+    const source = "value = 0\nnodu:\n    yese 7\ntappu:\n    value = 9\nvalue\n";
+    var scan = try lexer.Lexer.init(std.testing.allocator, source);
+    defer scan.deinit();
+    const tokens = try scan.tokenize();
+    var parse = parser.Parser.init(std.testing.allocator, tokens);
+    var module = try parse.parseRecovering();
+    defer module.deinit();
+    try std.testing.expectEqual(@as(usize, 0), module.diagnostics.items.len);
+    var compile = compiler.Compiler.init(std.testing.allocator);
+    var chunk = try compile.compileAstModule(&module);
+    defer chunk.deinit();
+    var vm = try vm_mod.Vm.init(std.testing.allocator);
+    defer vm.deinit();
+    try std.testing.expectEqual(@as(i64, 9), try vm.run(&chunk));
+}
+
+test "parsed AST for loops iterate arrays" {
+    const source = "total = 0\nprati item alli [1, 2, 3]:\n    total = total + item\ntotal\n";
+    var scan = try lexer.Lexer.init(std.testing.allocator, source);
+    defer scan.deinit();
+    const tokens = try scan.tokenize();
+    var parse = parser.Parser.init(std.testing.allocator, tokens);
+    var module = try parse.parseRecovering();
+    defer module.deinit();
+    try std.testing.expectEqual(@as(usize, 0), module.diagnostics.items.len);
+    var compile = compiler.Compiler.init(std.testing.allocator);
+    var chunk = try compile.compileAstModule(&module);
+    defer chunk.deinit();
+    var vm = try vm_mod.Vm.init(std.testing.allocator);
+    defer vm.deinit();
+    try std.testing.expectEqual(@as(i64, 6), try vm.run(&chunk));
+}
+
+test "parsed AST for loops lower range calls" {
+    const one_argument = "total = 0\nprati value alli shreni(4):\n    total = total + value\ntotal\n";
+    try std.testing.expectEqual(@as(i64, 6), try runAst(one_argument, .kn));
+    const two_arguments = "total = 0\nprati value alli shreni(2, 5):\n    total = total + value\ntotal\n";
+    try std.testing.expectEqual(@as(i64, 9), try runAst(two_arguments, .kn));
+    const three_arguments = "total = 0\nprati value alli shreni(1, 6, 2):\n    total = total + value\ntotal\n";
+    try std.testing.expectEqual(@as(i64, 9), try runAst(three_arguments, .kn));
+}
+
+test "parsed AST nested for loops keep independent iterators" {
+    const source = "total = 0\nprati outer alli shreni(2):\n    prati inner alli [1, 2]:\n        total = total + outer + inner\ntotal\n";
+    try std.testing.expectEqual(@as(i64, 8), try runAst(source, .kn));
+}
+
+test "parsed AST continue advances range loops" {
+    const source = "total = 0\nprati value alli shreni(5):\n    adre value == 2:\n        munde\n    total = total + value\ntotal\n";
+    try std.testing.expectEqual(@as(i64, 8), try runAst(source, .kn));
+}
+
+test "parsed AST continue advances collection loops" {
+    const source = "total = 0\nprati value alli [1, 2, 3]:\n    adre value == 2:\n        munde\n    total = total + value\ntotal\n";
+    try std.testing.expectEqual(@as(i64, 4), try runAst(source, .kn));
+}
+
+test "parsed AST for loops iterate dictionary keys" {
+    const source = "scores = {1: 2, 2: 3}\ntotal = 0\nprati key alli scores:\n    total = total + scores[key]\ntotal\n";
+    try std.testing.expectEqual(@as(i64, 5), try runAst(source, .kn));
+}
+
+test "parsed AST dictionary views iterate values and items" {
+    const values_source = "scores = {1: 2, 2: 3}\ntotal = 0\nprati value alli scores.bele():\n    total = total + value\ntotal\n";
+    try std.testing.expectEqual(@as(i64, 5), try runAst(values_source, .kn));
+    const items_source = "scores = {1: 2, 2: 3}\ntotal = 0\nprati item alli scores.jodi():\n    total = total + item[0] + item[1]\ntotal\n";
+    try std.testing.expectEqual(@as(i64, 8), try runAst(items_source, .kn));
+}
+
+test "parsed AST except binds raised payload" {
+    const source = "value = 0\nnodu:\n    yese 7\ntappu error:\n    value = error\nvalue\n";
+    var scan = try lexer.Lexer.init(std.testing.allocator, source);
+    defer scan.deinit();
+    const tokens = try scan.tokenize();
+    var parse = parser.Parser.init(std.testing.allocator, tokens);
+    var module = try parse.parseRecovering();
+    defer module.deinit();
+    try std.testing.expectEqual(@as(usize, 0), module.diagnostics.items.len);
+    var compile = compiler.Compiler.init(std.testing.allocator);
+    var chunk = try compile.compileAstModule(&module);
+    defer chunk.deinit();
+    var vm = try vm_mod.Vm.init(std.testing.allocator);
+    defer vm.deinit();
+    try std.testing.expectEqual(@as(i64, 7), try vm.run(&chunk));
+}
+
+test "parsed AST exception matching selects matching payload" {
+    const source = "value = 0\nnodu:\n    yese 7\ntappu 7:\n    value = 11\nvalue\n";
+    try std.testing.expectEqual(@as(i64, 11), try runAst(source, .kn));
+}
+
+test "parsed AST exception matching rethrows unmatched payload" {
+    const source = "nodu:\n    yese 7\ntappu 8:\n    11\n";
+    try std.testing.expectError(error.RaisedException, runAst(source, .kn));
+}
+
+test "AST and token compilers agree on representative Phase 2 programs" {
+    const sources = [_][]const u8{
+        "value = 2 + 3\nvalue\n",
+        "total = 0\nprati item alli [1, 2, 3]:\n    total = total + item\ntotal\n",
+        "value = 0\nnodu:\n    yese 7\ntappu error:\n    value = error\nvalue\n",
+    };
+    for (sources) |source| try std.testing.expectEqual(try run(source, .kn), try runAst(source, .kn));
+}
+
+test "AST formatted strings lower to formatting bytecode" {
+    var module = ast.Module{ .allocator = std.testing.allocator };
+    defer module.deinit();
+    const value_id = module.expressions.items.len;
+    try module.expressions.append(std.testing.allocator, .{ .span = .{ .first = 0, .last = 1, .line = 1 }, .kind = .{ .integer = 7 } });
+    const string_id = module.expressions.items.len;
+    try module.expressions.append(std.testing.allocator, .{ .span = .{ .first = 0, .last = 23, .line = 1 }, .kind = .{ .formatted_string = .{ .template = "f\"Result: {value}\"", .first_arg = 0, .arg_count = 1 } } });
+    try module.format_args.append(std.testing.allocator, @intCast(value_id));
+    try module.statements.append(std.testing.allocator, .{ .span = .{ .first = 0, .last = 23, .line = 1 }, .kind = .{ .expression = @intCast(string_id) } });
+    var compile = compiler.Compiler.init(std.testing.allocator);
+    var chunk = try compile.compileAstModule(&module);
+    defer chunk.deinit();
+    try std.testing.expectEqual(bytecode.OpCode.make_format, chunk.code.items[1].op);
+}
+
+test "parsed formatted strings execute through the AST compiler" {
+    var scan = try lexer.Lexer.init(std.testing.allocator, "value = 7\nf\"Result: {value}\"\n");
+    defer scan.deinit();
+    const tokens = try scan.tokenize();
+    var parse = parser.Parser.init(std.testing.allocator, tokens);
+    var module = try parse.parseRecovering();
+    defer module.deinit();
+    try std.testing.expectEqual(@as(usize, 0), module.diagnostics.items.len);
+    var compile = compiler.Compiler.init(std.testing.allocator);
+    var chunk = try compile.compileAstModule(&module);
+    defer chunk.deinit();
+    var vm = try vm_mod.Vm.init(std.testing.allocator);
+    defer vm.deinit();
+    const result = try vm.runValue(&chunk);
+    try std.testing.expectEqualStrings("Result: 7", vm.strings.items[result.handleIndex().?].bytes);
+}
+
+test "parsed formatted expressions execute through the AST compiler" {
+    var scan = try lexer.Lexer.init(std.testing.allocator, "value = 7\nf\"Result: {value + 1}\"\n");
+    defer scan.deinit();
+    const tokens = try scan.tokenize();
+    var parse = parser.Parser.init(std.testing.allocator, tokens);
+    var module = try parse.parseRecovering();
+    defer module.deinit();
+    try std.testing.expectEqual(@as(usize, 0), module.diagnostics.items.len);
+    var compile = compiler.Compiler.init(std.testing.allocator);
+    var chunk = try compile.compileAstModule(&module);
+    defer chunk.deinit();
+    var vm = try vm_mod.Vm.init(std.testing.allocator);
+    defer vm.deinit();
+    const result = try vm.runValue(&chunk);
+    try std.testing.expectEqualStrings("Result: 8", vm.strings.items[result.handleIndex().?].bytes);
+}
+
+test "parsed formatted index expressions execute through the AST compiler" {
+    var scan = try lexer.Lexer.init(std.testing.allocator, "items = [9]\nindex = 0\nf\"Value: {items[index]}\"\n");
+    defer scan.deinit();
+    const tokens = try scan.tokenize();
+    var parse = parser.Parser.init(std.testing.allocator, tokens);
+    var module = try parse.parseRecovering();
+    defer module.deinit();
+    try std.testing.expectEqual(@as(usize, 0), module.diagnostics.items.len);
+    var compile = compiler.Compiler.init(std.testing.allocator);
+    var chunk = try compile.compileAstModule(&module);
+    defer chunk.deinit();
+    var vm = try vm_mod.Vm.init(std.testing.allocator);
+    defer vm.deinit();
+    const result = try vm.runValue(&chunk);
+    try std.testing.expectEqualStrings("Value: 9", vm.strings.items[result.handleIndex().?].bytes);
+}
+
+test "AST compiler lowers if and while control flow" {
+    const source = "value = 0\nwhile value < 3:\n    value = value + 1\nif value == 3:\n    value = value + 4\nvalue\n";
+    var scan = try lexer.Lexer.init(std.testing.allocator, source);
+    defer scan.deinit();
+    const tokens = try scan.tokenize();
+    var parse = parser.Parser.init(std.testing.allocator, tokens);
+    var module = try parse.parseRecovering();
+    defer module.deinit();
+    try std.testing.expectEqual(@as(usize, 0), module.diagnostics.items.len);
+    var compile = compiler.Compiler.init(std.testing.allocator);
+    var chunk = try compile.compileAstModule(&module);
+    defer chunk.deinit();
+    var vm = try vm_mod.Vm.init(std.testing.allocator);
+    defer vm.deinit();
+    try std.testing.expectEqual(@as(i64, 7), try vm.run(&chunk));
+}
+
+test "AST control flow uses canonical English profile keywords" {
+    const source = "value = 1\nif value == 1:\n    value = value + 2\nvalue\n";
+    var scan = try lexer.Lexer.initWithLanguage(std.testing.allocator, source, .en);
+    defer scan.deinit();
+    const tokens = try scan.tokenize();
+    var parse = parser.Parser.initWithLanguage(std.testing.allocator, tokens, .en);
+    var module = try parse.parseRecovering();
+    defer module.deinit();
+    try std.testing.expectEqual(@as(usize, 0), module.diagnostics.items.len);
+    var compile = compiler.Compiler.initWithLanguage(std.testing.allocator, .en);
+    var chunk = try compile.compileAstModule(&module);
+    defer chunk.deinit();
+    var vm = try vm_mod.Vm.init(std.testing.allocator);
+    defer vm.deinit();
+    try std.testing.expectEqual(@as(i64, 3), try vm.run(&chunk));
+}
+
+test "AST control flow lowers else break and continue" {
+    const source = "value = 0\nwhile value < 5:\n    value = value + 1\n    if value == 2:\n        continue\n    if value == 4:\n        break\nif value == 4:\n    value = 10\nelse:\n    value = 20\nvalue\n";
+    var scan = try lexer.Lexer.init(std.testing.allocator, source);
+    defer scan.deinit();
+    const tokens = try scan.tokenize();
+    var parse = parser.Parser.init(std.testing.allocator, tokens);
+    var module = try parse.parseRecovering();
+    defer module.deinit();
+    try std.testing.expectEqual(@as(usize, 0), module.diagnostics.items.len);
+    var compile = compiler.Compiler.init(std.testing.allocator);
+    var chunk = try compile.compileAstModule(&module);
+    defer chunk.deinit();
+    var vm = try vm_mod.Vm.init(std.testing.allocator);
+    defer vm.deinit();
+    try std.testing.expectEqual(@as(i64, 10), try vm.run(&chunk));
+}
+
+test "AST control flow rejects transfers outside loops" {
+    const source = "break\n";
+    var scan = try lexer.Lexer.init(std.testing.allocator, source);
+    defer scan.deinit();
+    const tokens = try scan.tokenize();
+    var parse = parser.Parser.init(std.testing.allocator, tokens);
+    var module = try parse.parseRecovering();
+    defer module.deinit();
+    try std.testing.expectEqual(@as(usize, 0), module.diagnostics.items.len);
+    var compile = compiler.Compiler.init(std.testing.allocator);
+    try std.testing.expectError(error.UnsupportedOperator, compile.compileAstModule(&module));
+}
+
+test "formatted strings apply width and alignment specifications" {
+    var scan = try lexer.Lexer.init(std.testing.allocator, "value = 7\nf\"[{value:>4}][{value:<4}][{value:^5}]\"\n");
+    defer scan.deinit();
+    const tokens = try scan.tokenize();
+    var parse = parser.Parser.init(std.testing.allocator, tokens);
+    var module = try parse.parseRecovering();
+    defer module.deinit();
+    try std.testing.expectEqual(@as(usize, 0), module.diagnostics.items.len);
+    var compile = compiler.Compiler.init(std.testing.allocator);
+    var chunk = try compile.compileAstModule(&module);
+    defer chunk.deinit();
+    var vm = try vm_mod.Vm.init(std.testing.allocator);
+    defer vm.deinit();
+    const result = try vm.runValue(&chunk);
+    try std.testing.expectEqualStrings("[   7][7   ][  7  ]", vm.strings.items[result.handleIndex().?].bytes);
+}
+
+test "formatted strings enforce numeric type specifications" {
+    var scan = try lexer.Lexer.init(std.testing.allocator, "value = \"seven\"\nf\"{value:d}\"\n");
+    defer scan.deinit();
+    const tokens = try scan.tokenize();
+    var parse = parser.Parser.init(std.testing.allocator, tokens);
+    var module = try parse.parseRecovering();
+    defer module.deinit();
+    try std.testing.expectEqual(@as(usize, 0), module.diagnostics.items.len);
+    var compile = compiler.Compiler.init(std.testing.allocator);
+    var chunk = try compile.compileAstModule(&module);
+    defer chunk.deinit();
+    var vm = try vm_mod.Vm.init(std.testing.allocator);
+    defer vm.deinit();
+    try std.testing.expectError(error.TypeGuardFailed, vm.runValue(&chunk));
+}
+
+test "AST formatted strings render typed values and escaped braces" {
+    var module = ast.Module{ .allocator = std.testing.allocator };
+    defer module.deinit();
+    const integer_id = module.expressions.items.len;
+    try module.expressions.append(std.testing.allocator, .{ .span = .{ .first = 0, .last = 1, .line = 1 }, .kind = .{ .integer = 7 } });
+    const float_id = module.expressions.items.len;
+    try module.expressions.append(std.testing.allocator, .{ .span = .{ .first = 0, .last = 1, .line = 1 }, .kind = .{ .float = 2.5 } });
+    const boolean_id = module.expressions.items.len;
+    try module.expressions.append(std.testing.allocator, .{ .span = .{ .first = 0, .last = 1, .line = 1 }, .kind = .{ .boolean = true } });
+    const format_id = module.expressions.items.len;
+    try module.expressions.append(std.testing.allocator, .{ .span = .{ .first = 0, .last = 35, .line = 1 }, .kind = .{ .formatted_string = .{ .template = "f\"n={x}, pi={y}, ok={z}, {{done}}\"", .first_arg = 0, .arg_count = 3 } } });
+    try module.format_args.append(std.testing.allocator, @intCast(integer_id));
+    try module.format_args.append(std.testing.allocator, @intCast(float_id));
+    try module.format_args.append(std.testing.allocator, @intCast(boolean_id));
+    try module.statements.append(std.testing.allocator, .{ .span = .{ .first = 0, .last = 35, .line = 1 }, .kind = .{ .expression = @intCast(format_id) } });
+    var compile = compiler.Compiler.init(std.testing.allocator);
+    var chunk = try compile.compileAstModule(&module);
+    defer chunk.deinit();
+    var vm = try vm_mod.Vm.init(std.testing.allocator);
+    defer vm.deinit();
+    const result = try vm.runValue(&chunk);
+    try std.testing.expectEqualStrings("n=7, pi=2.5, ok=true, {done}", vm.strings.items[result.handleIndex().?].bytes);
+}
+
 test "AST string lowering creates a managed string value" {
     var module = ast.Module{ .allocator = std.testing.allocator };
     defer module.deinit();
@@ -74,6 +584,21 @@ test "AST string lowering creates a managed string value" {
     defer vm.deinit();
     const result = try vm.runValue(&chunk);
     try std.testing.expectEqual(@as(?vm_mod.RuntimeValue.ObjectKind, .string), result.handleKind());
+}
+
+test "VM preserves backslashes in raw string literals" {
+    var module = ast.Module{ .allocator = std.testing.allocator };
+    defer module.deinit();
+    const string_id = module.expressions.items.len;
+    try module.expressions.append(std.testing.allocator, .{ .span = .{ .first = 0, .last = 16, .line = 1 }, .kind = .{ .string = "r'C:\\data\\input.rk'" } });
+    try module.statements.append(std.testing.allocator, .{ .span = .{ .first = 0, .last = 16, .line = 1 }, .kind = .{ .expression = @intCast(string_id) } });
+    var compile = compiler.Compiler.init(std.testing.allocator);
+    var chunk = try compile.compileAstModule(&module);
+    defer chunk.deinit();
+    var vm = try vm_mod.Vm.init(std.testing.allocator);
+    defer vm.deinit();
+    const result = try vm.runValue(&chunk);
+    try std.testing.expectEqualStrings("C:\\data\\input.rk", vm.strings.items[result.handleIndex().?].bytes);
 }
 
 test "AST boolean lowering preserves boolean values" {
@@ -110,6 +635,64 @@ test "AST logical binary lowering returns boolean truthiness" {
     const value = try vm.runValue(&chunk);
     try std.testing.expect(value.isBool());
     try std.testing.expect(value.asBool());
+}
+
+test "AST float lowering preserves IEEE arithmetic and comparisons" {
+    var module = ast.Module{ .allocator = std.testing.allocator };
+    defer module.deinit();
+    const left = module.expressions.items.len;
+    try module.expressions.append(std.testing.allocator, .{ .span = .{ .first = 0, .last = 3, .line = 1 }, .kind = .{ .float = 1.5 } });
+    const right = module.expressions.items.len;
+    try module.expressions.append(std.testing.allocator, .{ .span = .{ .first = 6, .last = 8, .line = 1 }, .kind = .{ .float = 2.0 } });
+    const result = module.expressions.items.len;
+    try module.expressions.append(std.testing.allocator, .{ .span = .{ .first = 0, .last = 8, .line = 1 }, .kind = .{ .binary = .{ .op = .multiply, .left = @intCast(left), .right = @intCast(right) } } });
+    try module.statements.append(std.testing.allocator, .{ .span = .{ .first = 0, .last = 8, .line = 1 }, .kind = .{ .expression = @intCast(result) } });
+    var compile = compiler.Compiler.init(std.testing.allocator);
+    var chunk = try compile.compileAstModule(&module);
+    defer chunk.deinit();
+    var vm = try vm_mod.Vm.init(std.testing.allocator);
+    defer vm.deinit();
+    const value = try vm.runValue(&chunk);
+    try std.testing.expect(value.isFloat());
+    try std.testing.expectEqual(@as(f64, 3.0), value.asFloat());
+}
+
+test "mixed numeric operations widen integers to floats" {
+    var module = ast.Module{ .allocator = std.testing.allocator };
+    defer module.deinit();
+    const integer_id = module.expressions.items.len;
+    try module.expressions.append(std.testing.allocator, .{ .span = .{ .first = 0, .last = 1, .line = 1 }, .kind = .{ .integer = 3 } });
+    const float_id = module.expressions.items.len;
+    try module.expressions.append(std.testing.allocator, .{ .span = .{ .first = 4, .last = 6, .line = 1 }, .kind = .{ .float = 0.5 } });
+    const result_id = module.expressions.items.len;
+    try module.expressions.append(std.testing.allocator, .{ .span = .{ .first = 0, .last = 6, .line = 1 }, .kind = .{ .binary = .{ .op = .add, .left = @intCast(integer_id), .right = @intCast(float_id) } } });
+    try module.statements.append(std.testing.allocator, .{ .span = .{ .first = 0, .last = 6, .line = 1 }, .kind = .{ .expression = @intCast(result_id) } });
+    var compile = compiler.Compiler.init(std.testing.allocator);
+    var chunk = try compile.compileAstModule(&module);
+    defer chunk.deinit();
+    var vm = try vm_mod.Vm.init(std.testing.allocator);
+    defer vm.deinit();
+    const value = try vm.runValue(&chunk);
+    try std.testing.expect(value.isFloat());
+    try std.testing.expectEqual(@as(f64, 3.5), value.asFloat());
+}
+
+test "float division by zero raises the numeric runtime error" {
+    var module = ast.Module{ .allocator = std.testing.allocator };
+    defer module.deinit();
+    const numerator = module.expressions.items.len;
+    try module.expressions.append(std.testing.allocator, .{ .span = .{ .first = 0, .last = 2, .line = 1 }, .kind = .{ .float = 1.0 } });
+    const denominator = module.expressions.items.len;
+    try module.expressions.append(std.testing.allocator, .{ .span = .{ .first = 5, .last = 7, .line = 1 }, .kind = .{ .float = 0.0 } });
+    const result = module.expressions.items.len;
+    try module.expressions.append(std.testing.allocator, .{ .span = .{ .first = 0, .last = 7, .line = 1 }, .kind = .{ .binary = .{ .op = .divide, .left = @intCast(numerator), .right = @intCast(denominator) } } });
+    try module.statements.append(std.testing.allocator, .{ .span = .{ .first = 0, .last = 7, .line = 1 }, .kind = .{ .expression = @intCast(result) } });
+    var compile = compiler.Compiler.init(std.testing.allocator);
+    var chunk = try compile.compileAstModule(&module);
+    defer chunk.deinit();
+    var vm = try vm_mod.Vm.init(std.testing.allocator);
+    defer vm.deinit();
+    try std.testing.expectError(error.DivisionByZero, vm.runValue(&chunk));
 }
 
 test "AST array lowering creates an ordered array value" {

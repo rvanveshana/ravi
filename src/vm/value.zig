@@ -104,12 +104,31 @@ pub const Value = enum(u64) {
 
     pub fn eql(left: Value, right: Value) bool {
         if (left.isFloat() and right.isFloat()) return left.asFloat() == right.asFloat();
+        if ((left.isInt() and right.isFloat()) or (left.isFloat() and right.isInt())) {
+            const left_number = if (left.isFloat()) left.asFloat() else @as(f64, @floatFromInt(left.asInt()));
+            const right_number = if (right.isFloat()) right.asFloat() else @as(f64, @floatFromInt(right.asInt()));
+            return left_number == right_number;
+        }
         return @intFromEnum(left) == @intFromEnum(right);
     }
 
     pub fn hash(self: Value) u64 {
         var bits = @intFromEnum(self);
-        if (self.isFloat() and self.asFloat() == 0.0) bits = 0;
+        if (self.isFloat()) {
+            const number = self.asFloat();
+            if (number == 0.0) {
+                bits = 0;
+            } else if (std.math.isFinite(number)) {
+                const min_number = @as(f64, @floatFromInt(min_int));
+                const max_number = @as(f64, @floatFromInt(max_int));
+                if (number >= min_number and number <= max_number) {
+                    const integer = @as(i64, @intFromFloat(number));
+                    if (@as(f64, @floatFromInt(integer)) == number) bits = @intFromEnum(Value.fromInt(integer));
+                }
+            }
+        } else if (self.isInt()) {
+            bits = @intFromEnum(Value.fromInt(self.asInt()));
+        }
         bits ^= bits >> 30;
         bits *%= 0xbf58476d1ce4e5b9;
         bits ^= bits >> 27;
@@ -169,6 +188,8 @@ test "typed handles cannot collide across runtime object kinds" {
 test "value equality hashing and truthiness have stable edge semantics" {
     try std.testing.expect(Value.eql(Value.fromFloat(-0.0), Value.fromFloat(0.0)));
     try std.testing.expectEqual(Value.fromFloat(-0.0).hash(), Value.fromFloat(0.0).hash());
+    try std.testing.expect(Value.eql(Value.fromInt(3), Value.fromFloat(3.0)));
+    try std.testing.expectEqual(Value.fromInt(3).hash(), Value.fromFloat(3.0).hash());
     try std.testing.expect(!Value.eql(Value.fromFloat(std.math.nan(f64)), Value.fromFloat(std.math.nan(f64))));
     try std.testing.expect(!Value.nil().truthy());
     try std.testing.expect(!Value.fromInt(0).truthy());

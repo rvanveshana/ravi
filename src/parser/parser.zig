@@ -4,6 +4,40 @@ const ast = @import("ravi_ast");
 const config = @import("ravi_config");
 const precedence = @import("precedence.zig");
 
+fn formattedPlaceholderEnd(source: []const u8, start: usize, end: usize) ?usize {
+    var parentheses: usize = 0;
+    var brackets: usize = 0;
+    var braces: usize = 0;
+    var quote: u8 = 0;
+    var escaped = false;
+    var index = start;
+    while (index < end) : (index += 1) {
+        const character = source[index];
+        if (quote != 0) {
+            if (escaped) escaped = false else if (character == '\\') escaped = true else if (character == quote) quote = 0;
+            continue;
+        }
+        if (character == '\'' or character == '"') quote = character else if (character == '(') parentheses += 1 else if (character == '[') brackets += 1 else if (character == '{') braces += 1 else if (character == ')' and parentheses > 0) parentheses -= 1 else if (character == ']' and brackets > 0) brackets -= 1 else if (character == '}' and braces > 0) braces -= 1 else if (character == '}' and parentheses == 0 and brackets == 0) return index;
+    }
+    return null;
+}
+
+fn formatExpressionEnd(source: []const u8) usize {
+    var parentheses: usize = 0;
+    var brackets: usize = 0;
+    var braces: usize = 0;
+    var quote: u8 = 0;
+    var escaped = false;
+    for (source, 0..) |character, index| {
+        if (quote != 0) {
+            if (escaped) escaped = false else if (character == '\\') escaped = true else if (character == quote) quote = 0;
+            continue;
+        }
+        if (character == '\'' or character == '"') quote = character else if (character == '(') parentheses += 1 else if (character == '[') brackets += 1 else if (character == '{') braces += 1 else if (character == ')' and parentheses > 0) parentheses -= 1 else if (character == ']' and brackets > 0) brackets -= 1 else if (character == '}' and braces > 0) braces -= 1 else if (character == ':' and parentheses == 0 and brackets == 0 and braces == 0) return index;
+    }
+    return source.len;
+}
+
 pub const ParseError = std.mem.Allocator.Error || error{ UnexpectedToken, MissingSuite, InvalidImportOrder, MissingName, InvalidExpression, InvalidNumber, UnterminatedCall };
 
 pub const Parser = struct {
@@ -69,12 +103,25 @@ pub const Parser = struct {
     fn parseStatement(self: *Parser, module: *ast.Module, out: *std.ArrayListUnmanaged(ast.Stmt)) ParseError!void {
         const start = self.index;
         var visibility: ast.Visibility = .public;
-        if (self.word("saarva") or self.word("swanta") or self.word("vansha") or self.word("olage") or self.word("public") or self.word("private") or self.word("protected") or self.word("internal")) {
-            visibility = if (self.word("swanta") or self.word("private")) .private else if (self.word("vansha") or self.word("protected")) .protected else if (self.word("olage") or self.word("internal")) .internal else .public;
+        if (self.word("public") or self.word("private") or self.word("protected") or self.word("internal")) {
+            visibility = if (self.word("private")) .private else if (self.word("protected")) .protected else if (self.word("internal")) .internal else .public;
             self.index += 1;
         }
-        if (self.isImportStart()) try self.parseImport(module, out, start) else if (self.word("roopa")) try self.parseClass(module, out, start, visibility) else if (self.word("kriya")) try self.parseFunction(module, out, start, visibility) else if (self.word("kodu") or self.word("taru")) try self.parseReturn(module, out, start) else if (self.word("nillu") or self.word("munde") or self.word("yese")) try self.parseTransfer(module, out, start) else if (self.isControl()) try self.parseControl(module, out, start) else if (self.at(.identifier) and self.index + 1 < self.tokens.len and self.tokens[self.index + 1].kind == .colon) try self.parseTypedAssignment(module, out, start) else {
+        if (self.isImportStart()) try self.parseImport(module, out, start) else if (self.word("class")) try self.parseClass(module, out, start, visibility) else if (self.word("function")) try self.parseFunction(module, out, start, visibility) else if (self.word("return") or self.word("yield")) try self.parseReturn(module, out, start) else if (self.word("break") or self.word("continue") or self.word("raise")) try self.parseTransfer(module, out, start) else if (self.isControl()) try self.parseControl(module, out, start) else if (self.at(.identifier) and self.index + 1 < self.tokens.len and self.tokens[self.index + 1].kind == .colon) try self.parseTypedAssignment(module, out, start) else {
             const value = try self.parseExpression(module, 0);
+            if (self.word("with")) {
+                self.index += 1;
+                var binding: ?[]const u8 = null;
+                if (self.at(.identifier)) {
+                    binding = self.tokens[self.index].lexeme;
+                    self.index += 1;
+                    if (!self.word("as")) return error.UnexpectedToken;
+                    self.index += 1;
+                }
+                const body = try self.parseSuite(module);
+                try out.append(self.allocator, .{ .span = .{ .first = start, .last = self.index, .line = self.tokens[start].line }, .kind = .{ .context = .{ .value = value, .binding = binding, .body_first = body.first, .body_count = body.count } } });
+                return;
+            }
             if (self.at(.newline)) self.index += 1;
             try out.append(self.allocator, .{ .span = .{ .first = start, .last = self.index, .line = self.tokens[start].line }, .kind = .{ .expression = value } });
         }
@@ -99,15 +146,15 @@ pub const Parser = struct {
     fn parseImport(self: *Parser, module: *ast.Module, out: *std.ArrayListUnmanaged(ast.Stmt), start: usize) ParseError!void {
         const module_name = self.tokens[self.index].lexeme;
         self.index += 1;
-        if (!self.word("inda")) return error.InvalidImportOrder;
+        if (!self.word("from")) return error.InvalidImportOrder;
         self.index += 1;
         const first = module.import_names.items.len;
-        while (!self.at(.newline) and !self.at(.eof) and !self.word("tago")) {
+        while (!self.at(.newline) and !self.at(.eof) and !self.word("import")) {
             if (!self.at(.identifier) and !self.at(.comma)) return error.InvalidImportOrder;
             if (self.at(.identifier)) try module.import_names.append(self.allocator, self.tokens[self.index].lexeme);
             self.index += 1;
         }
-        if (module.import_names.items.len == first or !self.word("tago")) return error.InvalidImportOrder;
+        if (module.import_names.items.len == first or !self.word("import")) return error.InvalidImportOrder;
         self.index += 1;
         if (self.at(.newline)) self.index += 1;
         try out.append(self.allocator, .{ .span = .{ .first = start, .last = self.index, .line = self.tokens[start].line }, .kind = .{ .import = .{ .module = module_name, .names_first = first, .names_count = module.import_names.items.len - first } } });
@@ -137,12 +184,14 @@ pub const Parser = struct {
                     annotation = self.tokens[self.index].lexeme;
                     self.index += 1;
                 }
+                var default_value: ?i64 = null;
                 if (self.at(.operator) and std.mem.eql(u8, self.tokens[self.index].lexeme, "=")) {
                     self.index += 1;
                     if (!self.at(.number)) return error.InvalidNumber;
+                    default_value = std.fmt.parseInt(i64, self.tokens[self.index].lexeme, 10) catch return error.InvalidNumber;
                     self.index += 1;
                 }
-                try module.parameters.append(self.allocator, .{ .name = pname, .annotation = annotation, .span = .{ .first = pstart, .last = self.index, .line = self.tokens[pstart].line } });
+                try module.parameters.append(self.allocator, .{ .name = pname, .annotation = annotation, .span = .{ .first = pstart, .last = self.index, .line = self.tokens[pstart].line }, .default_value = default_value });
                 if (self.at(.comma)) self.index += 1 else if (!self.at(.r_paren)) return error.UnexpectedToken;
             }
             self.index += 1;
@@ -169,12 +218,15 @@ pub const Parser = struct {
     }
 
     fn parseTransfer(self: *Parser, module: *ast.Module, out: *std.ArrayListUnmanaged(ast.Stmt), start: usize) ParseError!void {
-        _ = module;
-        const keyword = self.tokens[self.index].lexeme;
-        const is_raise = self.word("yese");
+        const keyword = config.keywordCanonicalFor(self.language, self.tokens[self.index].lexeme) orelse self.tokens[self.index].lexeme;
+        const is_raise = self.word("raise");
         self.index += 1;
         if (is_raise) {
-            while (!self.at(.newline) and !self.at(.eof)) self.index += 1;
+            var value: ?ast.ExprId = null;
+            if (!self.at(.newline) and !self.at(.dedent) and !self.at(.eof)) value = try self.parseExpression(module, 0);
+            if (self.at(.newline)) self.index += 1;
+            try out.append(self.allocator, .{ .span = .{ .first = start, .last = self.index, .line = self.tokens[start].line }, .kind = .{ .raise_stmt = value } });
+            return;
         }
         if (self.at(.newline)) self.index += 1;
         try out.append(self.allocator, .{ .span = .{ .first = start, .last = self.index, .line = self.tokens[start].line }, .kind = .{ .transfer = keyword } });
@@ -203,12 +255,61 @@ pub const Parser = struct {
     }
 
     fn parseControl(self: *Parser, module: *ast.Module, out: *std.ArrayListUnmanaged(ast.Stmt), start: usize) ParseError!void {
-        const keyword = self.tokens[self.index].lexeme;
+        const keyword = config.keywordCanonicalFor(self.language, self.tokens[self.index].lexeme) orelse self.tokens[self.index].lexeme;
         self.index += 1;
+        if (std.mem.eql(u8, keyword, "try")) {
+            const body = try self.parseSuite(module);
+            var except_first: usize = 0;
+            var except_count: usize = 0;
+            var except_binding: ?[]const u8 = null;
+            var except_match: ?ast.ExprId = null;
+            var finally_first: usize = 0;
+            var finally_count: usize = 0;
+            if (self.word("except")) {
+                self.index += 1;
+                if (self.at(.number)) {
+                    except_match = try self.parseExpression(module, 0);
+                } else if (self.at(.identifier)) {
+                    except_binding = self.tokens[self.index].lexeme;
+                    self.index += 1;
+                }
+                while (!self.at(.colon) and !self.at(.newline) and !self.at(.eof)) self.index += 1;
+                const except_body = try self.parseSuite(module);
+                except_first = except_body.first;
+                except_count = except_body.count;
+            }
+            if (self.word("finally")) {
+                self.index += 1;
+                const finally_body = try self.parseSuite(module);
+                finally_first = finally_body.first;
+                finally_count = finally_body.count;
+            }
+            try out.append(self.allocator, .{ .span = .{ .first = start, .last = self.index, .line = self.tokens[start].line }, .kind = .{ .try_stmt = .{ .body_first = body.first, .body_count = body.count, .except_first = except_first, .except_count = except_count, .except_binding = except_binding, .except_match = except_match, .finally_first = finally_first, .finally_count = finally_count } } });
+            return;
+        }
+        if (std.mem.eql(u8, keyword, "for")) {
+            if (!self.at(.identifier)) return error.MissingName;
+            const target = self.tokens[self.index].lexeme;
+            self.index += 1;
+            if (!self.word("in")) return error.UnexpectedToken;
+            self.index += 1;
+            const iterable = try self.parseExpression(module, 0);
+            const body = try self.parseSuite(module);
+            try out.append(self.allocator, .{ .span = .{ .first = start, .last = self.index, .line = self.tokens[start].line }, .kind = .{ .control = .{ .keyword = keyword, .condition = null, .body_first = body.first, .body_count = body.count, .target = target, .iterable = iterable } } });
+            return;
+        }
         var condition: ?ast.ExprId = null;
         if (!self.at(.colon)) condition = try self.parseExpression(module, 0);
         const body = try self.parseSuite(module);
-        try out.append(self.allocator, .{ .span = .{ .first = start, .last = self.index, .line = self.tokens[start].line }, .kind = .{ .control = .{ .keyword = keyword, .condition = condition, .body_first = body.first, .body_count = body.count } } });
+        var else_first: usize = 0;
+        var else_count: usize = 0;
+        if (std.mem.eql(u8, keyword, "if") and self.word("else")) {
+            self.index += 1;
+            const else_body = try self.parseSuite(module);
+            else_first = else_body.first;
+            else_count = else_body.count;
+        }
+        try out.append(self.allocator, .{ .span = .{ .first = start, .last = self.index, .line = self.tokens[start].line }, .kind = .{ .control = .{ .keyword = keyword, .condition = condition, .body_first = body.first, .body_count = body.count, .else_first = else_first, .else_count = else_count } } });
     }
 
     fn parseSuite(self: *Parser, module: *ast.Module) ParseError!struct { first: usize, count: usize } {
@@ -235,27 +336,26 @@ pub const Parser = struct {
             if (self.at(.operator) and std.mem.eql(u8, self.tokens[self.index].lexeme, "=")) {
                 if (min_bp > 1) break;
                 const target = module.expressions.items[left].kind;
+                const is_member_target = switch (target) {
+                    .member => true,
+                    else => false,
+                };
                 const name = switch (target) {
                     .name => |value| value,
+                    .member => |value| value.name,
                     else => return error.InvalidExpression,
                 };
                 self.index += 1;
                 const value = try self.parseExpression(module, 1);
-                left = try appendExpr(module, .{ .span = .{ .first = start, .last = self.index, .line = self.tokens[start].line }, .kind = .{ .assignment = .{ .name = name, .value = value } } });
+                left = try appendExpr(module, .{ .span = .{ .first = start, .last = self.index, .line = self.tokens[start].line }, .kind = .{ .assignment = .{ .name = name, .value = value, .target = if (is_member_target) left else null } } });
                 continue;
             }
             if (self.at(.dot)) {
                 self.index += 1;
                 if (!self.at(.identifier)) return error.MissingName;
+                const member_name = self.tokens[self.index].lexeme;
                 self.index += 1;
-                if (self.at(.l_paren)) {
-                    self.index += 1;
-                    while (!self.at(.r_paren)) {
-                        _ = try self.parseExpression(module, 0);
-                        if (self.at(.comma)) self.index += 1 else if (!self.at(.r_paren)) return error.UnexpectedToken;
-                    }
-                    self.index += 1;
-                }
+                left = try appendExpr(module, .{ .span = .{ .first = start, .last = self.index, .line = self.tokens[start].line }, .kind = .{ .member = .{ .object = left, .name = member_name } } });
                 continue;
             }
             if (self.at(.l_paren)) {
@@ -308,18 +408,19 @@ pub const Parser = struct {
     fn parsePrefix(self: *Parser, module: *ast.Module) ParseError!ast.ExprId {
         const token = self.tokens[self.index];
         const start = self.index;
-        if (self.word("kriya")) return self.parseLambda(module, start);
+        if (self.word("function")) return self.parseLambda(module, start);
         if (self.at(.operator) and (std.mem.eql(u8, token.lexeme, "-") or std.mem.eql(u8, token.lexeme, "+"))) {
             self.index += 1;
             const operand = try self.parseExpression(module, 80);
             if (std.mem.eql(u8, token.lexeme, "+")) return operand;
             return appendExpr(module, .{ .span = .{ .first = start, .last = self.index, .line = token.line }, .kind = .{ .unary = .{ .op = .negate, .operand = operand } } });
         }
-        if (self.word("alla")) {
+        if (self.word("not")) {
             self.index += 1;
             const operand = try self.parseExpression(module, 80);
             return appendExpr(module, .{ .span = .{ .first = start, .last = self.index, .line = token.line }, .kind = .{ .unary = .{ .op = .not, .operand = operand } } });
         }
+        if (token.kind == .string and token.lexeme.len > 1 and (token.lexeme[0] == 'f' or token.lexeme[0] == 'F')) return self.parseFormattedString(module, start);
         if (self.at(.l_paren)) {
             self.index += 1;
             const first = module.expressions.items.len;
@@ -379,6 +480,67 @@ pub const Parser = struct {
         return appendExpr(module, .{ .span = .{ .first = start, .last = self.index, .line = token.line }, .kind = kind });
     }
 
+    fn parseFormattedString(self: *Parser, module: *ast.Module, start: usize) ParseError!ast.ExprId {
+        const token = self.tokens[self.index];
+        const raw = token.lexeme;
+        const triple = raw.len >= 8 and raw[1] == raw[2] and raw[2] == raw[3];
+        const content_start: usize = if (triple) 4 else 2;
+        const trim: usize = if (triple) 3 else 1;
+        if (raw.len < content_start + trim or raw[raw.len - trim] != raw[content_start - 1]) return error.InvalidExpression;
+        const content_end = raw.len - trim;
+        const first_arg = module.format_args.items.len;
+        var argument_count: usize = 0;
+        var cursor = content_start;
+        while (cursor < content_end) {
+            if (raw[cursor] == '{') {
+                if (cursor + 1 < content_end and raw[cursor + 1] == '{') {
+                    cursor += 2;
+                    continue;
+                }
+                const expression_start = cursor + 1;
+                const close = formattedPlaceholderEnd(raw, expression_start, content_end) orelse return error.InvalidExpression;
+                if (close == expression_start) return error.InvalidExpression;
+                const expression = raw[expression_start..close];
+                const expression_end = formatExpressionEnd(expression);
+                if (expression_end == 0) return error.InvalidExpression;
+                const expression_id = try self.parseFormattedExpression(module, expression[0..expression_end], start, token.line);
+                try module.format_args.append(self.allocator, expression_id);
+                argument_count += 1;
+                cursor = close + 1;
+            } else if (raw[cursor] == '}') {
+                if (cursor + 1 < content_end and raw[cursor + 1] == '}') {
+                    cursor += 2;
+                    continue;
+                }
+                return error.InvalidExpression;
+            } else cursor += 1;
+        }
+        self.index += 1;
+        return appendExpr(module, .{ .span = .{ .first = start, .last = self.index, .line = token.line }, .kind = .{ .formatted_string = .{ .template = raw, .first_arg = first_arg, .arg_count = argument_count } } });
+    }
+
+    fn parseFormattedExpression(self: *Parser, module: *ast.Module, source: []const u8, start: usize, line: usize) ParseError!ast.ExprId {
+        var scan = lexer_mod.Lexer.initWithLanguage(self.allocator, source, self.language) catch return error.OutOfMemory;
+        defer scan.deinit();
+        const tokens = scan.tokenize() catch return error.InvalidExpression;
+        var nested_parser = Parser.initWithLanguage(self.allocator, tokens, self.language);
+        var nested = nested_parser.parse() catch return error.InvalidExpression;
+        defer nested.deinit();
+        if (nested.diagnostics.items.len != 0 or nested.statements.items.len != 1) return error.InvalidExpression;
+        const nested_id = switch (nested.statements.items[0].kind) {
+            .expression => |expression| expression,
+            else => return error.InvalidExpression,
+        };
+        const offset = module.expressions.items.len;
+        for (nested.expressions.items) |expression| {
+            var copy = expression;
+            remapExpressionIds(&copy, offset) catch return error.InvalidExpression;
+            copy.span = .{ .first = start, .last = start + source.len, .line = line };
+            try module.expressions.append(self.allocator, copy);
+        }
+        return @intCast(offset + @as(usize, nested_id));
+    }
+
     fn parseLambda(self: *Parser, module: *ast.Module, start: usize) ParseError!ast.ExprId {
         self.index += 1;
         const first = module.parameters.items.len;
@@ -419,12 +581,11 @@ pub const Parser = struct {
     fn word(self: *Parser, text: []const u8) bool {
         if (self.index >= self.tokens.len) return false;
         const token = self.tokens[self.index];
-        const expected = config.keywordCanonicalFor(.kn, text) orelse text;
         const actual = config.keywordCanonicalFor(self.language, token.lexeme) orelse token.lexeme;
-        return std.mem.eql(u8, actual, expected);
+        return std.mem.eql(u8, actual, text);
     }
     fn isControl(self: *Parser) bool {
-        return self.word("adre") or self.word("inadre") or self.word("illa") or self.word("vargu") or self.word("prati") or self.word("nodu") or self.word("tappu") or self.word("kone");
+        return self.word("if") or self.word("elif") or self.word("else") or self.word("while") or self.word("for") or self.word("try") or self.word("except") or self.word("finally");
     }
     fn isImportStart(self: *Parser) bool {
         return self.at(.identifier) and self.index + 1 < self.tokens.len and config.keywordCanonicalFor(self.language, self.tokens[self.index + 1].lexeme) != null and std.mem.eql(u8, config.keywordCanonicalFor(self.language, self.tokens[self.index + 1].lexeme).?, "from");
@@ -435,4 +596,47 @@ fn appendExpr(module: *ast.Module, expression: ast.Expr) ParseError!ast.ExprId {
     const id: ast.ExprId = @intCast(module.expressions.items.len);
     try module.expressions.append(module.allocator, expression);
     return id;
+}
+
+fn remapExpressionIds(expression: *ast.Expr, offset: usize) ParseError!void {
+    switch (expression.kind) {
+        .unary => |*value| value.operand = try remapExpressionId(value.operand, offset),
+        .binary => |*value| {
+            value.left = try remapExpressionId(value.left, offset);
+            value.right = try remapExpressionId(value.right, offset);
+        },
+        .call => |*value| {
+            value.callee = try remapExpressionId(value.callee, offset);
+            value.first_arg = try remapExpressionIndex(value.first_arg, offset);
+        },
+        .assignment => |*value| {
+            value.value = try remapExpressionId(value.value, offset);
+            if (value.target) |target| value.target = try remapExpressionId(target, offset);
+        },
+        .member => |*value| value.object = try remapExpressionId(value.object, offset),
+        .lambda => |*value| value.body = try remapExpressionId(value.body, offset),
+        .array => |*value| value.first = try remapExpressionIndex(value.first, offset),
+        .tuple => |*value| value.first = try remapExpressionIndex(value.first, offset),
+        .set => |*value| value.first = try remapExpressionIndex(value.first, offset),
+        .map => |*value| value.first = try remapExpressionIndex(value.first, offset),
+        .index => |*value| {
+            value.object = try remapExpressionId(value.object, offset);
+            value.index = try remapExpressionId(value.index, offset);
+        },
+        .slice => |*value| {
+            if (value.start) |start| value.start = try remapExpressionId(start, offset);
+            if (value.end) |end| value.end = try remapExpressionId(end, offset);
+        },
+        .formatted_string => return error.InvalidExpression,
+        else => {},
+    }
+}
+
+fn remapExpressionId(value: ast.ExprId, offset: usize) ParseError!ast.ExprId {
+    const mapped = std.math.add(usize, @as(usize, value), offset) catch return error.InvalidExpression;
+    return @intCast(mapped);
+}
+
+fn remapExpressionIndex(value: usize, offset: usize) ParseError!usize {
+    return std.math.add(usize, value, offset) catch return error.InvalidExpression;
 }

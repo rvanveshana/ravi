@@ -25,6 +25,7 @@ pub fn handleFault(self: anytype, ip: *usize) bool {
     self.last_exception = @import("ravi_vm_value").Value.fromInt(1);
     self.handler_active = false;
     self.stack_top = self.handler_stack_top;
+    push(self, self.last_exception) catch return false;
     unwindFrames(self, self.handler_frame_top);
     self.trace_count = self.handler_trace_count;
     ip.* = if (self.handler_ip == 0) 0 else self.handler_ip - 1;

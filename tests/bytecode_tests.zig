@@ -44,6 +44,34 @@ test "verifier rejects hostile operands and invalid metadata without overflow" {
     try string.emit(.{ .op = .make_string, .operand = 0 });
     try string.emit(.{ .op = .halt });
     try std.testing.expectError(error.InvalidInstruction, string.verify());
+
+    var float = bytecode.Chunk.init(std.testing.allocator);
+    defer float.deinit();
+    try float.emit(.{ .op = .make_float, .operand = 0 });
+    try float.emit(.{ .op = .halt });
+    try std.testing.expectError(error.InvalidInstruction, float.verify());
+
+    var format = bytecode.Chunk.init(std.testing.allocator);
+    defer format.deinit();
+    _ = try format.addFormat("f\"{value}\"", std.math.maxInt(usize));
+    try format.emit(.{ .op = .make_format, .operand = 0 });
+    try format.emit(.{ .op = .halt });
+    try std.testing.expectError(error.InvalidInstruction, format.verify());
+}
+
+test "verifier validates suspension operands and function metadata" {
+    var chunk = bytecode.Chunk.init(std.testing.allocator);
+    defer chunk.deinit();
+    try chunk.emit(.{ .op = .suspend_point, .operand = -1 });
+    try chunk.emit(.{ .op = .halt });
+    try std.testing.expectError(error.InvalidInstruction, chunk.verify());
+
+    var metadata = bytecode.Chunk.init(std.testing.allocator);
+    defer metadata.deinit();
+    try metadata.emit(.{ .op = .halt });
+    try metadata.emit(.{ .op = .return_value });
+    _ = try metadata.addFunction(.{ .entry = 1, .arity = 0, .name = "broken", .resumable = true, .suspension_count = 0 });
+    try std.testing.expectError(error.InvalidInstruction, metadata.verify());
 }
 
 test "verifier survives deterministic malformed-bytecode fuzz corpus" {

@@ -28,6 +28,41 @@ pub const collection_primitives = collections;
 pub const RuntimeError = errors.RuntimeError;
 pub const RuntimeType = errors.TypeId;
 const Frame = frames.Frame;
+
+fn formatPlaceholderEnd(template: []const u8, start: usize, end: usize) ?usize {
+    var parentheses: usize = 0;
+    var brackets: usize = 0;
+    var braces: usize = 0;
+    var quote: u8 = 0;
+    var escaped = false;
+    var index = start;
+    while (index < end) : (index += 1) {
+        const character = template[index];
+        if (quote != 0) {
+            if (escaped) escaped = false else if (character == '\\') escaped = true else if (character == quote) quote = 0;
+            continue;
+        }
+        if (character == '\'' or character == '"') quote = character else if (character == '(') parentheses += 1 else if (character == '[') brackets += 1 else if (character == '{') braces += 1 else if (character == ')' and parentheses > 0) parentheses -= 1 else if (character == ']' and brackets > 0) brackets -= 1 else if (character == '}' and braces > 0) braces -= 1 else if (character == '}' and parentheses == 0 and brackets == 0) return index;
+    }
+    return null;
+}
+
+fn formatSpecStart(placeholder: []const u8) ?usize {
+    var parentheses: usize = 0;
+    var brackets: usize = 0;
+    var braces: usize = 0;
+    var quote: u8 = 0;
+    var escaped = false;
+    for (placeholder, 0..) |character, index| {
+        if (quote != 0) {
+            if (escaped) escaped = false else if (character == '\\') escaped = true else if (character == quote) quote = 0;
+            continue;
+        }
+        if (character == '\'' or character == '"') quote = character else if (character == '(') parentheses += 1 else if (character == '[') brackets += 1 else if (character == '{') braces += 1 else if (character == ')' and parentheses > 0) parentheses -= 1 else if (character == ']' and brackets > 0) brackets -= 1 else if (character == '}' and braces > 0) braces -= 1 else if (character == ':' and parentheses == 0 and brackets == 0 and braces == 0) return index;
+    }
+    return null;
+}
+
 pub const TraceFrame = trace_runtime.Frame;
 pub const Vm = struct {
     allocator: std.mem.Allocator,
@@ -59,6 +94,61 @@ pub const Vm = struct {
     fault_ip: usize = 0,
     debugger: ?*debug.Debugger = null,
     collector: gc.Collector,
+    fn appendPadding(output: *std.ArrayListUnmanaged(u8), allocator: std.mem.Allocator, count: usize) RuntimeError!void {
+        var index: usize = 0;
+        while (index < count) : (index += 1) output.append(allocator, ' ') catch return error.OutOfMemory;
+    }
+
+    fn appendFormattedValue(output: *std.ArrayListUnmanaged(u8), allocator: std.mem.Allocator, value: Value, vm: anytype, spec: []const u8) RuntimeError!void {
+        var alignment: u8 = '>';
+        var width: usize = 0;
+        var type_marker: u8 = 0;
+        var cursor: usize = 0;
+        if (spec.len > 0 and (spec[0] == '<' or spec[0] == '>' or spec[0] == '^')) {
+            alignment = spec[0];
+            cursor = 1;
+        }
+        while (cursor < spec.len and std.ascii.isDigit(spec[cursor])) : (cursor += 1) width = std.math.mul(usize, width, 10) catch return error.StringTooLong;
+        if (cursor < spec.len) {
+            if (cursor + 1 != spec.len or (spec[cursor] != 's' and spec[cursor] != 'd' and spec[cursor] != 'f')) return error.InvalidInstruction;
+            type_marker = spec[cursor];
+        }
+        if (type_marker == 'd' and !value.isInt()) return error.TypeGuardFailed;
+        if (type_marker == 'f' and !value.isFloat() and !value.isInt()) return error.TypeGuardFailed;
+        if (type_marker == 's' and (value.handleKind() != .string)) return error.TypeGuardFailed;
+        var rendered: std.ArrayListUnmanaged(u8) = .empty;
+        defer rendered.deinit(allocator);
+        if (value.isNil()) {
+            rendered.appendSlice(allocator, "none") catch return error.OutOfMemory;
+        } else if (value.isBool()) {
+            rendered.appendSlice(allocator, if (value.asBool()) "true" else "false") catch return error.OutOfMemory;
+        } else if (value.isInt()) {
+            var buffer: [64]u8 = undefined;
+            const text = std.fmt.bufPrint(&buffer, "{d}", .{value.asInt()}) catch return error.StringTooLong;
+            rendered.appendSlice(allocator, text) catch return error.OutOfMemory;
+        } else if (value.isFloat()) {
+            var buffer: [96]u8 = undefined;
+            const text = std.fmt.bufPrint(&buffer, "{d}", .{value.asFloat()}) catch return error.StringTooLong;
+            rendered.appendSlice(allocator, text) catch return error.OutOfMemory;
+        } else if (value.handleKind() == .string) {
+            const text = vm.stringSlice(value) orelse return error.InvalidInstruction;
+            rendered.appendSlice(allocator, text) catch return error.OutOfMemory;
+        } else {
+            rendered.appendSlice(allocator, "<value>") catch return error.OutOfMemory;
+        }
+        const padding = if (width > rendered.items.len) width - rendered.items.len else 0;
+        if (alignment == '<') {
+            output.appendSlice(allocator, rendered.items) catch return error.OutOfMemory;
+            try appendPadding(output, allocator, padding);
+        } else if (alignment == '^') {
+            try appendPadding(output, allocator, padding / 2);
+            output.appendSlice(allocator, rendered.items) catch return error.OutOfMemory;
+            try appendPadding(output, allocator, padding - padding / 2);
+        } else {
+            try appendPadding(output, allocator, padding);
+            output.appendSlice(allocator, rendered.items) catch return error.OutOfMemory;
+        }
+    }
     pub fn init(allocator: std.mem.Allocator) !Vm {
         const stack = try allocator.alloc(Value, 256);
         errdefer allocator.free(stack);
@@ -112,6 +202,7 @@ pub const Vm = struct {
         // verifier; locations are intentionally zeroed rather than guessed.
         for (chunk.code.items) |_| chunk.source_map.append(self.allocator, .{ .start_offset = 0, .end_offset = 0, .line = 0, .column = 0 }) catch return error.OutOfMemory;
         chunk.strings.appendSlice(self.allocator, template.strings.items) catch return error.OutOfMemory;
+        chunk.formats.appendSlice(self.allocator, template.formats.items) catch return error.OutOfMemory;
         chunk.functions.appendSlice(self.allocator, template.functions.items) catch return error.OutOfMemory;
         chunk.classes.appendSlice(self.allocator, template.classes.items) catch return error.OutOfMemory;
         chunk.methods.appendSlice(self.allocator, template.methods.items) catch return error.OutOfMemory;
@@ -170,15 +261,22 @@ pub const Vm = struct {
                 .halt => return if (self.stack_top == 0) Value.nil() else self.stack[self.stack_top - 1],
                 .suspend_point => {},
                 .constant => try self.push(try integer(instruction.operand)),
+                .make_float => {
+                    if (instruction.operand < 0 or instruction.operand >= @as(i64, @intCast(chunk.floats.items.len))) return error.InvalidInstruction;
+                    try self.push(Value.fromFloat(chunk.floats.items[@intCast(instruction.operand)]));
+                },
                 .true_value => try self.push(Value.fromBool(true)),
                 .false_value => try self.push(Value.fromBool(false)),
                 .make_string => {
                     if (instruction.operand < 0 or instruction.operand >= @as(i64, @intCast(chunk.strings.items.len))) return error.InvalidInstruction;
                     const raw = chunk.strings.items[@intCast(instruction.operand)];
                     if (raw.len < 2) return error.InvalidInstruction;
-                    const quote = raw[0];
-                    const start: usize = if (raw.len >= 6 and raw[0] == quote and raw[1] == quote and raw[2] == quote) 3 else 1;
-                    const trim: usize = if (start == 3) 3 else 1;
+                    const prefixed_raw = raw[0] == 'r' or raw[0] == 'R';
+                    const quote = raw[if (prefixed_raw) 1 else 0];
+                    const content_start: usize = if (prefixed_raw) 1 else 0;
+                    const triple = raw.len >= content_start + 6 and raw[content_start] == quote and raw[content_start + 1] == quote and raw[content_start + 2] == quote;
+                    const start: usize = if (triple) content_start + 3 else content_start + 1;
+                    const trim: usize = if (triple) 3 else 1;
                     if (raw.len < start + trim) return error.InvalidInstruction;
                     const decoded = try self.allocator.alloc(u8, raw.len - start - trim);
                     defer self.allocator.free(decoded);
@@ -186,7 +284,7 @@ pub const Vm = struct {
                     var cursor = start;
                     const end = raw.len - trim;
                     while (cursor < end) : (cursor += 1) {
-                        if (raw[cursor] == '\\' and cursor + 1 < end) {
+                        if (!prefixed_raw and raw[cursor] == '\\' and cursor + 1 < end) {
                             cursor += 1;
                             decoded[out] = switch (raw[cursor]) {
                                 'n' => '\n',
@@ -203,6 +301,42 @@ pub const Vm = struct {
                         out += 1;
                     }
                     try self.push(try self.internString(decoded[0..out]));
+                },
+                .make_format => {
+                    if (instruction.operand < 0 or instruction.operand >= @as(i64, @intCast(chunk.formats.items.len))) return error.InvalidInstruction;
+                    const format = chunk.formats.items[@intCast(instruction.operand)];
+                    if (self.stack_top < format.arg_count) return error.StackUnderflow;
+                    const first_arg = self.stack_top - format.arg_count;
+                    var output: std.ArrayListUnmanaged(u8) = .empty;
+                    defer output.deinit(self.allocator);
+                    const estimated_capacity = std.math.add(usize, format.template.len, std.math.mul(usize, format.arg_count, 16) catch return error.StringTooLong) catch return error.StringTooLong;
+                    output.ensureTotalCapacity(self.allocator, estimated_capacity) catch return error.OutOfMemory;
+                    var cursor: usize = if (format.template.len > 0 and (format.template[0] == 'f' or format.template[0] == 'F')) 2 else return error.InvalidInstruction;
+                    const end = if (format.template.len > cursor and format.template[format.template.len - 1] == format.template[cursor - 1]) format.template.len - 1 else return error.InvalidInstruction;
+                    var argument_index: usize = 0;
+                    while (cursor < end) {
+                        if (format.template[cursor] == '{' and cursor + 1 < end and format.template[cursor + 1] == '{') {
+                            try output.append(self.allocator, '{');
+                            cursor += 2;
+                        } else if (format.template[cursor] == '}' and cursor + 1 < end and format.template[cursor + 1] == '}') {
+                            try output.append(self.allocator, '}');
+                            cursor += 2;
+                        } else if (format.template[cursor] == '{') {
+                            const close = formatPlaceholderEnd(format.template, cursor + 1, end) orelse return error.InvalidInstruction;
+                            if (argument_index >= format.arg_count) return error.InvalidInstruction;
+                            const placeholder = format.template[cursor + 1 .. close];
+                            const spec_start = formatSpecStart(placeholder);
+                            try appendFormattedValue(&output, self.allocator, self.stack[first_arg + argument_index], self, if (spec_start) |offset| placeholder[offset + 1 ..] else "");
+                            argument_index += 1;
+                            cursor = close + 1;
+                        } else if (format.template[cursor] == '}') return error.InvalidInstruction else {
+                            try output.append(self.allocator, format.template[cursor]);
+                            cursor += 1;
+                        }
+                    }
+                    if (argument_index != format.arg_count) return error.InvalidInstruction;
+                    self.stack[first_arg] = try self.internString(output.items);
+                    self.stack_top = first_arg + 1;
                 },
                 .make_function => {
                     if (instruction.operand < 0 or instruction.operand >= @as(i64, @intCast(chunk.functions.items.len))) return error.InvalidFunction;
@@ -386,6 +520,18 @@ pub const Vm = struct {
                         if (slot >= self.dict_count) return error.InvalidInstruction;
                         self.stack[self.stack_top - 1] = try integer(@intCast(self.dicts[slot].len));
                     } else return error.InvalidInstruction;
+                },
+                .iterable => {
+                    if (self.stack_top == 0) return error.StackUnderflow;
+                    const handle = self.stack[self.stack_top - 1];
+                    if (dictSlot(handle)) |dict_slot| {
+                        if (dict_slot >= self.dict_count) return error.InvalidInstruction;
+                        const array_slot = try object_storage.newArray(self);
+                        for (0..self.dicts[dict_slot].capacity()) |index| if (self.dicts[dict_slot].occupied[index]) {
+                            try collections.append(self.arrays[array_slot], self.dicts[dict_slot].keys[index]);
+                        };
+                        self.stack[self.stack_top - 1] = try makeHandle(.array, array_slot);
+                    } else if (arraySlot(handle) != null or handle.handleKind() == .string) {} else return error.InvalidInstruction;
                 },
                 .type_query => {
                     if (self.stack_top == 0) return error.StackUnderflow;
@@ -608,9 +754,16 @@ pub const Vm = struct {
                     if (dict_slot >= self.dict_count) return error.InvalidInstruction;
                     const array_slot = try object_storage.newArray(self);
                     for (0..self.dicts[dict_slot].capacity()) |i| if (self.dicts[dict_slot].occupied[i]) {
-                        if (instruction.op == .dict_keys or instruction.op == .dict_items) try collections.append(self.arrays[array_slot], self.dicts[dict_slot].keys[i]);
-                        if (instruction.op == .dict_values) try collections.append(self.arrays[array_slot], self.dicts[dict_slot].values[i]);
-                        if (instruction.op == .dict_items) try collections.append(self.arrays[array_slot], self.dicts[dict_slot].values[i]);
+                        if (instruction.op == .dict_keys) {
+                            try collections.append(self.arrays[array_slot], self.dicts[dict_slot].keys[i]);
+                        } else if (instruction.op == .dict_values) {
+                            try collections.append(self.arrays[array_slot], self.dicts[dict_slot].values[i]);
+                        } else {
+                            const pair_slot = try object_storage.newArray(self);
+                            try collections.append(self.arrays[pair_slot], self.dicts[dict_slot].keys[i]);
+                            try collections.append(self.arrays[pair_slot], self.dicts[dict_slot].values[i]);
+                            try collections.append(self.arrays[array_slot], try makeHandle(.array, pair_slot));
+                        }
                     };
                     self.stack[self.stack_top - 1] = try makeHandle(.array, array_slot);
                 },
@@ -683,6 +836,7 @@ pub const Vm = struct {
                     if (!self.handler_active) return error.RaisedException;
                     self.handler_active = false;
                     self.stack_top = self.handler_stack_top;
+                    try self.push(self.last_exception);
                     state_helpers.unwindFrames(self, self.handler_frame_top);
                     self.trace_count = self.handler_trace_count;
                     ip = if (self.handler_ip == 0) chunk.code.items.len - 1 else self.handler_ip - 1;
@@ -712,14 +866,9 @@ pub const Vm = struct {
                     if (!self.handleFault(&ip)) return err;
                 },
                 .divide => {
-                    if (self.stack_top < 2) return error.StackUnderflow;
-                    const rhs = try requireInteger(self.stack[self.stack_top - 1]);
-                    if (rhs == 0) {
-                        if (!self.handleFault(&ip)) return error.DivisionByZero;
-                        continue;
-                    }
-                    self.stack[self.stack_top - 2] = try integer(@divTrunc(try requireInteger(self.stack[self.stack_top - 2]), rhs));
-                    self.stack_top -= 1;
+                    operators.binary(self, .divide) catch |err| {
+                        if (!self.handleFault(&ip)) return err;
+                    };
                 },
                 .modulo => {
                     if (self.stack_top < 2) return error.StackUnderflow;
@@ -733,7 +882,8 @@ pub const Vm = struct {
                 },
                 .negate => {
                     if (self.stack_top == 0) return error.StackUnderflow;
-                    self.stack[self.stack_top - 1] = try integer(-(try requireInteger(self.stack[self.stack_top - 1])));
+                    const value = self.stack[self.stack_top - 1];
+                    self.stack[self.stack_top - 1] = if (value.isFloat()) Value.fromFloat(-value.asFloat()) else try integer(-(try requireInteger(value)));
                 },
                 .not => {
                     if (self.stack_top == 0) return error.StackUnderflow;

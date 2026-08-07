@@ -1,6 +1,6 @@
 const std = @import("std");
 
-pub const OpCode = enum(u8) { halt, suspend_point, constant, make_string, make_function, make_instance, get_property, set_property, load_local, store_local, load_capture, load_capture_ref, store_capture, make_closure, make_array, make_tuple, make_set, make_dict, index, slice, store_index, length, type_query, string_lower, string_upper, string_strip, string_find, string_replace, string_split, string_join, append_collection, insert_collection, remove_collection, contains_collection, clear_collection, pop_collection, count_collection, reverse_collection, sort_collection, dict_get, dict_put, dict_remove, dict_contains, dict_keys, dict_values, dict_items, set_union, set_intersection, set_difference, range_condition, range_step, dup, guard_integer, guard_float, guard_boolean, guard_string, box_dynamic, unbox_integer, print, pop, add, subtract, multiply, divide, modulo, negate, not, equal, not_equal, less, less_equal, greater, greater_equal, logic_and, logic_or, jump_if_false, jump, try_begin, try_end, call, call_method, call_super, call_value, return_value, raise_value, true_value, false_value };
+pub const OpCode = enum(u8) { halt, suspend_point, constant, make_string, make_function, make_instance, get_property, set_property, load_local, store_local, load_capture, load_capture_ref, store_capture, make_closure, make_array, make_tuple, make_set, make_dict, index, slice, store_index, length, iterable, type_query, string_lower, string_upper, string_strip, string_find, string_replace, string_split, string_join, append_collection, insert_collection, remove_collection, contains_collection, clear_collection, pop_collection, count_collection, reverse_collection, sort_collection, dict_get, dict_put, dict_remove, dict_contains, dict_keys, dict_values, dict_items, set_union, set_intersection, set_difference, range_condition, range_step, dup, guard_integer, guard_float, guard_boolean, guard_string, box_dynamic, unbox_integer, print, pop, add, subtract, multiply, divide, modulo, negate, not, equal, not_equal, less, less_equal, greater, greater_equal, logic_and, logic_or, jump_if_false, jump, try_begin, try_end, call, call_method, call_super, call_value, return_value, raise_value, true_value, false_value, make_float, make_format };
 pub const Instruction = struct { op: OpCode, operand: i64 = 0 };
 
 /// Compact on-disk/cache representation: one opcode byte plus a signed
@@ -17,7 +17,7 @@ pub const PackedInstruction = struct {
 
     pub fn decode(self: PackedInstruction) !Instruction {
         const opcode = @as(u8, @intCast(self.raw >> 24));
-        if (opcode > @intFromEnum(OpCode.raise_value)) return error.InvalidOpcode;
+        if (opcode > @intFromEnum(OpCode.make_format)) return error.InvalidOpcode;
         var operand: i32 = @intCast(self.raw & 0x00ff_ffff);
         if ((operand & 0x0080_0000) != 0) operand |= @as(i32, -1) << 24;
         return .{ .op = @enumFromInt(opcode), .operand = operand };
@@ -118,6 +118,7 @@ pub const FunctionInfo = struct {
     entry: usize,
     arity: usize,
     name: []const u8,
+    defaults: [64]?i64 = @splat(null),
     capture_count: usize = 0,
     /// True when the function contains a suspension point and requires a
     /// resumable execution frame once async lowering is enabled.
@@ -170,6 +171,8 @@ pub const VerifyError = error{ EmptyChunk, InvalidJump, InvalidLocal, StackUnder
 pub const Chunk = struct {
     code: std.ArrayListUnmanaged(Instruction) = .empty,
     strings: std.ArrayListUnmanaged([]const u8) = .empty,
+    formats: std.ArrayListUnmanaged(struct { template: []const u8, arg_count: usize }) = .empty,
+    floats: std.ArrayListUnmanaged(f64) = .empty,
     source_map: std.ArrayListUnmanaged(SourceLocation) = .empty,
     functions: std.ArrayListUnmanaged(FunctionInfo) = .empty,
     classes: std.ArrayListUnmanaged(ClassInfo) = .empty,
@@ -183,6 +186,8 @@ pub const Chunk = struct {
     pub fn deinit(self: *Chunk) void {
         self.code.deinit(self.allocator);
         self.strings.deinit(self.allocator);
+        self.formats.deinit(self.allocator);
+        self.floats.deinit(self.allocator);
         self.source_map.deinit(self.allocator);
         self.functions.deinit(self.allocator);
         self.classes.deinit(self.allocator);
@@ -233,19 +238,43 @@ pub const Chunk = struct {
         try self.strings.append(self.allocator, text);
         return index;
     }
+
+    pub fn addFormat(self: *Chunk, template: []const u8, arg_count: usize) !usize {
+        const index = self.formats.items.len;
+        try self.formats.append(self.allocator, .{ .template = template, .arg_count = arg_count });
+        return index;
+    }
+    pub fn addFloat(self: *Chunk, value: f64) !usize {
+        for (self.floats.items, 0..) |existing, index| if (existing == value) return index;
+        const index = self.floats.items.len;
+        try self.floats.append(self.allocator, value);
+        return index;
+    }
     pub fn addCapture(self: *Chunk, capture: CaptureInfo) !void {
         try self.captures.append(self.allocator, capture);
     }
     pub fn verify(self: *const Chunk) VerifyError!void {
         if (self.code.items.len == 0) return error.EmptyChunk;
         if (self.source_map.items.len != self.code.items.len) return error.InvalidInstruction;
-        for (self.functions.items) |function| if (function.entry == 0 or function.entry >= self.code.items.len) return error.InvalidInstruction;
+        for (self.functions.items) |function| {
+            if (function.entry == 0 or function.entry >= self.code.items.len) return error.InvalidInstruction;
+            if ((!function.resumable and function.suspension_count != 0) or (function.resumable and function.suspension_count == 0)) return error.InvalidInstruction;
+        }
         for (self.captures.items) |capture| if (capture.function >= self.functions.items.len) return error.InvalidInstruction;
         var depth: isize = 0;
         for (self.code.items, 0..) |instruction, index| {
             switch (instruction.op) {
-                .constant, .make_string, .make_function, .make_instance, .load_local, .load_capture, .load_capture_ref, .true_value, .false_value => depth += 1,
+                .constant, .make_string, .make_function, .make_instance, .load_local, .load_capture, .load_capture_ref, .true_value, .false_value, .make_float => depth += 1,
+                .make_format => {
+                    if (instruction.operand < 0 or instruction.operand >= @as(i64, @intCast(self.formats.items.len))) return error.InvalidInstruction;
+                    const argument_count = self.formats.items[@intCast(instruction.operand)].arg_count;
+                    if (argument_count > std.math.maxInt(isize)) return error.InvalidInstruction;
+                    if (depth < @as(isize, @intCast(argument_count))) return error.StackUnderflow;
+                    depth -= @as(isize, @intCast(argument_count));
+                    depth += 1;
+                },
                 .get_property, .guard_integer, .guard_float, .guard_boolean, .guard_string, .box_dynamic, .unbox_integer => {},
+                .suspend_point => if (instruction.operand < 0) return error.InvalidInstruction,
                 .make_closure => {
                     if (instruction.operand < 0 or instruction.operand >= @as(i64, @intCast(self.functions.items.len))) return error.InvalidInstruction;
                     const captures: isize = @intCast(self.functions.items[@intCast(instruction.operand)].capture_count);
@@ -336,7 +365,7 @@ pub const Chunk = struct {
                     if (depth < 2) return error.StackUnderflow;
                     depth -= 1;
                 },
-                .dict_keys, .dict_values, .dict_items => {
+                .dict_keys, .dict_values, .dict_items, .iterable => {
                     if (depth < 1) return error.StackUnderflow;
                 },
                 .set_union, .set_intersection, .set_difference => {
@@ -384,7 +413,7 @@ pub const Chunk = struct {
                 },
                 .jump => if (instruction.operand < 0 or instruction.operand >= @as(i64, @intCast(self.code.items.len))) return error.InvalidJump,
                 .try_begin, .try_end => {},
-                .return_value, .halt, .suspend_point => {},
+                .return_value, .halt => {},
                 .raise_value => if (depth < 1) return error.StackUnderflow,
             }
             _ = index;
@@ -438,6 +467,17 @@ pub const Chunk = struct {
         var delta: isize = 0;
         switch (instruction.op) {
             .constant, .true_value, .false_value => delta = 1,
+            .make_format => {
+                if (instruction.operand < 0 or instruction.operand >= @as(i64, @intCast(self.formats.items.len))) return error.InvalidInstruction;
+                const argument_count = self.formats.items[@intCast(instruction.operand)].arg_count;
+                if (argument_count > std.math.maxInt(isize)) return error.InvalidInstruction;
+                required = @intCast(argument_count);
+                delta = 1 - required;
+            },
+            .make_float => {
+                if (instruction.operand < 0 or instruction.operand >= @as(i64, @intCast(self.floats.items.len))) return error.InvalidInstruction;
+                delta = 1;
+            },
             .make_string => {
                 if (instruction.operand < 0 or instruction.operand >= @as(i64, @intCast(self.strings.items.len))) return error.InvalidInstruction;
                 delta = 1;
@@ -458,7 +498,7 @@ pub const Chunk = struct {
                 if (instruction.operand < 0) return error.InvalidLocal;
                 delta = 1;
             },
-            .store_local, .store_capture, .get_property, .length, .type_query, .string_lower, .string_upper, .string_strip, .pop_collection, .dict_keys, .dict_values, .dict_items, .negate, .not, .guard_integer, .guard_float, .guard_boolean, .guard_string, .box_dynamic, .unbox_integer => required = 1,
+            .store_local, .store_capture, .get_property, .length, .iterable, .type_query, .string_lower, .string_upper, .string_strip, .pop_collection, .dict_keys, .dict_values, .dict_items, .negate, .not, .guard_integer, .guard_float, .guard_boolean, .guard_string, .box_dynamic, .unbox_integer => required = 1,
             .try_begin, .try_end, .jump, .halt, .return_value, .suspend_point, .range_step => {},
             .make_closure => {
                 if (instruction.operand < 0 or instruction.operand >= @as(i64, @intCast(self.functions.items.len))) return error.InvalidInstruction;

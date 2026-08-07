@@ -2,7 +2,7 @@ const std = @import("std");
 const Value = @import("ravi_vm_value").Value;
 
 pub const Status = enum { pending, running, suspended, completed, failed, cancelled };
-pub const Suspension = struct { instruction: usize, source_line: usize };
+pub const Suspension = struct { instruction: usize, source_line: usize, value: Value = Value.nil(), has_value: bool = false };
 pub const Transition = struct { from: Status, to: Status, instruction: usize, source_line: usize };
 
 pub const Cancellation = struct {
@@ -28,6 +28,8 @@ pub const Machine = struct {
     source_line: usize = 0,
     result: Value = Value.nil(),
     has_result: bool = false,
+    yielded: Value = Value.nil(),
+    has_yielded: bool = false,
     failure_code: ?i64 = null,
     cancellation: Cancellation = .{},
     transitions: std.ArrayListUnmanaged(Transition) = .empty,
@@ -46,15 +48,32 @@ pub const Machine = struct {
     }
 
     pub fn suspendAt(self: *Machine, instruction: usize, source_line: usize) !void {
+        return self.suspendWithValue(instruction, source_line, Value.nil(), false);
+    }
+
+    pub fn yieldValue(self: *Machine, instruction: usize, source_line: usize, value: Value) !void {
+        return self.suspendWithValue(instruction, source_line, value, true);
+    }
+
+    fn suspendWithValue(self: *Machine, instruction: usize, source_line: usize, value: Value, has_value: bool) !void {
         if (self.status != .running or self.cancellation.isCancelled()) return error.InvalidTransition;
         self.instruction = instruction;
         self.source_line = source_line;
+        self.yielded = value;
+        self.has_yielded = has_value;
         try self.transition(.suspended, instruction, source_line);
     }
 
     pub fn resumeExecution(self: *Machine) !void {
         if (self.status != .suspended or self.cancellation.isCancelled()) return error.InvalidTransition;
+        self.has_yielded = false;
         try self.transition(.running, self.instruction, self.source_line);
+    }
+
+    pub fn takeYielded(self: *Machine) ?Value {
+        if (!self.has_yielded) return null;
+        self.has_yielded = false;
+        return self.yielded;
     }
 
     /// Returns the instruction/source location at which a suspended machine
@@ -63,7 +82,13 @@ pub const Machine = struct {
     /// schedulers.
     pub fn resumeLocation(self: *const Machine) ?Suspension {
         if (self.status != .suspended) return null;
-        return .{ .instruction = self.instruction, .source_line = self.source_line };
+        return .{ .instruction = self.instruction, .source_line = self.source_line, .value = self.yielded, .has_value = self.has_yielded };
+    }
+
+    /// Returns a side-effect-free snapshot for schedulers and debuggers. The
+    /// yielded payload remains available until `takeYielded` or resume.
+    pub fn suspension(self: *const Machine) ?Suspension {
+        return self.resumeLocation();
     }
 
     pub fn isTerminal(self: *const Machine) bool {
@@ -77,6 +102,7 @@ pub const Machine = struct {
         if (self.status != .running and self.status != .suspended) return error.InvalidTransition;
         self.result = value;
         self.has_result = true;
+        self.has_yielded = false;
         try self.transition(.completed, self.instruction, self.source_line);
     }
 
@@ -147,6 +173,21 @@ test "resumable machine exposes stable resume location and terminal state" {
     try machine.complete(Value.nil());
     try std.testing.expect(machine.isTerminal());
     try std.testing.expect(machine.resumeLocation() == null);
+}
+
+test "resumable machine exposes yielded values exactly once" {
+    var machine = Machine.init(std.testing.allocator);
+    defer machine.deinit();
+    try machine.start();
+    try machine.yieldValue(5, 2, Value.fromInt(7));
+    const snapshot = machine.suspension() orelse return error.TestExpectedEqual;
+    try std.testing.expect(snapshot.has_value);
+    try std.testing.expectEqual(@as(i64, 7), snapshot.value.asInt());
+    try std.testing.expectEqual(@as(i64, 7), (machine.takeYielded() orelse return error.TestExpectedEqual).asInt());
+    try std.testing.expect(machine.takeYielded() == null);
+    try machine.resumeExecution();
+    try machine.yieldValue(9, 3, Value.fromInt(11));
+    try std.testing.expectEqual(@as(i64, 11), (machine.takeYielded() orelse return error.TestExpectedEqual).asInt());
 }
 
 test "parent cancellation is materialized at the child safepoint" {

@@ -166,7 +166,7 @@ pub const Server = struct {
         errdefer result.deinit(allocator);
         for (tokens, 0..) |token, token_index| {
             if (token.kind != .keyword or token_index + 1 >= tokens.len) continue;
-            const kind: []const u8 = if (std.mem.eql(u8, token.lexeme, "kriya") or std.mem.eql(u8, token.lexeme, "function")) "Function" else if (std.mem.eql(u8, token.lexeme, "roopa") or std.mem.eql(u8, token.lexeme, "class")) "Class" else continue;
+            const kind: []const u8 = if (config.keywordIsCanonical(document.language, token.lexeme, "function")) "Function" else if (config.keywordIsCanonical(document.language, token.lexeme, "class")) "Class" else continue;
             const name = tokens[token_index + 1];
             if (name.kind != .identifier) continue;
             try result.append(allocator, .{ .name = name.lexeme, .kind = kind, .line = @intCast(if (name.line > 0) name.line - 1 else 0) });
@@ -196,12 +196,11 @@ pub const Server = struct {
         const tokens = try scan.tokenize();
         for (tokens, 0..) |token, token_index| {
             if (token.kind != .keyword or token_index + 1 >= tokens.len) continue;
-            const declaration = std.mem.eql(u8, token.lexeme, "kriya") or
-                std.mem.eql(u8, token.lexeme, "function") or
-                std.mem.eql(u8, token.lexeme, "roopa") or
-                std.mem.eql(u8, token.lexeme, "class");
+            const declaration = config.keywordIsCanonical(document.language, token.lexeme, "function") or
+                config.keywordIsCanonical(document.language, token.lexeme, "class");
             if (declaration and tokens[token_index + 1].kind == .identifier and
-                std.mem.eql(u8, tokens[token_index + 1].lexeme, name)) {
+                std.mem.eql(u8, tokens[token_index + 1].lexeme, name))
+            {
                 const found = tokens[token_index + 1];
                 return .{ .line = @intCast(if (found.line > 0) found.line - 1 else 0), .character = @intCast(found.column) };
             }
@@ -274,4 +273,24 @@ test "LSP completion follows the file language profile" {
     const completions = try server.completions(.en, std.testing.allocator);
     defer std.testing.allocator.free(completions);
     try std.testing.expectEqualStrings("function", completions[0].label);
+}
+
+test "LSP symbols and definitions follow the document language profile" {
+    var server = Server.init(std.testing.allocator);
+    defer server.deinit();
+    try server.open("file:///kn.rk", "kriya main():\n    kodu 1\nroopa Box:\n    pass\n", 1);
+    const kn_symbols = try server.documentSymbols("file:///kn.rk", std.testing.allocator);
+    defer std.testing.allocator.free(kn_symbols);
+    try std.testing.expectEqual(@as(usize, 2), kn_symbols.len);
+    try std.testing.expectEqualStrings("Function", kn_symbols[0].kind);
+    try std.testing.expectEqualStrings("Class", kn_symbols[1].kind);
+    try std.testing.expect((try server.definition("file:///kn.rk", "main", std.testing.allocator)) != null);
+
+    try server.open("file:///en.rk", "function main():\n    return 1\nclass Box:\n    pass\n", 1);
+    const en_symbols = try server.documentSymbols("file:///en.rk", std.testing.allocator);
+    defer std.testing.allocator.free(en_symbols);
+    try std.testing.expectEqual(@as(usize, 2), en_symbols.len);
+    try std.testing.expectEqualStrings("Function", en_symbols[0].kind);
+    try std.testing.expectEqualStrings("Class", en_symbols[1].kind);
+    try std.testing.expect((try server.definition("file:///en.rk", "Box", std.testing.allocator)) != null);
 }
