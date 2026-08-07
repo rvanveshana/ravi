@@ -8,3 +8,6 @@ kriya calculate(a: int, b: int):
             kodu a
     tappu:
         kodu none
+
+mudrisu(calculate(12, 5))
+mudrisu(calculate(8, 5))

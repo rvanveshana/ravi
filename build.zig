@@ -15,6 +15,10 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
+    const packed_bytecode_module = b.createModule(.{ .root_source_file = b.path("src/bytecode/packed.zig"), .target = target, .optimize = optimize });
+    bytecode_module.addImport("ravi_packed_bytecode", packed_bytecode_module);
+    const verifier_module = b.createModule(.{ .root_source_file = b.path("src/bytecode/verifier.zig"), .target = target, .optimize = optimize });
+    bytecode_module.addImport("ravi_bytecode_verifier", verifier_module);
     const nan_value_module = b.createModule(.{ .root_source_file = b.path("src/vm/value.zig"), .target = target, .optimize = optimize });
     const vm_collections_module = b.createModule(.{ .root_source_file = b.path("src/vm/collections.zig"), .target = target, .optimize = optimize });
     vm_collections_module.addImport("ravi_vm_value", nan_value_module);

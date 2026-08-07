@@ -1,5 +1,5 @@
-# Comprehensive Object-Oriented Class Declaration Example in Ravi
-# Kannada syntax: roopa (class), saarva (public), swanta (private)
+# Class construction, instance properties, and method calls.
+# Inheritance and visibility contracts are not complete yet.
 
 roopa Person:
     saarva kriya huttu(name: string):

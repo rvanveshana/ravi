@@ -1,11 +1,11 @@
-# Comprehensive Async, Concurrency, and Parallel Tasks Example in Ravi
-# Kannada syntax by default
+# Function calls currently execute sequentially. Scheduler and async lowering
+# are runtime foundations, not language-level async syntax yet.
 
 kriya compute(id: int):
     mudrisu(id * 10)
     kodu id * 10
 
-# Parallel computation calls
+# Independent calls demonstrate ordinary function composition.
 res1 = compute(1)
 res2 = compute(2)
 res3 = compute(3)

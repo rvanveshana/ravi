@@ -1,0 +1,46 @@
+# Executable showcase of features verified in the current compiler and VM.
+
+# String indexing, length, and slicing.
+text = "Ravi"
+mudrisu(text[1])
+mudrisu(text.gatra())
+mudrisu(text[1:3][0])
+
+# Indexing and slicing.
+values = [10, 20, 30, 40]
+window = values[1:3]
+mudrisu(window[0])
+
+# Dictionary views and indexable key/value items.
+scores = {1: 90, 2: 80}
+keys = scores.kili()
+items = scores.jodi()
+mudrisu(keys[0])
+mudrisu(items[0][1])
+prati item alli scores.jodi():
+    mudrisu(item[0] + item[1])
+
+# Set operations.
+left = {1, 2, 3}
+right = {3, 4}
+mudrisu(left.koodu(right)[0])
+mudrisu(left.ondu(right)[0])
+mudrisu(left.bere(right)[0])
+
+# Closure cells preserve mutation across calls.
+kriya counter(value: int):
+    kriya next(dummy: int):
+        value = value + 1
+        kodu value
+    kodu next(0) + next(0)
+mudrisu(counter(4))
+
+# Runtime exception recovery through tappu and kone.
+result = 0
+nodu:
+    yese 7
+tappu:
+    result = 9
+kone:
+    result = result + 1
+mudrisu(result)

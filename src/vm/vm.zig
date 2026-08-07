@@ -16,6 +16,21 @@ const heap = @import("heap.zig");
 const Value = @import("ravi_vm_value").Value;
 const value_runtime = @import("value_runtime.zig");
 const operators = @import("operators.zig");
+const formatting = @import("formatting.zig");
+const collection_views = @import("collection_views.zig");
+const collection_access = @import("collection_access.zig");
+const slicing = @import("slicing.zig");
+const collection_mutation = @import("collection_mutation.zig");
+const value_operations = @import("value_operations.zig");
+const string_operations = @import("string_operations.zig");
+const construction = @import("construction.zig");
+const exceptions = @import("exceptions.zig");
+const frame_access = @import("frame_access.zig");
+const string_construction = @import("string_construction.zig");
+const range_operations = @import("range_operations.zig");
+const stack_operations = @import("stack_operations.zig");
+const arithmetic_operations = @import("arithmetic_operations.zig");
+const control_flow = @import("control_flow.zig");
 const integer = value_runtime.integer;
 const makeHandle = value_runtime.makeHandle;
 const requireInteger = value_runtime.requireInteger;
@@ -28,40 +43,6 @@ pub const collection_primitives = collections;
 pub const RuntimeError = errors.RuntimeError;
 pub const RuntimeType = errors.TypeId;
 const Frame = frames.Frame;
-
-fn formatPlaceholderEnd(template: []const u8, start: usize, end: usize) ?usize {
-    var parentheses: usize = 0;
-    var brackets: usize = 0;
-    var braces: usize = 0;
-    var quote: u8 = 0;
-    var escaped = false;
-    var index = start;
-    while (index < end) : (index += 1) {
-        const character = template[index];
-        if (quote != 0) {
-            if (escaped) escaped = false else if (character == '\\') escaped = true else if (character == quote) quote = 0;
-            continue;
-        }
-        if (character == '\'' or character == '"') quote = character else if (character == '(') parentheses += 1 else if (character == '[') brackets += 1 else if (character == '{') braces += 1 else if (character == ')' and parentheses > 0) parentheses -= 1 else if (character == ']' and brackets > 0) brackets -= 1 else if (character == '}' and braces > 0) braces -= 1 else if (character == '}' and parentheses == 0 and brackets == 0) return index;
-    }
-    return null;
-}
-
-fn formatSpecStart(placeholder: []const u8) ?usize {
-    var parentheses: usize = 0;
-    var brackets: usize = 0;
-    var braces: usize = 0;
-    var quote: u8 = 0;
-    var escaped = false;
-    for (placeholder, 0..) |character, index| {
-        if (quote != 0) {
-            if (escaped) escaped = false else if (character == '\\') escaped = true else if (character == quote) quote = 0;
-            continue;
-        }
-        if (character == '\'' or character == '"') quote = character else if (character == '(') parentheses += 1 else if (character == '[') brackets += 1 else if (character == '{') braces += 1 else if (character == ')' and parentheses > 0) parentheses -= 1 else if (character == ']' and brackets > 0) brackets -= 1 else if (character == '}' and braces > 0) braces -= 1 else if (character == ':' and parentheses == 0 and brackets == 0 and braces == 0) return index;
-    }
-    return null;
-}
 
 pub const TraceFrame = trace_runtime.Frame;
 pub const Vm = struct {
@@ -94,61 +75,6 @@ pub const Vm = struct {
     fault_ip: usize = 0,
     debugger: ?*debug.Debugger = null,
     collector: gc.Collector,
-    fn appendPadding(output: *std.ArrayListUnmanaged(u8), allocator: std.mem.Allocator, count: usize) RuntimeError!void {
-        var index: usize = 0;
-        while (index < count) : (index += 1) output.append(allocator, ' ') catch return error.OutOfMemory;
-    }
-
-    fn appendFormattedValue(output: *std.ArrayListUnmanaged(u8), allocator: std.mem.Allocator, value: Value, vm: anytype, spec: []const u8) RuntimeError!void {
-        var alignment: u8 = '>';
-        var width: usize = 0;
-        var type_marker: u8 = 0;
-        var cursor: usize = 0;
-        if (spec.len > 0 and (spec[0] == '<' or spec[0] == '>' or spec[0] == '^')) {
-            alignment = spec[0];
-            cursor = 1;
-        }
-        while (cursor < spec.len and std.ascii.isDigit(spec[cursor])) : (cursor += 1) width = std.math.mul(usize, width, 10) catch return error.StringTooLong;
-        if (cursor < spec.len) {
-            if (cursor + 1 != spec.len or (spec[cursor] != 's' and spec[cursor] != 'd' and spec[cursor] != 'f')) return error.InvalidInstruction;
-            type_marker = spec[cursor];
-        }
-        if (type_marker == 'd' and !value.isInt()) return error.TypeGuardFailed;
-        if (type_marker == 'f' and !value.isFloat() and !value.isInt()) return error.TypeGuardFailed;
-        if (type_marker == 's' and (value.handleKind() != .string)) return error.TypeGuardFailed;
-        var rendered: std.ArrayListUnmanaged(u8) = .empty;
-        defer rendered.deinit(allocator);
-        if (value.isNil()) {
-            rendered.appendSlice(allocator, "none") catch return error.OutOfMemory;
-        } else if (value.isBool()) {
-            rendered.appendSlice(allocator, if (value.asBool()) "true" else "false") catch return error.OutOfMemory;
-        } else if (value.isInt()) {
-            var buffer: [64]u8 = undefined;
-            const text = std.fmt.bufPrint(&buffer, "{d}", .{value.asInt()}) catch return error.StringTooLong;
-            rendered.appendSlice(allocator, text) catch return error.OutOfMemory;
-        } else if (value.isFloat()) {
-            var buffer: [96]u8 = undefined;
-            const text = std.fmt.bufPrint(&buffer, "{d}", .{value.asFloat()}) catch return error.StringTooLong;
-            rendered.appendSlice(allocator, text) catch return error.OutOfMemory;
-        } else if (value.handleKind() == .string) {
-            const text = vm.stringSlice(value) orelse return error.InvalidInstruction;
-            rendered.appendSlice(allocator, text) catch return error.OutOfMemory;
-        } else {
-            rendered.appendSlice(allocator, "<value>") catch return error.OutOfMemory;
-        }
-        const padding = if (width > rendered.items.len) width - rendered.items.len else 0;
-        if (alignment == '<') {
-            output.appendSlice(allocator, rendered.items) catch return error.OutOfMemory;
-            try appendPadding(output, allocator, padding);
-        } else if (alignment == '^') {
-            try appendPadding(output, allocator, padding / 2);
-            output.appendSlice(allocator, rendered.items) catch return error.OutOfMemory;
-            try appendPadding(output, allocator, padding - padding / 2);
-        } else {
-            try appendPadding(output, allocator, padding);
-            output.appendSlice(allocator, rendered.items) catch return error.OutOfMemory;
-        }
-    }
     pub fn init(allocator: std.mem.Allocator) !Vm {
         const stack = try allocator.alloc(Value, 256);
         errdefer allocator.free(stack);
@@ -268,133 +194,38 @@ pub const Vm = struct {
                 .true_value => try self.push(Value.fromBool(true)),
                 .false_value => try self.push(Value.fromBool(false)),
                 .make_string => {
-                    if (instruction.operand < 0 or instruction.operand >= @as(i64, @intCast(chunk.strings.items.len))) return error.InvalidInstruction;
-                    const raw = chunk.strings.items[@intCast(instruction.operand)];
-                    if (raw.len < 2) return error.InvalidInstruction;
-                    const prefixed_raw = raw[0] == 'r' or raw[0] == 'R';
-                    const quote = raw[if (prefixed_raw) 1 else 0];
-                    const content_start: usize = if (prefixed_raw) 1 else 0;
-                    const triple = raw.len >= content_start + 6 and raw[content_start] == quote and raw[content_start + 1] == quote and raw[content_start + 2] == quote;
-                    const start: usize = if (triple) content_start + 3 else content_start + 1;
-                    const trim: usize = if (triple) 3 else 1;
-                    if (raw.len < start + trim) return error.InvalidInstruction;
-                    const decoded = try self.allocator.alloc(u8, raw.len - start - trim);
-                    defer self.allocator.free(decoded);
-                    var out: usize = 0;
-                    var cursor = start;
-                    const end = raw.len - trim;
-                    while (cursor < end) : (cursor += 1) {
-                        if (!prefixed_raw and raw[cursor] == '\\' and cursor + 1 < end) {
-                            cursor += 1;
-                            decoded[out] = switch (raw[cursor]) {
-                                'n' => '\n',
-                                'r' => '\r',
-                                't' => '\t',
-                                '\\' => '\\',
-                                '\'' => '\'',
-                                '"' => '"',
-                                else => raw[cursor],
-                            };
-                        } else {
-                            decoded[out] = raw[cursor];
-                        }
-                        out += 1;
-                    }
-                    try self.push(try self.internString(decoded[0..out]));
+                    try string_construction.string(RuntimeError, self, instruction.operand, chunk.strings.items);
                 },
                 .make_format => {
-                    if (instruction.operand < 0 or instruction.operand >= @as(i64, @intCast(chunk.formats.items.len))) return error.InvalidInstruction;
-                    const format = chunk.formats.items[@intCast(instruction.operand)];
-                    if (self.stack_top < format.arg_count) return error.StackUnderflow;
-                    const first_arg = self.stack_top - format.arg_count;
-                    var output: std.ArrayListUnmanaged(u8) = .empty;
-                    defer output.deinit(self.allocator);
-                    const estimated_capacity = std.math.add(usize, format.template.len, std.math.mul(usize, format.arg_count, 16) catch return error.StringTooLong) catch return error.StringTooLong;
-                    output.ensureTotalCapacity(self.allocator, estimated_capacity) catch return error.OutOfMemory;
-                    var cursor: usize = if (format.template.len > 0 and (format.template[0] == 'f' or format.template[0] == 'F')) 2 else return error.InvalidInstruction;
-                    const end = if (format.template.len > cursor and format.template[format.template.len - 1] == format.template[cursor - 1]) format.template.len - 1 else return error.InvalidInstruction;
-                    var argument_index: usize = 0;
-                    while (cursor < end) {
-                        if (format.template[cursor] == '{' and cursor + 1 < end and format.template[cursor + 1] == '{') {
-                            try output.append(self.allocator, '{');
-                            cursor += 2;
-                        } else if (format.template[cursor] == '}' and cursor + 1 < end and format.template[cursor + 1] == '}') {
-                            try output.append(self.allocator, '}');
-                            cursor += 2;
-                        } else if (format.template[cursor] == '{') {
-                            const close = formatPlaceholderEnd(format.template, cursor + 1, end) orelse return error.InvalidInstruction;
-                            if (argument_index >= format.arg_count) return error.InvalidInstruction;
-                            const placeholder = format.template[cursor + 1 .. close];
-                            const spec_start = formatSpecStart(placeholder);
-                            try appendFormattedValue(&output, self.allocator, self.stack[first_arg + argument_index], self, if (spec_start) |offset| placeholder[offset + 1 ..] else "");
-                            argument_index += 1;
-                            cursor = close + 1;
-                        } else if (format.template[cursor] == '}') return error.InvalidInstruction else {
-                            try output.append(self.allocator, format.template[cursor]);
-                            cursor += 1;
-                        }
-                    }
-                    if (argument_index != format.arg_count) return error.InvalidInstruction;
-                    self.stack[first_arg] = try self.internString(output.items);
-                    self.stack_top = first_arg + 1;
+                    try string_construction.format(RuntimeError, self, instruction.operand, chunk.formats.items);
                 },
                 .make_function => {
                     if (instruction.operand < 0 or instruction.operand >= @as(i64, @intCast(chunk.functions.items.len))) return error.InvalidFunction;
                     try self.push(try makeHandle(.function, @intCast(instruction.operand)));
                 },
                 .make_instance => {
-                    if (instruction.operand < 0 or instruction.operand >= @as(i64, @intCast(chunk.classes.items.len))) return error.InvalidFunction;
-                    const slot = try object_storage.newInstance(self, @intCast(instruction.operand));
-                    self.instance_count += 1;
-                    try self.push(try makeHandle(.instance, slot));
+                    try construction.instance(RuntimeError, self, instruction.operand, chunk.classes.items.len);
                 },
                 .get_property => {
-                    if (self.stack_top == 0 or instruction.operand < 0) return error.StackUnderflow;
-                    const handle = self.stack[self.stack_top - 1];
-                    const slot = instanceSlot(handle) orelse return error.InvalidFunction;
-                    if (slot >= self.instance_count) return error.InvalidFunction;
-                    self.stack[self.stack_top - 1] = collections.get(&self.instances[slot].fields, try integer(instruction.operand)) orelse return error.MissingKey;
+                    try collection_access.getProperty(RuntimeError, self, instruction.operand);
                 },
                 .set_property => {
-                    if (self.stack_top < 2 or instruction.operand < 0) return error.StackUnderflow;
-                    const handle = self.stack[self.stack_top - 2];
-                    const value = self.stack[self.stack_top - 1];
-                    const slot = instanceSlot(handle) orelse return error.InvalidFunction;
-                    if (slot >= self.instance_count) return error.InvalidFunction;
-                    try collections.put(&self.instances[slot].fields, try integer(instruction.operand), value);
-                    try object_storage.writeBarrierValue(self, handle, value);
-                    self.stack_top -= 2;
+                    try collection_access.setProperty(RuntimeError, self, instruction.operand);
                 },
                 .load_local => {
-                    if (instruction.operand < 0 or instruction.operand >= self.frames[self.frame_top].locals.len) return error.InvalidLocal;
-                    try self.push(self.frames[self.frame_top].locals[@intCast(instruction.operand)]);
+                    try frame_access.loadLocal(RuntimeError, self, instruction.operand);
                 },
                 .store_local => {
-                    if (instruction.operand < 0 or self.stack_top == 0) return error.InvalidLocal;
-                    try self.frames[self.frame_top].ensureLocals(self.allocator, @as(usize, @intCast(instruction.operand)) + 1);
-                    self.frames[self.frame_top].locals[@intCast(instruction.operand)] = self.stack[self.stack_top - 1];
+                    try frame_access.storeLocal(RuntimeError, self, instruction.operand);
                 },
                 .load_capture => {
-                    if (instruction.operand < 0 or instruction.operand >= self.frames[self.frame_top].captures.len) return error.InvalidLocal;
-                    const captured = self.frames[self.frame_top].captures[@intCast(instruction.operand)];
-                    if (captured.handleKind() == .cell) {
-                        const cell = captured.handleIndex().?;
-                        if (cell >= self.cell_count) return error.InvalidLocal;
-                        try self.push(self.cells[cell].value);
-                    } else try self.push(captured);
+                    try frame_access.loadCapture(RuntimeError, self, instruction.operand);
                 },
                 .load_capture_ref => {
-                    if (instruction.operand < 0 or instruction.operand >= self.frames[self.frame_top].captures.len) return error.InvalidLocal;
-                    try self.push(self.frames[self.frame_top].captures[@intCast(instruction.operand)]);
+                    try frame_access.loadCaptureRef(RuntimeError, self, instruction.operand);
                 },
                 .store_capture => {
-                    if (instruction.operand < 0 or instruction.operand >= self.frames[self.frame_top].captures.len or self.stack_top == 0) return error.InvalidLocal;
-                    const capture = self.frames[self.frame_top].captures[@intCast(instruction.operand)];
-                    if (capture.handleKind() != .cell) return error.InvalidLocal;
-                    const cell = capture.handleIndex().?;
-                    if (cell >= self.cell_count) return error.InvalidLocal;
-                    self.cells[cell].value = self.stack[self.stack_top - 1];
-                    try object_storage.writeBarrierValue(self, capture, self.stack[self.stack_top - 1]);
+                    try frame_access.storeCapture(RuntimeError, self, instruction.operand);
                 },
                 .make_closure => {
                     if (instruction.operand < 0 or instruction.operand >= @as(i64, @intCast(chunk.functions.items.len))) return error.InvalidFunction;
@@ -416,306 +247,68 @@ pub const Vm = struct {
                 },
                 .box_dynamic, .unbox_integer, .guard_integer => {},
                 .make_array, .make_tuple, .make_set => {
-                    if (instruction.operand < 0 or self.stack_top < @as(usize, @intCast(instruction.operand))) return error.InvalidInstruction;
-                    const count: usize = @intCast(instruction.operand);
-                    const slot = try object_storage.newArray(self);
-                    for (0..count) |i| {
-                        const value = self.stack[self.stack_top - count + i];
-                        if (instruction.op == .make_set) try collections.appendUnique(self.arrays[slot], value) else try collections.append(self.arrays[slot], value);
-                    }
-                    self.stack_top -= count;
-                    const kind: Value.ObjectKind = if (instruction.op == .make_tuple) .tuple else if (instruction.op == .make_set) .set else .array;
-                    try self.push(try makeHandle(kind, slot));
+                    try construction.collection(RuntimeError, self, instruction.operand, instruction.op == .make_tuple, instruction.op == .make_set);
                 },
                 .make_dict => {
-                    if (instruction.operand < 0) return error.InvalidInstruction;
-                    const count: usize = @intCast(instruction.operand);
-                    if (count > self.stack_top / 2) return error.InvalidInstruction;
-                    const slot = self.dict_count;
-                    _ = try object_storage.newDict(self);
-                    self.dict_count += 1;
-                    for (0..count) |i| {
-                        try collections.put(self.dicts[slot], self.stack[self.stack_top - count * 2 + i * 2], self.stack[self.stack_top - count * 2 + i * 2 + 1]);
-                    }
-                    self.stack_top -= count * 2;
-                    try self.push(try makeHandle(.dictionary, slot));
+                    try construction.dictionary(RuntimeError, self, instruction.operand);
                 },
                 .index => {
-                    if (self.stack_top < 2) return error.StackUnderflow;
-                    const key = self.stack[self.stack_top - 1];
-                    const handle = self.stack[self.stack_top - 2];
-                    self.stack_top -= 2;
-                    if (handle.handleKind() == .string) {
-                        const slot = handle.handleIndex().?;
-                        const position = try requireInteger(key);
-                        if (slot >= self.strings.items.len or position < 0) return error.InvalidIndex;
-                        const codepoint = string_runtime.at(self.strings.items[slot].bytes, @intCast(position)) orelse return error.InvalidIndex;
-                        try self.push(try integer(codepoint));
-                    } else if (handle.handleKind() == .dictionary) {
-                        const slot = handle.handleIndex().?;
-                        if (slot >= self.dict_count) return error.InvalidInstruction;
-                        const value = collections.get(self.dicts[slot], key) orelse return error.InvalidInstruction;
-                        try self.push(value);
-                    } else if (arraySlot(handle)) |slot| {
-                        const position = try requireInteger(key);
-                        if (slot >= self.array_count or position < 0 or @as(usize, @intCast(position)) >= self.arrays[slot].len) return error.InvalidInstruction;
-                        try self.push(self.arrays[slot].items[@intCast(position)]);
-                    } else return error.InvalidInstruction;
+                    try collection_access.index(RuntimeError, self);
                 },
                 .slice => {
-                    if (self.stack_top < 3) return error.StackUnderflow;
-                    const finish = self.stack[self.stack_top - 1];
-                    const begin = self.stack[self.stack_top - 2];
-                    const handle = self.stack[self.stack_top - 3];
-                    self.stack_top -= 3;
-                    const begin_index = try requireInteger(begin);
-                    const finish_index = try requireInteger(finish);
-                    const start: usize = if (begin_index < 0) 0 else @intCast(begin_index);
-                    if (handle.handleKind() == .string) {
-                        const text = self.stringSlice(handle) orelse return error.InvalidIndex;
-                        const start_byte = string_runtime.offset(text, start) orelse return error.InvalidIndex;
-                        const end_index: usize = if (finish_index < 0) std.math.maxInt(usize) else @intCast(finish_index);
-                        const end_byte = if (end_index == std.math.maxInt(usize)) text.len else (string_runtime.offset(text, end_index) orelse if (end_index == string_runtime.length(text)) text.len else return error.InvalidIndex);
-                        if (start_byte > end_byte) return error.InvalidIndex;
-                        try self.push(try self.internString(text[start_byte..end_byte]));
-                    } else if (arraySlot(handle)) |slot| {
-                        if (slot >= self.array_count) return error.InvalidIndex;
-                        const end: usize = if (finish_index < 0) self.arrays[slot].len else @intCast(finish_index);
-                        if (start > end or end > self.arrays[slot].len) return error.InvalidIndex;
-                        const result = try object_storage.newArray(self);
-                        for (self.arrays[slot].items[start..end]) |value| try collections.append(self.arrays[result], value);
-                        try self.push(try makeHandle(.array, result));
-                    } else return error.InvalidIndex;
+                    try slicing.slice(RuntimeError, self);
                 },
                 .store_index => {
-                    if (self.stack_top < 3) return error.StackUnderflow;
-                    const value = self.stack[self.stack_top - 1];
-                    const key = self.stack[self.stack_top - 2];
-                    const handle = self.stack[self.stack_top - 3];
-                    if (handle.handleKind() == .dictionary) {
-                        const slot = handle.handleIndex().?;
-                        if (slot >= self.dict_count) return error.InvalidInstruction;
-                        try collections.put(self.dicts[slot], key, value);
-                        try object_storage.writeBarrierValue(self, handle, value);
-                    } else if (arraySlot(handle)) |slot| {
-                        const position = try requireInteger(key);
-                        if (slot >= self.array_count or position < 0 or @as(usize, @intCast(position)) >= self.arrays[slot].len) return error.InvalidIndex;
-                        self.arrays[slot].items[@intCast(position)] = value;
-                        try object_storage.writeBarrierValue(self, handle, value);
-                    } else return error.InvalidInstruction;
-                    self.stack_top -= 3;
+                    try collection_mutation.storeIndex(RuntimeError, self);
                 },
                 .length => {
-                    if (self.stack_top == 0) return error.StackUnderflow;
-                    const handle = self.stack[self.stack_top - 1];
-                    if (handle.handleKind() == .string) {
-                        const slot = handle.handleIndex().?;
-                        if (slot >= self.strings.items.len) return error.InvalidInstruction;
-                        self.stack[self.stack_top - 1] = try integer(@intCast(string_runtime.length(self.strings.items[slot].bytes)));
-                    } else if (arraySlot(handle)) |slot| {
-                        if (slot >= self.array_count) return error.InvalidInstruction;
-                        self.stack[self.stack_top - 1] = try integer(@intCast(self.arrays[slot].len));
-                    } else if (handle.handleKind() == .dictionary) {
-                        const slot = handle.handleIndex().?;
-                        if (slot >= self.dict_count) return error.InvalidInstruction;
-                        self.stack[self.stack_top - 1] = try integer(@intCast(self.dicts[slot].len));
-                    } else return error.InvalidInstruction;
+                    try value_operations.length(RuntimeError, self);
                 },
                 .iterable => {
-                    if (self.stack_top == 0) return error.StackUnderflow;
-                    const handle = self.stack[self.stack_top - 1];
-                    if (dictSlot(handle)) |dict_slot| {
-                        if (dict_slot >= self.dict_count) return error.InvalidInstruction;
-                        const array_slot = try object_storage.newArray(self);
-                        for (0..self.dicts[dict_slot].capacity()) |index| if (self.dicts[dict_slot].occupied[index]) {
-                            try collections.append(self.arrays[array_slot], self.dicts[dict_slot].keys[index]);
-                        };
-                        self.stack[self.stack_top - 1] = try makeHandle(.array, array_slot);
-                    } else if (arraySlot(handle) != null or handle.handleKind() == .string) {} else return error.InvalidInstruction;
+                    try value_operations.iterable(RuntimeError, self);
                 },
                 .type_query => {
-                    if (self.stack_top == 0) return error.StackUnderflow;
-                    const value = self.stack[self.stack_top - 1];
-                    self.stack[self.stack_top - 1] = try integer(@intFromEnum(type_helpers.classify(value)));
+                    try value_operations.typeQuery(RuntimeError, self);
                 },
                 .string_lower, .string_upper, .string_strip => {
-                    if (self.stack_top == 0) return error.StackUnderflow;
-                    const handle = self.stack[self.stack_top - 1];
-                    if (handle.handleKind() != .string) return error.InvalidInstruction;
-                    const source_slot = handle.handleIndex().?;
-                    if (source_slot >= self.strings.items.len) return error.InvalidInstruction;
-                    const source_text = self.strings.items[source_slot].bytes;
-                    var first: usize = 0;
-                    var last = source_text.len;
-                    if (instruction.op == .string_strip) {
-                        while (first < last and std.ascii.isWhitespace(source_text[first])) first += 1;
-                        while (last > first and std.ascii.isWhitespace(source_text[last - 1])) last -= 1;
-                    }
-                    const result_len = last - first;
-                    const transformed = try self.allocator.alloc(u8, result_len);
-                    defer self.allocator.free(transformed);
-                    for (0..result_len) |i| {
-                        const value = source_text[first + i];
-                        transformed[i] = if (instruction.op == .string_lower) std.ascii.toLower(value) else if (instruction.op == .string_upper) std.ascii.toUpper(value) else value;
-                    }
-                    self.stack[self.stack_top - 1] = try self.internString(transformed);
+                    const operation: string_operations.Transform = if (instruction.op == .string_lower) .lower else if (instruction.op == .string_upper) .upper else .strip;
+                    try string_operations.transform(RuntimeError, self, operation);
                 },
                 .string_find => {
-                    if (self.stack_top < 2) return error.StackUnderflow;
-                    const haystack = self.stringSlice(self.stack[self.stack_top - 2]) orelse return error.InvalidInstruction;
-                    const needle = self.stringSlice(self.stack[self.stack_top - 1]) orelse return error.InvalidInstruction;
-                    self.stack[self.stack_top - 2] = try integer(if (std.mem.indexOf(u8, haystack, needle)) |position| @intCast(position) else -1);
-                    self.stack_top -= 1;
+                    try string_operations.find(RuntimeError, self);
                 },
                 .string_replace => {
-                    if (self.stack_top < 3) return error.StackUnderflow;
-                    const source = self.stringSlice(self.stack[self.stack_top - 3]) orelse return error.InvalidInstruction;
-                    const old = self.stringSlice(self.stack[self.stack_top - 2]) orelse return error.InvalidInstruction;
-                    const replacement = self.stringSlice(self.stack[self.stack_top - 1]) orelse return error.InvalidInstruction;
-                    if (old.len == 0) return error.InvalidInstruction;
-                    var output: [256]u8 = undefined;
-                    var out: usize = 0;
-                    var cursor: usize = 0;
-                    while (cursor < source.len) {
-                        if (std.mem.startsWith(u8, source[cursor..], old)) {
-                            if (out + replacement.len > output.len) return error.StringTooLong;
-                            @memcpy(output[out .. out + replacement.len], replacement);
-                            out += replacement.len;
-                            cursor += old.len;
-                        } else {
-                            if (out == output.len) return error.StringTooLong;
-                            output[out] = source[cursor];
-                            out += 1;
-                            cursor += 1;
-                        }
-                    }
-                    self.stack[self.stack_top - 3] = try self.internString(output[0..out]);
-                    self.stack_top -= 2;
+                    try string_operations.replace(RuntimeError, self);
                 },
                 .string_split => {
-                    if (self.stack_top < 2) return error.InvalidInstruction;
-                    const source = self.stringSlice(self.stack[self.stack_top - 2]) orelse return error.InvalidInstruction;
-                    const delimiter = self.stringSlice(self.stack[self.stack_top - 1]) orelse return error.InvalidInstruction;
-                    if (delimiter.len == 0) return error.InvalidInstruction;
-                    const array_slot = try object_storage.newArray(self);
-                    var cursor: usize = 0;
-                    while (cursor <= source.len) {
-                        const end = if (std.mem.indexOfPos(u8, source, cursor, delimiter)) |position| position else source.len;
-                        try collections.append(self.arrays[array_slot], try self.internString(source[cursor..end]));
-                        if (end == source.len) break;
-                        cursor = end + delimiter.len;
-                    }
-                    self.stack[self.stack_top - 2] = try makeHandle(.array, array_slot);
-                    self.stack_top -= 1;
+                    try string_operations.split(RuntimeError, self);
                 },
                 .string_join => {
-                    if (self.stack_top < 2) return error.StackUnderflow;
-                    const delimiter = self.stringSlice(self.stack[self.stack_top - 2]) orelse return error.InvalidInstruction;
-                    const handle = self.stack[self.stack_top - 1];
-                    const array_slot = arraySlot(handle) orelse return error.InvalidInstruction;
-                    if (array_slot >= self.array_count) return error.InvalidInstruction;
-                    var output: [256]u8 = undefined;
-                    var out: usize = 0;
-                    for (self.arrays[array_slot].items[0..self.arrays[array_slot].len], 0..) |item, index| {
-                        const part = self.stringSlice(item) orelse return error.InvalidInstruction;
-                        if (index > 0) {
-                            if (out + delimiter.len > output.len) return error.StringTooLong;
-                            @memcpy(output[out .. out + delimiter.len], delimiter);
-                            out += delimiter.len;
-                        }
-                        if (out + part.len > output.len) return error.StringTooLong;
-                        @memcpy(output[out .. out + part.len], part);
-                        out += part.len;
-                    }
-                    self.stack[self.stack_top - 2] = try self.internString(output[0..out]);
-                    self.stack_top -= 1;
+                    try string_operations.join(RuntimeError, self);
                 },
                 .append_collection => {
-                    if (self.stack_top < 2) return error.StackUnderflow;
-                    const value = self.stack[self.stack_top - 1];
-                    const handle = self.stack[self.stack_top - 2];
-                    const slot = arraySlot(handle) orelse return error.InvalidInstruction;
-                    if (slot >= self.array_count) return error.InvalidInstruction;
-                    try collections.append(self.arrays[slot], value);
-                    self.stack_top -= 2;
+                    try collection_mutation.append(RuntimeError, self);
                 },
                 .insert_collection => {
-                    if (self.stack_top < 3) return error.StackUnderflow;
-                    const value = self.stack[self.stack_top - 1];
-                    const position = self.stack[self.stack_top - 2];
-                    const handle = self.stack[self.stack_top - 3];
-                    const slot = arraySlot(handle) orelse return error.InvalidInstruction;
-                    const index = try requireInteger(position);
-                    if (index < 0) return error.InvalidInstruction;
-                    if (slot >= self.array_count) return error.InvalidInstruction;
-                    try collections.insert(self.arrays[slot], @intCast(index), value);
-                    self.stack_top -= 3;
+                    try collection_mutation.insert(RuntimeError, self);
                 },
                 .remove_collection => {
-                    if (self.stack_top < 2) return error.StackUnderflow;
-                    const value = self.stack[self.stack_top - 1];
-                    const handle = self.stack[self.stack_top - 2];
-                    if (dictSlot(handle)) |dict_slot| {
-                        if (dict_slot >= self.dict_count) return error.InvalidInstruction;
-                        _ = try collections.remove(self.dicts[dict_slot], value);
-                        self.stack_top -= 2;
-                        continue;
-                    }
-                    const slot = arraySlot(handle) orelse return error.InvalidInstruction;
-                    if (slot >= self.array_count) return error.InvalidInstruction;
-                    var position: ?usize = null;
-                    for (0..self.arrays[slot].len) |i| if (Value.eql(self.arrays[slot].items[i], value)) {
-                        position = i;
-                        break;
-                    };
-                    if (position == null) return error.InvalidInstruction;
-                    _ = try collections.pop(self.arrays[slot], position.?);
-                    self.stack_top -= 2;
+                    try collection_mutation.remove(RuntimeError, self);
                 },
                 .contains_collection => {
-                    if (self.stack_top < 2) return error.StackUnderflow;
-                    const value = self.stack[self.stack_top - 1];
-                    const handle = self.stack[self.stack_top - 2];
-                    if (dictSlot(handle)) |dict_slot| {
-                        if (dict_slot >= self.dict_count) return error.InvalidInstruction;
-                        self.stack[self.stack_top - 2] = Value.fromBool(collections.get(self.dicts[dict_slot], value) != null);
-                        self.stack_top -= 1;
-                        continue;
-                    }
-                    const slot = arraySlot(handle) orelse return error.InvalidInstruction;
-                    if (slot >= self.array_count) return error.InvalidInstruction;
-                    self.stack[self.stack_top - 2] = Value.fromBool(collections.contains(self.arrays[slot], value));
-                    self.stack_top -= 1;
+                    try collection_mutation.contains(RuntimeError, self);
                 },
                 .clear_collection => {
-                    if (self.stack_top == 0) return error.StackUnderflow;
-                    const handle = self.stack[self.stack_top - 1];
-                    const slot = arraySlot(handle) orelse return error.InvalidInstruction;
-                    if (slot >= self.array_count) return error.InvalidInstruction;
-                    collections.clear(self.arrays[slot]);
-                    self.stack_top -= 1;
+                    try collection_mutation.clear(RuntimeError, self);
                 },
                 .pop_collection => {
-                    if (self.stack_top == 0) return error.StackUnderflow;
-                    const handle = self.stack[self.stack_top - 1];
-                    const slot = arraySlot(handle) orelse return error.InvalidInstruction;
-                    if (slot >= self.array_count or self.arrays[slot].len == 0) return error.InvalidIndex;
-                    self.stack[self.stack_top - 1] = try collections.pop(self.arrays[slot], self.arrays[slot].len - 1);
+                    try collection_mutation.pop(RuntimeError, self);
                 },
                 .count_collection => {
-                    if (self.stack_top == 0) return error.StackUnderflow;
-                    const handle = self.stack[self.stack_top - 1];
-                    const slot = arraySlot(handle) orelse return error.InvalidInstruction;
-                    if (slot >= self.array_count) return error.InvalidInstruction;
-                    self.stack[self.stack_top - 1] = try integer(@intCast(self.arrays[slot].len));
+                    try collection_mutation.count(RuntimeError, self);
                 },
                 .reverse_collection, .sort_collection => {
-                    if (self.stack_top == 0) return error.StackUnderflow;
-                    const handle = self.stack[self.stack_top - 1];
-                    const slot = arraySlot(handle) orelse return error.InvalidInstruction;
-                    if (slot >= self.array_count) return error.InvalidInstruction;
-                    if (instruction.op == .reverse_collection) collections.reverse(self.arrays[slot]) else collections.sort(self.arrays[slot]);
-                    self.stack_top -= 1;
+                    try collection_mutation.reverseOrSort(RuntimeError, self, instruction.op == .reverse_collection);
                 },
                 .dict_get, .dict_contains => {
                     if (self.stack_top < 2) return error.StackUnderflow;
@@ -728,118 +321,35 @@ pub const Vm = struct {
                     self.stack_top -= 1;
                 },
                 .dict_put => {
-                    if (self.stack_top < 3) return error.StackUnderflow;
-                    const value = self.stack[self.stack_top - 1];
-                    const key = self.stack[self.stack_top - 2];
-                    const handle = self.stack[self.stack_top - 3];
-                    const slot = dictSlot(handle) orelse return error.InvalidInstruction;
-                    if (slot >= self.dict_count) return error.InvalidInstruction;
-                    try collections.put(self.dicts[slot], key, value);
-                    try object_storage.writeBarrierValue(self, handle, value);
-                    self.stack_top -= 3;
+                    try collection_mutation.dictPut(RuntimeError, self);
                 },
                 .dict_remove => {
-                    if (self.stack_top < 2) return error.StackUnderflow;
-                    const key = self.stack[self.stack_top - 1];
-                    const handle = self.stack[self.stack_top - 2];
-                    const slot = dictSlot(handle) orelse return error.InvalidInstruction;
-                    if (slot >= self.dict_count) return error.InvalidInstruction;
-                    _ = try collections.remove(self.dicts[slot], key);
-                    self.stack_top -= 2;
+                    try collection_mutation.dictRemove(RuntimeError, self);
                 },
                 .dict_keys, .dict_values, .dict_items => {
-                    if (self.stack_top == 0) return error.InvalidInstruction;
-                    const handle = self.stack[self.stack_top - 1];
-                    const dict_slot = dictSlot(handle) orelse return error.InvalidInstruction;
-                    if (dict_slot >= self.dict_count) return error.InvalidInstruction;
-                    const array_slot = try object_storage.newArray(self);
-                    for (0..self.dicts[dict_slot].capacity()) |i| if (self.dicts[dict_slot].occupied[i]) {
-                        if (instruction.op == .dict_keys) {
-                            try collections.append(self.arrays[array_slot], self.dicts[dict_slot].keys[i]);
-                        } else if (instruction.op == .dict_values) {
-                            try collections.append(self.arrays[array_slot], self.dicts[dict_slot].values[i]);
-                        } else {
-                            const pair_slot = try object_storage.newArray(self);
-                            try collections.append(self.arrays[pair_slot], self.dicts[dict_slot].keys[i]);
-                            try collections.append(self.arrays[pair_slot], self.dicts[dict_slot].values[i]);
-                            try collections.append(self.arrays[array_slot], try makeHandle(.array, pair_slot));
-                        }
-                    };
-                    self.stack[self.stack_top - 1] = try makeHandle(.array, array_slot);
+                    try collection_views.dictView(RuntimeError, self, instruction.op);
                 },
                 .set_union, .set_intersection, .set_difference => {
-                    if (self.stack_top < 2) return error.InvalidInstruction;
-                    const right = self.stack[self.stack_top - 1];
-                    const left = self.stack[self.stack_top - 2];
-                    const left_slot = arraySlot(left) orelse return error.InvalidInstruction;
-                    const right_slot = arraySlot(right) orelse return error.InvalidInstruction;
-                    if (left_slot >= self.array_count or right_slot >= self.array_count) return error.InvalidInstruction;
-                    const result_slot = try object_storage.newArray(self);
-                    for (self.arrays[left_slot].items[0..self.arrays[left_slot].len]) |value| {
-                        if (instruction.op != .set_intersection or collections.contains(self.arrays[right_slot], value)) try collections.appendUnique(self.arrays[result_slot], value);
-                    }
-                    if (instruction.op == .set_union) for (self.arrays[right_slot].items[0..self.arrays[right_slot].len]) |value| try collections.appendUnique(self.arrays[result_slot], value);
-                    if (instruction.op == .set_difference) {
-                        self.arrays[result_slot].len = 0;
-                        for (self.arrays[left_slot].items[0..self.arrays[left_slot].len]) |value| if (!collections.contains(self.arrays[right_slot], value)) try collections.appendUnique(self.arrays[result_slot], value);
-                    }
-                    self.stack[self.stack_top - 2] = try makeHandle(.set, result_slot);
-                    self.stack_top -= 1;
+                    try collection_mutation.setOperation(RuntimeError, self, instruction.op == .set_union, instruction.op == .set_intersection);
                 },
                 .range_condition => {
-                    if (self.stack_top < 3) return error.StackUnderflow;
-                    const step = self.stack[self.stack_top - 1];
-                    const limit = self.stack[self.stack_top - 2];
-                    const current = self.stack[self.stack_top - 3];
-                    // Numeric ranges are the hottest general loop path. Keep
-                    // the fully dynamic fallback, but avoid repeated helper
-                    // calls and error construction when tags already prove
-                    // all operands are integers.
-                    const step_value: i64 = if (step.isInt()) step.asInt() else try requireInteger(step);
-                    const limit_value: i64 = if (limit.isInt()) limit.asInt() else try requireInteger(limit);
-                    const current_value: i64 = if (current.isInt()) current.asInt() else try requireInteger(current);
-                    self.stack[self.stack_top - 3] = Value.fromBool(if (step_value < 0) current_value > limit_value else current_value < limit_value);
-                    self.stack_top -= 2;
+                    try range_operations.condition(RuntimeError, self);
                 },
                 .range_step => {
-                    if (instruction.operand < 0) return error.InvalidInstruction;
-                    const encoded_slots: u64 = @intCast(instruction.operand);
-                    const current_slot: usize = @intCast(encoded_slots >> 32);
-                    const step_slot: usize = @intCast(encoded_slots & 0xffffffff);
-                    const frame = &self.frames[self.frame_top];
-                    if (current_slot >= frame.locals.len or step_slot >= frame.locals.len) return error.InvalidLocal;
-                    const current_value = frame.locals[current_slot];
-                    const step_value = frame.locals[step_slot];
-                    const current = if (current_value.isInt()) current_value.asInt() else try requireInteger(current_value);
-                    const step = if (step_value.isInt()) step_value.asInt() else try requireInteger(step_value);
-                    frame.locals[current_slot] = try integer(current +| step);
+                    try range_operations.step(RuntimeError, self, instruction.operand);
                 },
                 .dup => {
-                    if (self.stack_top == 0) return error.StackUnderflow;
-                    try self.push(self.stack[self.stack_top - 1]);
+                    try stack_operations.duplicate(RuntimeError, self);
                 },
-                .guard_float => if (self.stack_top == 0 or !self.stack[self.stack_top - 1].isFloat()) return error.TypeGuardFailed,
+                .guard_float => try stack_operations.guardFloat(RuntimeError, self),
                 .guard_boolean => {
-                    if (self.stack_top == 0) return error.TypeGuardFailed;
-                    const value = self.stack[self.stack_top - 1];
-                    if (!value.isBool() and (!value.isInt() or (value.asInt() != 0 and value.asInt() != 1))) return error.TypeGuardFailed;
+                    try stack_operations.guardBoolean(RuntimeError, self);
                 },
                 .guard_string => {
-                    if (self.stack_top == 0 or self.stack[self.stack_top - 1].handleKind() != .string) return error.TypeGuardFailed;
+                    try stack_operations.guardString(RuntimeError, self);
                 },
                 .raise_value => {
-                    // An empty raise inside an exception handler rethrows the
-                    // active value; outside a handler it remains an error.
-                    if (self.stack_top == 0) {
-                        if (!self.handler_active or self.last_exception.isNil()) return error.RaisedException;
-                    } else self.last_exception = self.stack[self.stack_top - 1];
-                    if (!self.handler_active) return error.RaisedException;
-                    self.handler_active = false;
-                    self.stack_top = self.handler_stack_top;
-                    try self.push(self.last_exception);
-                    state_helpers.unwindFrames(self, self.handler_frame_top);
-                    self.trace_count = self.handler_trace_count;
-                    ip = if (self.handler_ip == 0) chunk.code.items.len - 1 else self.handler_ip - 1;
+                    try exceptions.raiseValue(RuntimeError, self, &ip, chunk.code.items.len);
                 },
                 .print => {
                     if (self.stack_top == 0) return error.StackUnderflow;
@@ -853,69 +363,32 @@ pub const Vm = struct {
                     self.pub_printed = true;
                 },
                 .pop => {
-                    if (self.stack_top == 0) return error.StackUnderflow;
-                    self.stack_top -= 1;
+                    try stack_operations.discard(RuntimeError, self);
                 },
-                .add => operators.binary(self, .add) catch |err| {
-                    if (!self.handleFault(&ip)) return err;
-                },
-                .subtract => operators.binary(self, .subtract) catch |err| {
-                    if (!self.handleFault(&ip)) return err;
-                },
-                .multiply => operators.binary(self, .multiply) catch |err| {
-                    if (!self.handleFault(&ip)) return err;
-                },
-                .divide => {
-                    operators.binary(self, .divide) catch |err| {
-                        if (!self.handleFault(&ip)) return err;
-                    };
-                },
+                .add => try arithmetic_operations.binary(RuntimeError, self, .add, &ip),
+                .subtract => try arithmetic_operations.binary(RuntimeError, self, .subtract, &ip),
+                .multiply => try arithmetic_operations.binary(RuntimeError, self, .multiply, &ip),
+                .divide => try arithmetic_operations.binary(RuntimeError, self, .divide, &ip),
                 .modulo => {
-                    if (self.stack_top < 2) return error.StackUnderflow;
-                    const rhs = try requireInteger(self.stack[self.stack_top - 1]);
-                    if (rhs == 0) {
-                        if (!self.handleFault(&ip)) return error.DivisionByZero;
-                        continue;
-                    }
-                    self.stack[self.stack_top - 2] = try integer(@rem(try requireInteger(self.stack[self.stack_top - 2]), rhs));
-                    self.stack_top -= 1;
+                    if (try arithmetic_operations.modulo(RuntimeError, self, &ip)) continue;
                 },
                 .negate => {
-                    if (self.stack_top == 0) return error.StackUnderflow;
-                    const value = self.stack[self.stack_top - 1];
-                    self.stack[self.stack_top - 1] = if (value.isFloat()) Value.fromFloat(-value.asFloat()) else try integer(-(try requireInteger(value)));
+                    try stack_operations.negate(RuntimeError, self);
                 },
                 .not => {
-                    if (self.stack_top == 0) return error.StackUnderflow;
-                    self.stack[self.stack_top - 1] = Value.fromBool(!self.stack[self.stack_top - 1].truthy());
+                    try stack_operations.logicalNot(RuntimeError, self);
                 },
-                .equal, .not_equal, .less, .less_equal, .greater, .greater_equal, .logic_and, .logic_or => operators.compare(self, instruction.op) catch |err| {
-                    if (!self.handleFault(&ip)) return err;
-                },
+                .equal, .not_equal, .less, .less_equal, .greater, .greater_equal, .logic_and, .logic_or => try arithmetic_operations.compare(RuntimeError, self, instruction.op, &ip),
                 .jump_if_false => {
-                    if (self.stack_top == 0) return error.StackUnderflow;
-                    const value = self.stack[self.stack_top - 1];
-                    self.stack_top -= 1;
-                    if (!value.truthy()) {
-                        if (instruction.operand < 0 or instruction.operand >= @as(i64, @intCast(chunk.code.items.len))) return error.InvalidJump;
-                        const target: usize = @intCast(instruction.operand);
-                        ip = if (target == 0) chunk.code.items.len - 1 else target - 1;
-                    }
+                    try control_flow.jumpIfFalse(RuntimeError, self, instruction.operand, &ip, chunk.code.items.len);
                 },
                 .jump => {
-                    if (instruction.operand < 0 or instruction.operand >= @as(i64, @intCast(chunk.code.items.len))) return error.InvalidJump;
-                    const target: usize = @intCast(instruction.operand);
-                    ip = if (target == 0) chunk.code.items.len - 1 else target - 1;
+                    try control_flow.jump(RuntimeError, instruction.operand, &ip, chunk.code.items.len);
                 },
                 .try_begin => {
-                    if (instruction.operand < 0 or instruction.operand >= @as(i64, @intCast(chunk.code.items.len))) return error.InvalidJump;
-                    self.handler_ip = @intCast(instruction.operand);
-                    self.handler_stack_top = self.stack_top;
-                    self.handler_frame_top = self.frame_top;
-                    self.handler_trace_count = self.trace_count;
-                    self.handler_active = true;
+                    try exceptions.begin(RuntimeError, self, instruction.operand, chunk.code.items.len);
                 },
-                .try_end => self.handler_active = false,
+                .try_end => exceptions.end(self),
                 .call => self.call(chunk, instruction.operand, &ip) catch |err| {
                     if (!self.handleFault(&ip)) return err;
                 },
@@ -929,16 +402,7 @@ pub const Vm = struct {
                     if (!self.handleFault(&ip)) return err;
                 },
                 .return_value => {
-                    const value = if (self.stack_top == 0) Value.nil() else self.stack[self.stack_top - 1];
-                    if (self.frame_top == 0) return value;
-                    const old_base = self.frames[self.frame_top].base;
-                    const return_ip = self.frames[self.frame_top].return_ip;
-                    self.frames[self.frame_top].deinit(self.allocator);
-                    self.frame_top -= 1;
-                    if (self.trace_count > 0) self.trace_count -= 1;
-                    self.stack_top = old_base;
-                    try self.push(value);
-                    ip = return_ip;
+                    if (try control_flow.returnValue(RuntimeError, self, &ip)) |value| return value;
                 },
             }
         }
@@ -958,7 +422,7 @@ pub const Vm = struct {
         try state_helpers.ensureCallCapacity(self);
         return call_runtime.callSuper(self, chunk, operand, ip);
     }
-    fn stringSlice(self: *const Vm, handle: Value) ?[]const u8 {
+    pub fn stringSlice(self: *const Vm, handle: Value) ?[]const u8 {
         if (handle.handleKind() != .string) return null;
         const slot = handle.handleIndex().?;
         if (slot >= self.strings.items.len) return null;

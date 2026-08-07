@@ -19,7 +19,7 @@ values = scores.bele()
 items = scores.jodi()
 mudrisu(keys[0])
 mudrisu(values[0])
-mudrisu(items[0])
+mudrisu(items[0][0])
 scores.tegi(2)
 
 # Set operations return new duplicate-free sets.

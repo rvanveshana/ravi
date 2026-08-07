@@ -18,3 +18,7 @@ prati i alli shreni(0, 7, 2):
 prati i alli shreni(5, 6):
     mudrisu(i)
 
+# A negative step walks down toward the end value.
+prati i alli shreni(5, 0, -2):
+    mudrisu(i)
+

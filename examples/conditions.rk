@@ -2,15 +2,20 @@
 x = 4
 adre x > 5:
     mudrisu(0)
+inadre x == 4:
+    mudrisu(2)
 illa:
     mudrisu(1)
 
-# Multiple boolean checks with and/or/alla
+# Multiple boolean checks with and/or/alla and membership/identity.
 adre x > 2 mattu x < 10:
     mudrisu(10)
 
-adre alla (x == 5):
+adre x == 4 athva x == 5:
     mudrisu(20)
+
+mudrisu(4 alli [1, 4, 6])
+mudrisu(none ide none)
 
 # Nested conditionals
 adre x >= 4:

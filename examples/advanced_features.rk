@@ -1,5 +1,6 @@
-# Advanced Language Features: Input, Classes, and OOP Specs in Ravi
-# Note: Feature specifications for input (kelu), classes (roopa), self (tanna), and visibility (saarva, swanta)
+# Advanced Language Features currently executable in Ravi.
+# Input and full visibility contracts remain planned features and are not
+# presented as runnable syntax here.
 
 # 1. Output & Basic String Operations
 msg = "Namaskara, Ravi!"
@@ -21,16 +22,6 @@ numbers: int[] = [100, 200, 300]
 mudrisu(numbers[0])
 mudrisu(numbers.gatra())
 
-# 4. Input Specification (kelu for user input in Kannada profile)
-# User prompt using 'kelu':
-# user_name = kelu("Nimma hesaru enu? ")
-
-# 5. Class & Object-Oriented Syntax Design (roopa, saarva, swanta, tanna)
-# saarva roopa Person:
-#     swanta name: string
-#
-#     saarva kriya huttu(name: string):
-#         tanna.name = name
-#
-#     saarva kriya speak():
-#         mudrisu(tanna.name)
+# Class declarations and method calls have a dedicated executable example in
+# class_oop.rk. Constructor, visibility, inheritance, and input contracts are
+# still being completed separately.

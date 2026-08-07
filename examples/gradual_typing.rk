@@ -1,5 +1,6 @@
-# Comprehensive Gradual Typing (Dynamic vs Static typed speed path) Example
-# Statically annotated variables skip dynamic type checks for maximum performance
+# Current annotation syntax accepts typed values alongside dynamic values.
+# Union types, narrowing, conversions, and complete runtime guard contracts
+# remain pending.
 
 # Dynamic variable (freedom)
 dynamic_val = 100

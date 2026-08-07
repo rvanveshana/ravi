@@ -1,2 +1,5 @@
+kriya add(a: int, b: int):
+    kodu a + b
+
 kriya answer():
     kodu 41
