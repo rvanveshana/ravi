@@ -8,7 +8,9 @@ listed as complete until it executes and has tests.
 - [x] **Phase 0: complete.** Baseline, benchmark contract, provenance, regression
   checks, and initial performance budgets are recorded.
 - [ ] **Phase 1: active.** AST compiler migration is underway; the legacy token
-  compiler remains the CLI production path and differential oracle.
+  compiler remains the CLI production path and differential oracle. The AST
+  path now covers the verified example corpus, including variadic and keyword
+  arguments.
 - [ ] **Phase 2: active.** Float literals and basic numeric runtime semantics are
   implemented; the remaining core language surface is still pending.
 - [ ] **Phases 3-8: pending.** Runtime stability, async, modules/builds, tooling,
@@ -91,6 +93,8 @@ Still needed before AST authority can replace the token compiler:
   - [x] CLI exposes `--ast-compiler` for controlled AST migration testing;
     legacy compilation remains the default until comments, profile keywords,
     imports, and remaining AST constructs are covered.
+- [x] AST variadic and keyword arguments pack `*values` into tuples and
+  `**options` into dictionaries, with runtime binding and keyword lookup.
 
 ## Important Gaps
 
@@ -150,8 +154,9 @@ Still needed before AST authority can replace the token compiler:
   at the correct phase, and validate decorated signatures.
 - [ ] **Gradual typing:** unions and nullable types, flow narrowing, runtime
   conversions, boxing/unboxing contracts, and diagnostics for failed guards.
-- [ ] **AST variadics:** `*values` and `**options` parsing exists, but AST
-  lowering still needs tuple/dictionary packing and the matching call ABI.
+- [x] **AST variadics:** `*values` and `**options` parse, lower, bind, and
+  execute through the AST call ABI; the variadic example passes in both
+  compiler paths.
 - [ ] **Classes/modules:** inheritance and visibility contracts, override checks,
   shared module globals, and end-to-end profile-aware class behavior.
 - [ ] **Profiles/tooling:** route every frontend and LSP operation through the
@@ -184,6 +189,7 @@ git diff --check
 
 ## Next Work
 
-- [ ] Add general iterator protocol and iterator objects for user-defined
-  iterables, then integrate parser/semantic/HIR/MIR validation before CLI AST
-  routing.
+- [ ] Complete AST authority by integrating semantic analysis, HIR, and MIR,
+  then make AST compilation the default CLI route after differential coverage.
+- [ ] Add the general iterator protocol and iterator objects for user-defined
+  iterables, including semantic and HIR/MIR validation.
