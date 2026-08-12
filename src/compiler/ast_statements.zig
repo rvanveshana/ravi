@@ -24,14 +24,24 @@ pub fn topLevel(comptime Error: type, self: anytype, chunk: *bytecode.Chunk, mod
     while (index < module.statements.items.len) {
         const statement = module.statements.items[index];
         switch (statement.kind) {
+            .import => {
+                index += 1;
+            },
             .function => |function| {
                 if (function_index >= function_statements.items.len or function_statements.items[function_index] != index) return error.InvalidExpression;
-                try chunk.emit(.{ .op = .make_function, .operand = @intCast(function_index) });
+                const capture_info = self.ast_state.function_captures[function_index];
+                for (capture_info.captures[0..capture_info.capture_count]) |capture| {
+                    if (helpers.findLocal(names.items, capture)) |slot| try chunk.emit(.{ .op = .load_local, .operand = @intCast(slot) }) else if (helpers.findCapture(self.ast_state.active_captures, capture)) |capture_slot| try chunk.emit(.{ .op = .load_capture_ref, .operand = @intCast(capture_slot) }) else return error.InvalidName;
+                }
+                try chunk.emit(.{ .op = if (capture_info.capture_count == 0) .make_function else .make_closure, .operand = @intCast(function_index) });
                 const slot = try helpers.localSlot(names, self.allocator, function.name);
                 try chunk.emit(.{ .op = .store_local, .operand = @intCast(slot) });
                 try chunk.emit(.{ .op = .load_local, .operand = @intCast(slot) });
                 function_index += 1;
                 index = function.body_first + function.body_count;
+            },
+            .class_decl => |class_decl| {
+                index = @max(index + 1, class_decl.body_first + class_decl.body_count);
             },
             .control => |control| {
                 try self.compileAstStatements(chunk, module, index, 1, names, false, loops, break_targets);
@@ -45,7 +55,7 @@ pub fn topLevel(comptime Error: type, self: anytype, chunk: *bytecode.Chunk, mod
                 if (try_stmt.finally_count != 0) index = @max(index, try_stmt.finally_first + try_stmt.finally_count);
             },
             else => {
-                try self.compileAstStatements(chunk, module, index, 1, names, false, loops, break_targets);
+                try self.compileAstStatements(chunk, module, index, 1, names, true, loops, break_targets);
                 index += 1;
             },
         }

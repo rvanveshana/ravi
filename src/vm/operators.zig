@@ -43,6 +43,7 @@ pub fn binary(self: anytype, op: bytecode.OpCode) errors.RuntimeError!void {
         .add => std.math.add(i64, left, right) catch return error.IntegerOutOfRange,
         .subtract => std.math.sub(i64, left, right) catch return error.IntegerOutOfRange,
         .multiply => std.math.mul(i64, left, right) catch return error.IntegerOutOfRange,
+        .divide => if (right == 0) return error.DivisionByZero else std.math.divTrunc(i64, left, right) catch return error.IntegerOutOfRange,
         else => return error.InvalidInstruction,
     };
     self.stack[self.stack_top - 2] = try values.integer(result);

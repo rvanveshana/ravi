@@ -48,6 +48,16 @@ The token-independent `compileAstModule` boundary currently lowers and tests:
 - [x] AST `if` and `while` lowering with canonical profile keywords and patched
   VM jumps
 - [x] AST `else`, `break`, and `continue` lowering with nested-loop patching
+- [x] `pass`/`bidu` parses and lowers as an executable no-op in both compiler
+  paths
+- [x] AST call arguments use explicit expression IDs, preserving nested and
+  multi-expression argument semantics
+- [x] AST profile builtins lower `mudrisu`/`print` and `vidha`/`type`
+- [x] AST direct calls resolve declared functions, including recursion
+- [x] AST membership and identity comparisons lower through VM operations
+- [x] parser normalizes `inadre`/`elif` into nested conditional branches;
+  nested final-else parsing is covered; compound-statement range ownership
+  still needs repair before AST conditional authority
 
 Still needed before AST authority can replace the token compiler:
 
@@ -77,7 +87,10 @@ Still needed before AST authority can replace the token compiler:
 - [x] AST `for` lowering supports one-, two-, and three-argument `range`/`shreni`
 - [x] initial AST-to-token differential conformance tests for arithmetic,
   iteration, and exception binding
-- [ ] parser/semantic/HIR/MIR integration and CLI routing
+- [ ] parser/semantic/HIR/MIR integration and full CLI authority
+  - [x] CLI exposes `--ast-compiler` for controlled AST migration testing;
+    legacy compilation remains the default until comments, profile keywords,
+    imports, and remaining AST constructs are covered.
 
 ## Important Gaps
 
@@ -119,8 +132,9 @@ Still needed before AST authority can replace the token compiler:
 
 ## Phase 2 Pending Work
 
-- [ ] **AST authority:** semantic/HIR/MIR integration and CLI routing remain;
-  closures, exception edges, and initial differential tests are implemented.
+- [ ] **AST authority:** semantic/HIR/MIR integration and default CLI routing
+  remain; `--ast-compiler` provides a controlled route. Closure-cell mutation
+  and nested named-function capture now execute.
 - [ ] **Formatting:** precision, numeric formatting, conversion flags, and
   malformed-spec diagnostics remain pending; width/alignment/type validation
   are implemented and tested.
@@ -136,6 +150,8 @@ Still needed before AST authority can replace the token compiler:
   at the correct phase, and validate decorated signatures.
 - [ ] **Gradual typing:** unions and nullable types, flow narrowing, runtime
   conversions, boxing/unboxing contracts, and diagnostics for failed guards.
+- [ ] **AST variadics:** `*values` and `**options` parsing exists, but AST
+  lowering still needs tuple/dictionary packing and the matching call ABI.
 - [ ] **Classes/modules:** inheritance and visibility contracts, override checks,
   shared module globals, and end-to-end profile-aware class behavior.
 - [ ] **Profiles/tooling:** route every frontend and LSP operation through the
@@ -163,7 +179,8 @@ zig build test
 git diff --check
 ```
 
-- [x] The last verified run passed all Zig tests and all 27 Ravi examples.
+- [x] The latest verified run passes all Zig tests and all 25 production Ravi
+  examples.
 
 ## Next Work
 

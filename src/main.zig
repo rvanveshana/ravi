@@ -6,6 +6,7 @@ const Parser = @import("ravi_parser").Parser;
 const Analyzer = @import("semantic/analyzer.zig").Analyzer;
 const gc = @import("ravi_gc");
 const Compiler = @import("ravi_compiler").Compiler;
+const bytecode = @import("ravi_bytecode");
 const Vm = @import("ravi_vm").Vm;
 const Backend = @import("ravi_backend").Backend;
 const Optimizer = @import("ravi_optimizer").Optimizer;
@@ -51,6 +52,7 @@ pub fn main(init: std.process.Init) !void {
     var path: ?[]const u8 = null;
     var language_override: ?config.SourceLanguage = null;
     var diagnostic_format: DiagnosticFormat = .human;
+    var use_ast_compiler = false;
 
     if (std.mem.eql(u8, first_arg, "check") or std.mem.eql(u8, first_arg, "run") or std.mem.eql(u8, first_arg, "trace") or std.mem.eql(u8, first_arg, "tokens") or std.mem.eql(u8, first_arg, "bytecode") or std.mem.eql(u8, first_arg, "fmt") or std.mem.eql(u8, first_arg, "fmt-check")) {
         mode = first_arg;
@@ -87,6 +89,8 @@ pub fn main(init: std.process.Init) !void {
                 std.debug.print("unknown diagnostic format: {s}\n", .{name});
                 std.process.exit(2);
             };
+        } else if (std.mem.eql(u8, argument, "--ast-compiler")) {
+            use_ast_compiler = true;
         } else if (path == null) path = argument;
     }
     const loaded_source = if (path) |file_path| try std.Io.Dir.cwd().readFileAlloc(init.io, file_path, collector.allocator(), .limited(16 * 1024 * 1024)) else sample;
@@ -155,10 +159,16 @@ pub fn main(init: std.process.Init) !void {
             if (imports_loaded) return;
         };
         var compiler = Compiler.initWithLanguage(collector.allocator(), language);
-        var chunk = compiler.compileProgram(tokens) catch |err| {
-            printDiagnostic(collector.allocator(), diagnostic_format, managed_source.name, source, "RAVI-COMPILE-001", @errorName(err), compiler.last_location);
-            std.process.exit(1);
-        };
+        var chunk: bytecode.Chunk = if (use_ast_compiler)
+            compiler.compileAstModule(&module) catch |err| {
+                printDiagnostic(collector.allocator(), diagnostic_format, managed_source.name, source, "RAVI-AST-001", @errorName(err), compiler.last_location);
+                std.process.exit(1);
+            }
+        else
+            compiler.compileProgram(tokens) catch |err| {
+                printDiagnostic(collector.allocator(), diagnostic_format, managed_source.name, source, "RAVI-COMPILE-001", @errorName(err), compiler.last_location);
+                std.process.exit(1);
+            };
         defer chunk.deinit();
         // Release execution uses the verified bytecode optimizer; trace and
         // bytecode modes retain the original instruction layout for precise
@@ -210,6 +220,7 @@ fn runWithImports(allocator: std.mem.Allocator, io: std.Io, root_path: []const u
     };
     var loader = ModuleLoader.init(allocator, Provider.read, @ptrCast(&context));
     defer loader.deinit();
+    try loader.addSearchPath("lib");
     const order = try loader.load(root_path);
     defer allocator.free(order);
     if (order.len < 2) return error.FileNotFound;
@@ -253,6 +264,7 @@ fn printHelp() void {
         \\Options:
         \\  --lang kn|en  Override the source language profile
         \\  --diagnostic-format human|compact|json
+        \\  --ast-compiler  Use the AST compiler for migration testing
         \\  -h, --help    Show this help
         \\  -V, --version Show the compiler version
         \\

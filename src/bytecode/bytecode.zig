@@ -12,6 +12,9 @@ pub const VerifyError = verifier.VerifyError;
 pub const FunctionInfo = struct {
     entry: usize,
     arity: usize,
+    fixed_count: usize = 0,
+    varargs_index: ?usize = null,
+    kwargs_index: ?usize = null,
     name: []const u8,
     defaults: [64]?i64 = @splat(null),
     capture_count: usize = 0,

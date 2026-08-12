@@ -143,7 +143,7 @@ pub const Value = enum(u64) {
     pub inline fn asInt(self: Value) i64 {
         const raw = @intFromEnum(self) & 0x0000FFFFFFFFFFFF;
         // Sign-extend 48-bit to 64-bit integer
-        if ((raw & 0x0008000000000000) != 0) {
+        if ((raw & 0x0000800000000000) != 0) {
             return @as(i64, @bitCast(raw | 0xFFFF000000000000));
         }
         return @as(i64, @bitCast(raw));

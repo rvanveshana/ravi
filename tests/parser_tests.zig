@@ -39,6 +39,11 @@ test "parser accepts function defaults and variadic parameters" {
     var module = try instance.parseRecovering();
     defer module.deinit();
     try std.testing.expectEqual(@as(usize, 0), module.diagnostics.items.len);
+    const function = module.statements.items[0].kind.function;
+    try std.testing.expectEqual(@as(usize, 3), function.params_count);
+    try std.testing.expectEqual(.positional, module.parameters.items[function.params_first].kind);
+    try std.testing.expectEqual(.variadic, module.parameters.items[function.params_first + 1].kind);
+    try std.testing.expectEqual(.keyword_variadic, module.parameters.items[function.params_first + 2].kind);
 }
 
 test "parser preserves member assignment targets" {
@@ -190,5 +195,44 @@ test "parser preserves visibility modifiers" {
     switch (module.statements.items[0].kind) {
         .class_decl => |class_decl| try std.testing.expectEqualStrings("private", @tagName(class_decl.visibility)),
         else => return error.TestExpectedEqual,
+    }
+}
+
+test "parser keeps elif suites separate from following top-level statements" {
+    const source = "adre 0:\n    kodu 1\ninadre 1:\n    kodu 2\nilla:\n    kodu 3\nmudrisu(4)\n";
+    var scan = try lexer.Lexer.init(std.testing.allocator, source);
+    defer scan.deinit();
+    const tokens = try scan.tokenize();
+    var instance = parser.Parser.init(std.testing.allocator, tokens);
+    var module = try instance.parseRecovering();
+    defer module.deinit();
+    try std.testing.expectEqual(@as(usize, 0), module.diagnostics.items.len);
+    try std.testing.expectEqual(@as(usize, 6), module.statements.items.len);
+    switch (module.statements.items[0].kind) {
+        .control => |control| {
+            try std.testing.expectEqual(@as(usize, 1), control.body_first);
+            try std.testing.expectEqual(@as(usize, 1), control.body_count);
+            try std.testing.expectEqual(@as(usize, 2), control.else_first);
+            try std.testing.expectEqual(@as(usize, 3), control.else_count);
+        },
+        else => return error.TestUnexpectedResult,
+    }
+}
+
+test "parser keeps conditional example top-level statements reachable" {
+    const source = "x = 4\nadre x > 5:\n    mudrisu(0)\ninadre x == 4:\n    mudrisu(2)\nilla:\n    mudrisu(1)\nadre x > 2 mattu x < 10:\n    mudrisu(10)\nadre x == 4 athva x == 5:\n    mudrisu(20)\nmudrisu(4 alli [1, 4, 6])\nmudrisu(none ide none)\nadre x >= 4:\n    adre x <= 4:\n        mudrisu(30)\n    illa:\n        mudrisu(0)\n";
+    var scan = try lexer.Lexer.init(std.testing.allocator, source);
+    defer scan.deinit();
+    const tokens = try scan.tokenize();
+    var instance = parser.Parser.init(std.testing.allocator, tokens);
+    var module = try instance.parseRecovering();
+    defer module.deinit();
+    try std.testing.expectEqual(@as(usize, 0), module.diagnostics.items.len);
+    try std.testing.expect(module.statements.items.len > 8);
+    switch (module.statements.items[1].kind) {
+        .control => |control| {
+            try std.testing.expect(control.else_first + control.else_count < module.statements.items.len);
+        },
+        else => return error.TestUnexpectedResult,
     }
 }

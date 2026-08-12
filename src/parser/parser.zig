@@ -24,7 +24,7 @@ pub const Parser = struct {
         var module = ast.Module{ .allocator = self.allocator };
         errdefer module.deinit();
         while (!self.at(.eof)) {
-            self.skipTrivia();
+            while (self.at(.newline) or self.at(.comment)) self.index += 1;
             if (self.at(.eof)) break;
             if (module.statements.items.len == 0 and self.at(.string)) module.docstring = self.tokens[self.index].lexeme;
             if (self.at(.operator) and std.mem.eql(u8, self.tokens[self.index].lexeme, "@")) {
@@ -74,7 +74,7 @@ pub const Parser = struct {
             visibility = if (self.word("private")) .private else if (self.word("protected")) .protected else if (self.word("internal")) .internal else .public;
             self.index += 1;
         }
-        if (self.isImportStart()) try self.parseImport(module, out, start) else if (self.word("class")) try self.parseClass(module, out, start, visibility) else if (self.word("function")) try self.parseFunction(module, out, start, visibility) else if (self.word("return") or self.word("yield")) try self.parseReturn(module, out, start) else if (self.word("break") or self.word("continue") or self.word("raise")) try self.parseTransfer(module, out, start) else if (self.isControl()) try self.parseControl(module, out, start) else if (self.at(.identifier) and self.index + 1 < self.tokens.len and self.tokens[self.index + 1].kind == .colon) try self.parseTypedAssignment(module, out, start) else {
+        if (self.isImportStart()) try self.parseImport(module, out, start) else if (self.word("class")) try self.parseClass(module, out, start, visibility) else if (self.word("function")) try self.parseFunction(module, out, start, visibility) else if (self.word("return") or self.word("yield")) try self.parseReturn(module, out, start) else if (self.word("break") or self.word("continue") or self.word("pass") or self.word("raise")) try self.parseTransfer(module, out, start) else if (self.isControl()) try self.parseControl(module, out, start) else if (self.at(.identifier) and self.index + 1 < self.tokens.len and self.tokens[self.index + 1].kind == .colon) try self.parseTypedAssignment(module, out, start) else {
             const value = try self.parseExpression(module, 0);
             if (self.word("with")) {
                 self.index += 1;
@@ -136,9 +136,14 @@ pub const Parser = struct {
         if (self.at(.l_paren)) {
             self.index += 1;
             while (!self.at(.r_paren)) {
+                var parameter_kind: ast.ParameterKind = .positional;
                 if (self.at(.operator) and std.mem.eql(u8, self.tokens[self.index].lexeme, "*")) {
+                    parameter_kind = .variadic;
                     self.index += 1;
-                    if (self.at(.operator) and std.mem.eql(u8, self.tokens[self.index].lexeme, "*")) self.index += 1;
+                    if (self.at(.operator) and std.mem.eql(u8, self.tokens[self.index].lexeme, "*")) {
+                        parameter_kind = .keyword_variadic;
+                        self.index += 1;
+                    }
                 }
                 if (!self.at(.identifier)) return error.MissingName;
                 const pstart = self.index;
@@ -158,11 +163,12 @@ pub const Parser = struct {
                     default_value = std.fmt.parseInt(i64, self.tokens[self.index].lexeme, 10) catch return error.InvalidNumber;
                     self.index += 1;
                 }
-                try module.parameters.append(self.allocator, .{ .name = pname, .annotation = annotation, .span = .{ .first = pstart, .last = self.index, .line = self.tokens[pstart].line }, .default_value = default_value });
+                try module.parameters.append(self.allocator, .{ .name = pname, .annotation = annotation, .span = .{ .first = pstart, .last = self.index, .line = self.tokens[pstart].line }, .default_value = default_value, .kind = parameter_kind });
                 if (self.at(.comma)) self.index += 1 else if (!self.at(.r_paren)) return error.UnexpectedToken;
             }
             self.index += 1;
         }
+        const params_count = module.parameters.items.len - params_first;
         var return_type: ?[]const u8 = null;
         if (self.at(.arrow)) {
             self.index += 1;
@@ -172,8 +178,10 @@ pub const Parser = struct {
             return_type = self.tokens[self.index].lexeme;
             self.index += 1;
         }
+        const statement_index = out.items.len;
+        try out.append(self.allocator, .{ .span = .{ .first = start, .last = start, .line = self.tokens[start].line }, .kind = .{ .transfer = "pass" } });
         const body = try self.parseSuite(module);
-        try out.append(self.allocator, .{ .span = .{ .first = start, .last = self.index, .line = self.tokens[start].line }, .kind = .{ .function = .{ .name = name, .params_first = params_first, .params_count = module.parameters.items.len - params_first, .return_type = return_type, .body_first = body.first, .body_count = body.count, .decorators_first = 0, .decorators_count = module.decorators.items.len, .visibility = visibility } } });
+        out.items[statement_index] = .{ .span = .{ .first = start, .last = self.index, .line = self.tokens[start].line }, .kind = .{ .function = .{ .name = name, .params_first = params_first, .params_count = params_count, .return_type = return_type, .body_first = body.first, .body_count = body.count, .decorators_first = 0, .decorators_count = module.decorators.items.len, .visibility = visibility } } };
     }
 
     fn parseReturn(self: *Parser, module: *ast.Module, out: *std.ArrayListUnmanaged(ast.Stmt), start: usize) ParseError!void {
@@ -224,6 +232,8 @@ pub const Parser = struct {
     fn parseControl(self: *Parser, module: *ast.Module, out: *std.ArrayListUnmanaged(ast.Stmt), start: usize) ParseError!void {
         const keyword = config.keywordCanonicalFor(self.language, self.tokens[self.index].lexeme) orelse self.tokens[self.index].lexeme;
         self.index += 1;
+        const statement_index = out.items.len;
+        try out.append(self.allocator, .{ .span = .{ .first = start, .last = start, .line = self.tokens[start].line }, .kind = .{ .transfer = "" } });
         if (std.mem.eql(u8, keyword, "try")) {
             const body = try self.parseSuite(module);
             var except_first: usize = 0;
@@ -251,7 +261,7 @@ pub const Parser = struct {
                 finally_first = finally_body.first;
                 finally_count = finally_body.count;
             }
-            try out.append(self.allocator, .{ .span = .{ .first = start, .last = self.index, .line = self.tokens[start].line }, .kind = .{ .try_stmt = .{ .body_first = body.first, .body_count = body.count, .except_first = except_first, .except_count = except_count, .except_binding = except_binding, .except_match = except_match, .finally_first = finally_first, .finally_count = finally_count } } });
+            out.items[statement_index] = .{ .span = .{ .first = start, .last = self.index, .line = self.tokens[start].line }, .kind = .{ .try_stmt = .{ .body_first = body.first, .body_count = body.count, .except_first = except_first, .except_count = except_count, .except_binding = except_binding, .except_match = except_match, .finally_first = finally_first, .finally_count = finally_count } } };
             return;
         }
         if (std.mem.eql(u8, keyword, "for")) {
@@ -262,7 +272,7 @@ pub const Parser = struct {
             self.index += 1;
             const iterable = try self.parseExpression(module, 0);
             const body = try self.parseSuite(module);
-            try out.append(self.allocator, .{ .span = .{ .first = start, .last = self.index, .line = self.tokens[start].line }, .kind = .{ .control = .{ .keyword = keyword, .condition = null, .body_first = body.first, .body_count = body.count, .target = target, .iterable = iterable } } });
+            out.items[statement_index] = .{ .span = .{ .first = start, .last = self.index, .line = self.tokens[start].line }, .kind = .{ .control = .{ .keyword = keyword, .condition = null, .body_first = body.first, .body_count = body.count, .target = target, .iterable = iterable } } };
             return;
         }
         var condition: ?ast.ExprId = null;
@@ -270,13 +280,17 @@ pub const Parser = struct {
         const body = try self.parseSuite(module);
         var else_first: usize = 0;
         var else_count: usize = 0;
-        if (std.mem.eql(u8, keyword, "if") and self.word("else")) {
+        if (std.mem.eql(u8, keyword, "if") and self.word("elif")) {
+            else_first = out.items.len;
+            try self.parseControl(module, out, self.index);
+            else_count = out.items.len - else_first;
+        } else if ((std.mem.eql(u8, keyword, "if") or std.mem.eql(u8, keyword, "elif")) and self.word("else")) {
             self.index += 1;
             const else_body = try self.parseSuite(module);
             else_first = else_body.first;
             else_count = else_body.count;
         }
-        try out.append(self.allocator, .{ .span = .{ .first = start, .last = self.index, .line = self.tokens[start].line }, .kind = .{ .control = .{ .keyword = keyword, .condition = condition, .body_first = body.first, .body_count = body.count, .else_first = else_first, .else_count = else_count } } });
+        out.items[statement_index] = .{ .span = .{ .first = start, .last = self.index, .line = self.tokens[start].line }, .kind = .{ .control = .{ .keyword = keyword, .condition = condition, .body_first = body.first, .body_count = body.count, .else_first = else_first, .else_count = else_count } } };
     }
 
     fn parseSuite(self: *Parser, module: *ast.Module) ParseError!struct { first: usize, count: usize } {
@@ -288,7 +302,7 @@ pub const Parser = struct {
         self.index += 1;
         const first = module.statements.items.len;
         while (!self.at(.dedent) and !self.at(.eof)) {
-            self.skipTrivia();
+            while (self.at(.newline) or self.at(.comment)) self.index += 1;
             if (self.at(.dedent) or self.at(.eof)) break;
             try self.parseStatement(module, &module.statements);
         }
@@ -328,15 +342,25 @@ pub const Parser = struct {
             if (self.at(.l_paren)) {
                 if (90 < min_bp) break;
                 self.index += 1;
-                const first_arg = module.expressions.items.len;
-                var count: usize = 0;
+                var arguments: std.ArrayListUnmanaged(ast.ExprId) = .empty;
+                var keyword_names: std.ArrayListUnmanaged([]const u8) = .empty;
+                defer arguments.deinit(self.allocator);
+                defer keyword_names.deinit(self.allocator);
                 while (!self.at(.r_paren)) {
-                    _ = try self.parseExpression(module, 0);
-                    count += 1;
+                    const argument = try self.parseExpression(module, 0);
+                    const argument_kind = module.expressions.items[argument].kind;
+                    if (argument_kind == .assignment and argument_kind.assignment.target == null) {
+                        try keyword_names.append(self.allocator, argument_kind.assignment.name);
+                        try arguments.append(self.allocator, argument_kind.assignment.value);
+                    } else try arguments.append(self.allocator, argument);
                     if (self.at(.comma)) self.index += 1 else if (!self.at(.r_paren)) return error.UnterminatedCall;
                 }
                 self.index += 1;
-                left = try appendExpr(module, .{ .span = .{ .first = start, .last = self.index, .line = self.tokens[start].line }, .kind = .{ .call = .{ .callee = left, .first_arg = first_arg, .arg_count = count } } });
+                const first_arg = module.call_args.items.len;
+                try module.call_args.appendSlice(self.allocator, arguments.items);
+                const keyword_first = module.call_keywords.items.len;
+                try module.call_keywords.appendSlice(self.allocator, keyword_names.items);
+                left = try appendExpr(module, .{ .span = .{ .first = start, .last = self.index, .line = self.tokens[start].line }, .kind = .{ .call = .{ .callee = left, .first_arg = first_arg, .arg_count = arguments.items.len, .keyword_first = keyword_first, .keyword_count = keyword_names.items.len } } });
                 continue;
             }
             if (self.at(.l_bracket)) {

@@ -110,6 +110,21 @@ test "parsed AST functions bind parameters and return values" {
     try std.testing.expectEqual(@as(i64, 5), try vm.run(&chunk));
 }
 
+test "parsed AST typed function parameters bind as locals" {
+    const source = "kriya double(value: int):\n    kodu value * 2\ndouble(3)\n";
+    try std.testing.expectEqual(@as(i64, 6), try runAst(source, .kn));
+}
+
+test "parsed AST typed function with comments and builtin call" {
+    const source = "# header\nkriya double(value: int):\n    kodu value * 2\n\nmudrisu(double(3))\n";
+    try std.testing.expectEqual(@as(i64, 0), try runAst(source, .kn));
+}
+
+test "parsed AST lowers membership and identity expressions" {
+    try std.testing.expectEqual(@as(i64, 0), try runAst("mudrisu(4 alli [1, 4, 6])\n", .kn));
+    try std.testing.expectEqual(@as(i64, 0), try runAst("mudrisu(none ide none)\n", .kn));
+}
+
 test "parsed AST lambdas produce callable function values" {
     const source = "add = function(a, b) => a + b\nadd(4, 6)\n";
     var scan = try lexer.Lexer.init(std.testing.allocator, source);
@@ -125,6 +140,11 @@ test "parsed AST lambdas produce callable function values" {
     var vm = try vm_mod.Vm.init(std.testing.allocator);
     defer vm.deinit();
     try std.testing.expectEqual(@as(i64, 10), try vm.run(&chunk));
+}
+
+test "parsed AST lowers profile print builtins" {
+    const source = "mudrisu(2 + 3)\n";
+    try std.testing.expectEqual(@as(i64, 0), try runAst(source, .kn));
 }
 
 test "parsed AST lambdas capture outer locals" {
@@ -514,6 +534,31 @@ test "AST control flow rejects transfers outside loops" {
     try std.testing.expectError(error.UnsupportedOperator, compile.compileAstModule(&module));
 }
 
+test "pass is an executable no-op in both compiler paths" {
+    const source = "value = 1\nadre value == 1:\n    bidu\nvalue = value + 2\nvalue\n";
+    var scan = try lexer.Lexer.init(std.testing.allocator, source);
+    defer scan.deinit();
+    const tokens = try scan.tokenize();
+    var parse = parser.Parser.init(std.testing.allocator, tokens);
+    var module = try parse.parseRecovering();
+    defer module.deinit();
+    try std.testing.expectEqual(@as(usize, 0), module.diagnostics.items.len);
+
+    var legacy_compile = compiler.Compiler.init(std.testing.allocator);
+    var legacy_chunk = try legacy_compile.compileProgram(tokens);
+    defer legacy_chunk.deinit();
+    var legacy_vm = try vm_mod.Vm.init(std.testing.allocator);
+    defer legacy_vm.deinit();
+    try std.testing.expectEqual(@as(i64, 3), try legacy_vm.run(&legacy_chunk));
+
+    var ast_compile = compiler.Compiler.init(std.testing.allocator);
+    var ast_chunk = try ast_compile.compileAstModule(&module);
+    defer ast_chunk.deinit();
+    var ast_vm = try vm_mod.Vm.init(std.testing.allocator);
+    defer ast_vm.deinit();
+    try std.testing.expectEqual(@as(i64, 3), try ast_vm.run(&ast_chunk));
+}
+
 test "formatted strings apply width and alignment specifications" {
     var scan = try lexer.Lexer.init(std.testing.allocator, "value = 7\nf\"[{value:>4}][{value:<4}][{value:^5}]\"\n");
     defer scan.deinit();
@@ -800,8 +845,9 @@ test "AST call lowering emits an indirect call" {
     try module.expressions.append(std.testing.allocator, .{ .span = .{ .first = 0, .last = 3, .line = 1 }, .kind = .{ .name = "callback" } });
     const argument = module.expressions.items.len;
     try module.expressions.append(std.testing.allocator, .{ .span = .{ .first = 4, .last = 4, .line = 1 }, .kind = .{ .integer = 8 } });
+    try module.call_args.append(std.testing.allocator, @intCast(argument));
     const call_id = module.expressions.items.len;
-    try module.expressions.append(std.testing.allocator, .{ .span = .{ .first = 0, .last = 5, .line = 1 }, .kind = .{ .call = .{ .callee = @intCast(callee), .first_arg = argument, .arg_count = 1 } } });
+    try module.expressions.append(std.testing.allocator, .{ .span = .{ .first = 0, .last = 5, .line = 1 }, .kind = .{ .call = .{ .callee = @intCast(callee), .first_arg = 0, .arg_count = 1 } } });
     try module.statements.append(std.testing.allocator, .{ .span = .{ .first = 0, .last = 5, .line = 1 }, .kind = .{ .expression = @intCast(call_id) } });
     var compile = compiler.Compiler.init(std.testing.allocator);
     var chunk = try compile.compileAstModule(&module);

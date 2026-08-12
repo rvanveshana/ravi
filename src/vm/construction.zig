@@ -30,7 +30,6 @@ pub fn dictionary(comptime Error: type, self: anytype, operand: i64) Error!void 
     if (count > self.stack_top / 2) return error.InvalidInstruction;
     const slot = self.dict_count;
     _ = try object_storage.newDict(self);
-    self.dict_count += 1;
     for (0..count) |index| {
         try collections.put(self.dicts[slot], self.stack[self.stack_top - count * 2 + index * 2], self.stack[self.stack_top - count * 2 + index * 2 + 1]);
     }

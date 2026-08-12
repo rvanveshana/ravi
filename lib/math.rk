@@ -1,3 +1,5 @@
+# Ravi standard-library math module.
+
 kriya add(a: int, b: int):
     kodu a + b
 

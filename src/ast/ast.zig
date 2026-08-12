@@ -24,7 +24,7 @@ pub const Expr = struct {
         member: struct { object: ExprId, name: []const u8 },
         unary: struct { op: UnaryOp, operand: ExprId },
         binary: struct { op: BinaryOp, left: ExprId, right: ExprId },
-        call: struct { callee: ExprId, first_arg: usize, arg_count: usize },
+        call: struct { callee: ExprId, first_arg: usize, arg_count: usize, keyword_first: usize = 0, keyword_count: usize = 0 },
         assignment: struct { name: []const u8, value: ExprId, target: ?ExprId = null, annotation: ?[]const u8 = null, array_type: bool = false },
         lambda: struct { params_first: usize, params_count: usize, body: ExprId },
         array: struct { first: usize, count: usize },
@@ -36,7 +36,8 @@ pub const Expr = struct {
     };
 };
 
-pub const Parameter = struct { name: []const u8, annotation: ?[]const u8, span: Span, default_value: ?i64 = null };
+pub const ParameterKind = enum { positional, variadic, keyword_variadic };
+pub const Parameter = struct { name: []const u8, annotation: ?[]const u8, span: Span, default_value: ?i64 = null, kind: ParameterKind = .positional };
 pub const Decorator = struct { name: []const u8, span: Span };
 pub const ParseDiagnostic = struct { message: []const u8, span: Span };
 
@@ -64,6 +65,8 @@ pub const Module = struct {
     format_args: std.ArrayListUnmanaged(ExprId) = .empty,
     statements: std.ArrayListUnmanaged(Stmt) = .empty,
     parameters: std.ArrayListUnmanaged(Parameter) = .empty,
+    call_args: std.ArrayListUnmanaged(ExprId) = .empty,
+    call_keywords: std.ArrayListUnmanaged([]const u8) = .empty,
     import_names: std.ArrayListUnmanaged([]const u8) = .empty,
     decorators: std.ArrayListUnmanaged(Decorator) = .empty,
     docstring: ?[]const u8 = null,
@@ -74,6 +77,8 @@ pub const Module = struct {
         self.format_args.deinit(self.allocator);
         self.statements.deinit(self.allocator);
         self.parameters.deinit(self.allocator);
+        self.call_args.deinit(self.allocator);
+        self.call_keywords.deinit(self.allocator);
         self.import_names.deinit(self.allocator);
         self.decorators.deinit(self.allocator);
         self.diagnostics.deinit(self.allocator);

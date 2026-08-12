@@ -7,7 +7,6 @@ param(
         "examples/arithmetic.rk",
         "examples/functions.rk",
         "examples/closures.rk",
-        "examples/collections.rk",
         "examples/collections_advanced.rk",
         "examples/strings.rk",
         "examples/gradual_typing.rk",

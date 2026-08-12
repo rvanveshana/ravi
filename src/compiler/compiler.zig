@@ -43,6 +43,26 @@ pub const Compiler = struct {
         return .{ .allocator = allocator, .language = language };
     }
 
+    pub fn findAstFunction(self: *const Compiler, module: *const ast.Module, name: []const u8) ?usize {
+        for (self.ast_state.function_statements, 0..) |statement_index, function_index| {
+            const function = module.statements.items[statement_index].kind.function;
+            if (std.mem.eql(u8, function.name, name)) return function_index;
+        }
+        return null;
+    }
+
+    pub fn findAstClass(module: *const ast.Module, name: []const u8) ?usize {
+        var class_index: usize = 0;
+        for (module.statements.items) |statement| switch (statement.kind) {
+            .class_decl => |class_decl| {
+                if (std.mem.eql(u8, class_decl.name, name)) return class_index;
+                class_index += 1;
+            },
+            else => {},
+        };
+        return null;
+    }
+
     pub fn emitGuardedInteger(self: *Compiler, value: i64) CompileError!bytecode.Chunk {
         var chunk = bytecode.Chunk.init(self.allocator);
         errdefer chunk.deinit();
@@ -71,11 +91,53 @@ pub const Compiler = struct {
         var function_statements: std.ArrayListUnmanaged(usize) = .empty;
         defer function_statements.deinit(self.allocator);
         try ast_helpers.collectFunctionStatements(self.allocator, module, &function_statements);
-        for (function_statements.items) |statement_index| {
+        var function_captures: std.ArrayListUnmanaged(ast_helpers.FunctionCaptureInfo) = .empty;
+        defer function_captures.deinit(self.allocator);
+        try ast_helpers.collectFunctionCaptures(self.allocator, module, function_statements.items, &function_captures);
+        var class_index: usize = 0;
+        for (module.statements.items) |statement| switch (statement.kind) {
+            .class_decl => |class_decl| {
+                const base = if (class_decl.base) |base_name| blk: {
+                    var candidate: usize = 0;
+                    for (module.statements.items) |base_statement| switch (base_statement.kind) {
+                        .class_decl => |candidate_class| {
+                            if (std.mem.eql(u8, candidate_class.name, base_name)) break :blk candidate;
+                            candidate += 1;
+                        },
+                        else => {},
+                    };
+                    break :blk null;
+                } else null;
+                try chunk.classes.append(self.allocator, .{ .name = class_decl.name, .base = base });
+                for (function_statements.items, 0..) |statement_index, function_index| {
+                    if (statement_index >= class_decl.body_first and statement_index < class_decl.body_first + class_decl.body_count) {
+                        const method = module.statements.items[statement_index].kind.function;
+                        try chunk.methods.append(self.allocator, .{ .class_index = class_index, .name = method.name, .function_index = function_index, .visibility = @intFromEnum(method.visibility) });
+                    }
+                }
+                class_index += 1;
+            },
+            else => {},
+        };
+        for (function_statements.items, 0..) |statement_index, function_index| {
             const function = module.statements.items[statement_index].kind.function;
             var defaults: [64]?i64 = @splat(null);
-            for (module.parameters.items[function.params_first .. function.params_first + function.params_count], 0..) |parameter, parameter_index| defaults[parameter_index] = parameter.default_value;
-            _ = try chunk.addFunction(.{ .entry = 0, .arity = function.params_count, .name = function.name, .defaults = defaults });
+            var fixed_count: usize = function.params_count;
+            var varargs_index: ?usize = null;
+            var kwargs_index: ?usize = null;
+            for (module.parameters.items[function.params_first .. function.params_first + function.params_count], 0..) |parameter, parameter_index| {
+                defaults[parameter_index] = parameter.default_value;
+                switch (parameter.kind) {
+                    .positional => {},
+                    .variadic => varargs_index = parameter_index,
+                    .keyword_variadic => kwargs_index = parameter_index,
+                }
+            }
+            if (varargs_index) |index| fixed_count = index;
+            if (kwargs_index) |index| {
+                if (index < fixed_count) fixed_count = index;
+            }
+            _ = try chunk.addFunction(.{ .entry = 0, .arity = function.params_count, .fixed_count = fixed_count, .varargs_index = varargs_index, .kwargs_index = kwargs_index, .name = function.name, .defaults = defaults, .capture_count = function_captures.items[function_index].capture_count });
         }
         var lambdas: std.ArrayListUnmanaged(AstLambdaInfo) = .empty;
         defer lambdas.deinit(self.allocator);
@@ -88,8 +150,10 @@ pub const Compiler = struct {
             self.ast_state.function_count = 0;
             self.ast_state.active_captures = &.{};
             self.ast_state.function_statements = &.{};
+            self.ast_state.function_captures = &.{};
         }
         self.ast_state.function_statements = function_statements.items;
+        self.ast_state.function_captures = function_captures.items;
         var loops: std.ArrayListUnmanaged(AstLoopContext) = .empty;
         defer loops.deinit(self.allocator);
         var break_targets: std.ArrayListUnmanaged(usize) = .empty;
@@ -109,8 +173,14 @@ pub const Compiler = struct {
             chunk.functions.items[function_index].entry = chunk.code.items.len;
             var function_names: std.ArrayListUnmanaged([]const u8) = .empty;
             defer function_names.deinit(self.allocator);
+            for (module.statements.items) |statement| switch (statement.kind) {
+                .class_decl => |class_decl| if (statement_index >= class_decl.body_first and statement_index < class_decl.body_first + class_decl.body_count) try function_names.append(self.allocator, "tanna"),
+                else => {},
+            };
             for (module.parameters.items[function.params_first .. function.params_first + function.params_count]) |parameter| try function_names.append(self.allocator, parameter.name);
+            self.ast_state.active_captures = function_captures.items[function_index].captures[0..function_captures.items[function_index].capture_count];
             try self.compileAstStatements(&chunk, module, function.body_first, function.body_count, &function_names, true, &loops, &break_targets);
+            self.ast_state.active_captures = &.{};
             try chunk.emit(.{ .op = .constant, .operand = 0 });
             try chunk.emit(.{ .op = .return_value });
         }
@@ -161,11 +231,18 @@ pub const Compiler = struct {
                         break;
                     };
                     const index = function_index orelse return error.InvalidFunction;
-                    try chunk.emit(.{ .op = .make_function, .operand = @intCast(index) });
+                    const capture_info = self.ast_state.function_captures[index];
+                    for (capture_info.captures[0..capture_info.capture_count]) |capture| {
+                        if (helpers.findLocal(names.items, capture)) |slot| {
+                            try chunk.emit(.{ .op = .load_local, .operand = @intCast(slot) });
+                        } else if (helpers.findCapture(self.ast_state.active_captures, capture)) |capture_slot| {
+                            try chunk.emit(.{ .op = .load_capture_ref, .operand = @intCast(capture_slot) });
+                        } else return error.InvalidName;
+                    }
+                    try chunk.emit(.{ .op = if (capture_info.capture_count == 0) .make_function else .make_closure, .operand = @intCast(index) });
                     const slot = try helpers.localSlot(names, self.allocator, function.name);
                     try chunk.emit(.{ .op = .store_local, .operand = @intCast(slot) });
                     statement_index = function.body_first + function.body_count;
-                    if (statement_index > first + count) return error.InvalidExpression;
                     statement_index -= 1;
                 },
                 .try_stmt => |try_stmt| {
@@ -204,11 +281,12 @@ pub const Compiler = struct {
                     statement_index = @max(statement_index + 1, try_stmt.body_first + try_stmt.body_count);
                     if (try_stmt.except_count != 0) statement_index = @max(statement_index, try_stmt.except_first + try_stmt.except_count);
                     if (try_stmt.finally_count != 0) statement_index = @max(statement_index, try_stmt.finally_first + try_stmt.finally_count);
-                    if (statement_index > first + count) return error.InvalidExpression;
                     statement_index -= 1;
                 },
                 .transfer => |transfer_keyword| {
-                    if (std.mem.eql(u8, transfer_keyword, "break")) {
+                    if (std.mem.eql(u8, transfer_keyword, "pass")) {
+                        // Intentional no-op statement.
+                    } else if (std.mem.eql(u8, transfer_keyword, "break")) {
                         if (loops.items.len == 0) return error.UnsupportedOperator;
                         try self.compileAstFinalizers(chunk, module, names, loops, break_targets);
                         const jump = chunk.code.items.len;
@@ -244,19 +322,16 @@ pub const Compiler = struct {
                                     const current_slot = try helpers.localSlot(names, self.allocator, current_name);
                                     const limit_slot = try helpers.localSlot(names, self.allocator, limit_name);
                                     const step_slot = try helpers.localSlot(names, self.allocator, step_name);
-                                    const argument = struct {
-                                        fn id(call: anytype, offset: usize) ast.ExprId {
-                                            return @intCast(@as(usize, call.first_arg) + offset);
-                                        }
-                                    };
-                                    if (range_call.arg_count == 1) try chunk.emit(.{ .op = .constant, .operand = 0 }) else try self.compileAstExpression(chunk, module, argument.id(range_call, 0), names);
+                                    if (range_call.first_arg > module.call_args.items.len or range_call.arg_count > module.call_args.items.len - range_call.first_arg) return error.InvalidExpression;
+                                    const range_args = module.call_args.items[range_call.first_arg .. range_call.first_arg + range_call.arg_count];
+                                    if (range_call.arg_count == 1) try chunk.emit(.{ .op = .constant, .operand = 0 }) else try self.compileAstExpression(chunk, module, range_args[0], names);
                                     try chunk.emit(.{ .op = .store_local, .operand = @intCast(current_slot) });
                                     try chunk.emit(.{ .op = .pop });
                                     const limit_argument: usize = if (range_call.arg_count == 1) 0 else 1;
-                                    try self.compileAstExpression(chunk, module, argument.id(range_call, limit_argument), names);
+                                    try self.compileAstExpression(chunk, module, range_args[limit_argument], names);
                                     try chunk.emit(.{ .op = .store_local, .operand = @intCast(limit_slot) });
                                     try chunk.emit(.{ .op = .pop });
-                                    if (range_call.arg_count == 3) try self.compileAstExpression(chunk, module, argument.id(range_call, 2), names) else try chunk.emit(.{ .op = .constant, .operand = 1 });
+                                    if (range_call.arg_count == 3) try self.compileAstExpression(chunk, module, range_args[2], names) else try chunk.emit(.{ .op = .constant, .operand = 1 });
                                     try chunk.emit(.{ .op = .store_local, .operand = @intCast(step_slot) });
                                     try chunk.emit(.{ .op = .pop });
                                     const loop_start = chunk.code.items.len;
@@ -287,11 +362,56 @@ pub const Compiler = struct {
                                     for (break_targets.items[break_first..]) |target_jump| chunk.code.items[target_jump].operand = @intCast(chunk.code.items.len);
                                     break_targets.shrinkRetainingCapacity(break_first);
                                     statement_index = @max(statement_index + 1, control.body_first + control.body_count);
-                                    if (statement_index > first + count) return error.InvalidExpression;
                                     statement_index -= 1;
                                     continue;
                                 }
                             }
+                        }
+                        if (@as(usize, iterable) < module.expressions.items.len and module.expressions.items[iterable].kind == .integer) {
+                            const current_name = try std.fmt.allocPrint(self.allocator, "__ast_range_current_{d}", .{names.items.len});
+                            const limit_name = try std.fmt.allocPrint(self.allocator, "__ast_range_limit_{d}", .{names.items.len});
+                            const step_name = try std.fmt.allocPrint(self.allocator, "__ast_range_step_{d}", .{names.items.len});
+                            const current_slot = try helpers.localSlot(names, self.allocator, current_name);
+                            const limit_slot = try helpers.localSlot(names, self.allocator, limit_name);
+                            const step_slot = try helpers.localSlot(names, self.allocator, step_name);
+                            try chunk.emit(.{ .op = .constant, .operand = 0 });
+                            try chunk.emit(.{ .op = .store_local, .operand = @intCast(current_slot) });
+                            try chunk.emit(.{ .op = .pop });
+                            try self.compileAstExpression(chunk, module, iterable, names);
+                            try chunk.emit(.{ .op = .store_local, .operand = @intCast(limit_slot) });
+                            try chunk.emit(.{ .op = .pop });
+                            try chunk.emit(.{ .op = .constant, .operand = 1 });
+                            try chunk.emit(.{ .op = .store_local, .operand = @intCast(step_slot) });
+                            try chunk.emit(.{ .op = .pop });
+                            const loop_start = chunk.code.items.len;
+                            try chunk.emit(.{ .op = .load_local, .operand = @intCast(current_slot) });
+                            try chunk.emit(.{ .op = .load_local, .operand = @intCast(limit_slot) });
+                            try chunk.emit(.{ .op = .load_local, .operand = @intCast(step_slot) });
+                            try chunk.emit(.{ .op = .range_condition });
+                            const exit_jump = chunk.code.items.len;
+                            try chunk.emit(.{ .op = .jump_if_false, .operand = 0 });
+                            const target_slot = try helpers.localSlot(names, self.allocator, target);
+                            try chunk.emit(.{ .op = .load_local, .operand = @intCast(current_slot) });
+                            try chunk.emit(.{ .op = .store_local, .operand = @intCast(target_slot) });
+                            try chunk.emit(.{ .op = .pop });
+                            const break_first = break_targets.items.len;
+                            const continue_first = if (self.ast_state.continue_targets) |targets| targets.items.len else 0;
+                            try loops.append(self.allocator, .{ .continue_target = std.math.maxInt(usize), .breaks_first = break_first });
+                            try self.compileAstStatements(chunk, module, control.body_first, control.body_count, names, true, loops, break_targets);
+                            _ = loops.pop();
+                            const increment_start = chunk.code.items.len;
+                            if (self.ast_state.continue_targets) |targets| {
+                                for (targets.items[continue_first..]) |target_jump| chunk.code.items[target_jump].operand = @intCast(increment_start);
+                                targets.shrinkRetainingCapacity(continue_first);
+                            }
+                            try chunk.emit(.{ .op = .range_step, .operand = (@as(i64, @intCast(current_slot)) << 32) | @as(i64, @intCast(step_slot)) });
+                            try chunk.emit(.{ .op = .jump, .operand = @intCast(loop_start) });
+                            chunk.code.items[exit_jump].operand = @intCast(chunk.code.items.len);
+                            for (break_targets.items[break_first..]) |target_jump| chunk.code.items[target_jump].operand = @intCast(chunk.code.items.len);
+                            break_targets.shrinkRetainingCapacity(break_first);
+                            statement_index = @max(statement_index + 1, control.body_first + control.body_count);
+                            statement_index -= 1;
+                            continue;
                         }
                         try self.compileAstExpression(chunk, module, iterable, names);
                         try chunk.emit(.{ .op = .iterable });
@@ -332,7 +452,7 @@ pub const Compiler = struct {
                         chunk.code.items[exit_jump].operand = @intCast(chunk.code.items.len);
                         for (break_targets.items[break_first..]) |target_jump| chunk.code.items[target_jump].operand = @intCast(chunk.code.items.len);
                         break_targets.shrinkRetainingCapacity(break_first);
-                    } else if (std.mem.eql(u8, control.keyword, "if")) {
+                    } else if (std.mem.eql(u8, control.keyword, "if") or std.mem.eql(u8, control.keyword, "elif")) {
                         const condition = control.condition orelse return error.InvalidExpression;
                         try self.compileAstExpression(chunk, module, condition, names);
                         const false_jump = chunk.code.items.len;
@@ -362,7 +482,6 @@ pub const Compiler = struct {
                     } else return error.UnsupportedOperator;
                     statement_index = @max(statement_index + 1, control.body_first + control.body_count);
                     if (control.else_count != 0) statement_index = @max(statement_index, control.else_first + control.else_count);
-                    if (statement_index > first + count) return error.InvalidExpression;
                     statement_index -= 1;
                 },
                 else => return error.UnsupportedOperator,
@@ -393,7 +512,7 @@ pub const Compiler = struct {
         }
         try self.collectFunctions(tokens, &declarations, &params);
         try self.collectLambdas(tokens, &declarations, &params);
-        for (declarations.items) |decl| _ = try chunk.addFunction(.{ .entry = 0, .arity = decl.params_count, .name = decl.name, .defaults = decl.defaults, .capture_count = decl.capture_count, .resumable = decl.resumable, .suspension_count = decl.suspension_count });
+        for (declarations.items) |decl| _ = try chunk.addFunction(.{ .entry = 0, .arity = decl.params_count, .fixed_count = decl.fixed_count, .varargs_index = decl.varargs_index, .kwargs_index = decl.kwargs_index, .name = decl.name, .defaults = decl.defaults, .capture_count = decl.capture_count, .resumable = decl.resumable, .suspension_count = decl.suspension_count });
         for (declarations.items, 0..) |decl, function_index| if (decl.method) {
             for (0..self.class_count) |class_index| {
                 if (decl.body_first >= self.class_body_first[class_index] and decl.body_first < self.class_body_end[class_index]) {
@@ -645,6 +764,10 @@ pub const Compiler = struct {
                 const pending = context.continue_target == std.math.maxInt(usize);
                 try chunk.emit(.{ .op = .jump, .operand = if (pending) 0 else @intCast(context.continue_target) });
                 if (pending) try continue_targets.append(self.allocator, jump);
+                start = end + 1;
+                continue;
+            }
+            if (tokens[start].kind == .keyword and self.keyword(tokens[start], "pass")) {
                 start = end + 1;
                 continue;
             }
