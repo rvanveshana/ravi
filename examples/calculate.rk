@@ -1,3 +1,5 @@
+# Importing a function from another module and using it inside a
+# try-guarded branch.
 math inda add tago
 
 kriya calculate(a: int, b: int):
@@ -9,5 +11,9 @@ kriya calculate(a: int, b: int):
     tappu:
         kodu none
 
-mudrisu(calculate(12, 5))
-mudrisu(calculate(8, 5))
+adre alla (calculate(12, 5) == 17):
+    yese "imported function call inside try/if failed"
+adre alla (calculate(8, 5) == 8):
+    yese "else branch returning the untouched argument failed"
+
+mudrisu("calculate: PASS")

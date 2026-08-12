@@ -193,6 +193,7 @@ pub const Vm = struct {
                 },
                 .true_value => try self.push(Value.fromBool(true)),
                 .false_value => try self.push(Value.fromBool(false)),
+                .none_value => try self.push(Value.nil()),
                 .make_string => {
                     try string_construction.string(RuntimeError, self, instruction.operand, chunk.strings.items);
                 },

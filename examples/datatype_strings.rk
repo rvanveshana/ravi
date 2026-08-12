@@ -1,0 +1,40 @@
+# Contract: immutable strings and every currently supported string method.
+text = "  Ravi Language  "
+text_length = text.gatra()
+adre alla text_length == 17:
+    yese "length failed"
+character = text[2]
+adre alla character == 82:
+    yese "index failed"
+slice = text[2:6]
+adre alla slice == "Ravi":
+    yese "slice failed"
+lower = text.chikku()
+adre alla lower == "  ravi language  ":
+    yese "lower failed"
+upper = text.doddu()
+adre alla upper == "  RAVI LANGUAGE  ":
+    yese "upper failed"
+stripped = text.kadi()
+adre alla stripped == "Ravi Language":
+    yese "strip failed"
+found = text.huduk("Language")
+adre alla found == 7:
+    yese "find failed"
+missing = text.huduk("missing")
+adre alla missing == -1:
+    yese "missing find failed"
+replaced = text.badla("Ravi", "Ravi/Kanglish")
+adre alla replaced == "  Ravi/Kanglish Language  ":
+    yese "replace failed"
+csv = "ravi,kanglish,language"
+delimiter = ","
+parts = csv.ode(delimiter)
+adre alla parts[1] == "kanglish":
+    yese "split failed"
+joiner = "-"
+joined = joiner.jote(parts)
+adre alla joined == "ravi-kanglish-language":
+    yese "join failed"
+
+mudrisu("datatype_strings: PASS")

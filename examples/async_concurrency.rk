@@ -2,14 +2,21 @@
 # are runtime foundations, not language-level async syntax yet.
 
 kriya compute(id: int):
-    mudrisu(id * 10)
     kodu id * 10
 
-# Independent calls demonstrate ordinary function composition.
+# Independent calls compose as ordinary sequential function calls.
 res1 = compute(1)
 res2 = compute(2)
 res3 = compute(3)
 
-mudrisu(res1 + res2 + res3)
+adre alla (res1 == 10):
+    yese "first sequential call failed"
+adre alla (res2 == 20):
+    yese "second sequential call failed"
+adre alla (res3 == 30):
+    yese "third sequential call failed"
+adre alla (res1 + res2 + res3 == 60):
+    yese "combining sequential call results failed"
 
+mudrisu("async_concurrency: PASS")
 

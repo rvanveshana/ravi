@@ -1,5 +1,11 @@
-# Runtime faults can enter the same exception handler path as yese.
+# A genuine runtime fault (division by zero) enters the same `tappu`
+# handler path as an explicit `yese`, not just deliberately raised values.
+caught = alla true
 nodu:
     5 / 0
 tappu:
-    mudrisu(1)
+    caught = true
+adre alla caught:
+    yese "runtime fault did not reach the except handler"
+
+mudrisu("runtime_errors: PASS")

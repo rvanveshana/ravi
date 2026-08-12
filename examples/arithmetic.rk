@@ -1,6 +1,27 @@
-# Arithmetic follows normal precedence: multiplication before addition.
-mudrisu(1 + 2 * 3)
-mudrisu((1 + 2) * 3)
-mudrisu(10 - 3 - 2)
-mudrisu(20 / 4)
+# Arithmetic follows normal precedence: multiplication/division bind before
+# addition/subtraction, and parentheses override precedence explicitly.
+adre alla (1 + 2 * 3 == 7):
+    yese "precedence: multiplication before addition failed"
+adre alla ((1 + 2) * 3 == 9):
+    yese "parentheses override precedence failed"
+adre alla (10 - 3 - 2 == 5):
+    yese "left-to-right subtraction failed"
+adre alla (20 / 4 == 5):
+    yese "integer division failed"
+
+# Division truncates toward zero for integers; floats keep the remainder.
+adre alla (7 / 2 == 3):
+    yese "integer division truncation failed"
+adre alla (7.0 / 2 == 3.5):
+    yese "float division failed"
+
+# Modulo returns the remainder of integer division.
+adre alla (7 % 2 == 1):
+    yese "modulo failed"
+
+# Unary negation and mixed-sign arithmetic.
+adre alla (-5 + 3 == -2):
+    yese "negative arithmetic failed"
+
+mudrisu("arithmetic: PASS")
 

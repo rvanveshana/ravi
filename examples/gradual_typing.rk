@@ -2,23 +2,28 @@
 # Union types, narrowing, conversions, and complete runtime guard contracts
 # remain pending.
 
-# Dynamic variable (freedom)
+# Dynamic variable: no annotation, free to hold any value.
 dynamic_val = 100
 dynamic_val = dynamic_val + 50
-mudrisu(dynamic_val)
+adre alla (dynamic_val == 150):
+    yese "dynamic variable arithmetic failed"
 
-# Static integer annotation (speed path)
+# Static integer annotation: still a normal runtime integer.
 static_val: int = 500
 static_val = static_val * 2
-mudrisu(static_val)
+adre alla (static_val == 1000):
+    yese "static integer annotation arithmetic failed"
 
-# Static boolean & string annotations
+# Static boolean and string annotations behave like their dynamic counterparts.
 flag: bool = true
-adre flag:
-    mudrisu(1)
+adre alla flag:
+    yese "boolean annotation failed"
 
-# Static homogeneous array
+# Static homogeneous array annotation.
 numbers: int[] = [10, 20, 30]
-mudrisu(numbers[0])
-mudrisu(numbers.gatra())
+adre alla (numbers[0] == 10):
+    yese "typed array indexing failed"
+adre alla (numbers.gatra() == 3):
+    yese "typed array length failed"
 
+mudrisu("gradual_typing: PASS")

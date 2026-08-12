@@ -1,0 +1,108 @@
+# Executable data-type and method contract.
+# Every check raises through yese when an implementation returns a wrong value.
+
+kriya expect(condition, message):
+    adre alla condition:
+        yese message
+
+kriya expect_equal(actual, expected, message):
+    adre actual != expected:
+        yese message
+
+# none, booleans, integers, floats, and dynamic reassignment.
+expect(true mattu alla false, "boolean operators failed")
+expect_equal(7 + 5 * 2, 17, "integer arithmetic failed")
+expect_equal(7 / 2, 3, "integer division failed")
+expect_equal(3.5 * 2, 7.0, "float arithmetic failed")
+dynamic = 10
+dynamic = "ten"
+expect_equal(dynamic, "ten", "dynamic reassignment failed")
+
+# String indexing, Unicode-aware length, transformations, search, replacement,
+# splitting, and joining.
+text = "  Ravi Language  "
+expect_equal(text.gatra(), 17, "string length failed")
+expect_equal(text[2], 82, "string indexing failed")
+expect_equal(text[2:6], "Ravi", "string slicing failed")
+expect_equal(text.chikku(), "  ravi language  ", "string lower failed")
+expect_equal(text.doddu(), "  RAVI LANGUAGE  ", "string upper failed")
+expect_equal(text.kadi(), "Ravi Language", "string strip failed")
+expect_equal(text.huduk("Language"), 7, "string find failed")
+expect_equal(text.huduk("missing"), -1, "string missing find failed")
+expect_equal(text.badla("Ravi", "Ravi/Kanglish"), "  Ravi/Kanglish Language  ", "string replace failed")
+parts = "ravi,kanglish,language".ode(",")
+expect_equal(parts.gatra(), 3, "string split length failed")
+expect_equal(parts[1], "kanglish", "string split value failed")
+expect_equal("-".jote(parts), "ravi-kanglish-language", "string join failed")
+
+# Lists: indexing, assignment, append, insert, contains, count, reverse, sort,
+# pop, remove, and clear.
+values = [3, 1, 2]
+values.serisu(4)
+expect_equal(values.gatra(), 4, "list append or length failed")
+values.haku(1, 9)
+expect_equal(values[1], 9, "list insert failed")
+expect(values.olagide(4), "list contains failed")
+expect_equal(values.enisu(), 5, "list count failed")
+values.jodisu()
+expect_equal(values[0], 1, "list sort failed")
+values.ultha()
+expect_equal(values[0], 9, "list reverse failed")
+last = values.kithu()
+expect_equal(last, 1, "list pop failed")
+values.tegi(9)
+expect(alla values.olagide(9), "list remove failed")
+values.khaali()
+expect_equal(values.gatra(), 0, "list clear failed")
+
+# Tuples are fixed grouped sequences and support sequence queries.
+pair = (10, 20, 10)
+expect_equal(pair[1], 20, "tuple indexing failed")
+expect_equal(pair.gatra(), 3, "tuple length failed")
+expect_equal(pair.enisu(), 3, "tuple count failed")
+expect(pair.olagide(20), "tuple contains failed")
+
+# Sets remove duplicates and provide set algebra.
+left = {1, 2, 3}
+right = {3, 4, 5}
+union = left.koodu(right)
+intersection = left.ondu(right)
+difference = left.bere(right)
+expect_equal(union.gatra(), 5, "set union failed")
+expect_equal(intersection.gatra(), 1, "set intersection failed")
+expect_equal(difference.gatra(), 2, "set difference failed")
+expect(union.olagide(5), "set union membership failed")
+expect(intersection.olagide(3), "set intersection value failed")
+expect(difference.olagide(1), "set difference value failed")
+
+# Dictionaries: indexing, get, update, contains, views, length, and removal.
+profile = {"name": "Ravi", "score": 10}
+expect_equal(profile["name"], "Ravi", "dictionary indexing failed")
+expect_equal(profile.tago("score"), 10, "dictionary get failed")
+profile.badala("score", 11)
+expect_equal(profile.tago("score"), 11, "dictionary update failed")
+profile.badala("language", "Kanglish")
+expect(profile.olagide("language"), "dictionary contains failed")
+expect_equal(profile.gatra(), 3, "dictionary length failed")
+keys = profile.kili()
+values_view = profile.bele()
+items = profile.jodi()
+expect(keys.olagide("name"), "dictionary keys view failed")
+expect(values_view.olagide("Kanglish"), "dictionary values view failed")
+expect(items.gatra() == 3, "dictionary items view failed")
+profile.tegi("language")
+expect(alla profile.olagide("language"), "dictionary remove failed")
+
+# Functions are values; defaults and variadic arguments are executable.
+kriya add(left, right = 2):
+    kodu left + right
+
+kriya combine(first, *extra, **options):
+    kodu first + extra[0] + options["bonus"]
+
+operation = add
+expect_equal(operation(3), 5, "function value or default failed")
+combined = combine(1, 2, bonus = 4)
+expect_equal(combined, 7, "variadic call failed")
+
+mudrisu("data_types_and_methods: PASS")

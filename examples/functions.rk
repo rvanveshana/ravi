@@ -1,24 +1,28 @@
-# Comprehensive Functions Test - parameters, return values, recursion
+# Functions: parameters, return values, and recursion.
 kriya double(value: int):
     kodu value * 2
-
-mudrisu(double(3))
+adre alla (double(3) == 6):
+    yese "single-parameter function failed"
 
 kriya add_three(a: int, b: int, c: int):
     kodu a + b + c
-
-mudrisu(add_three(1, 2, 3))
+adre alla (add_three(1, 2, 3) == 6):
+    yese "multi-parameter function failed"
 
 kriya zero_args():
     kodu 42
+adre alla (zero_args() == 42):
+    yese "zero-argument function failed"
 
-mudrisu(zero_args())
-
-# Recursive function
+# Recursive function: each call reduces the problem until the base case.
 kriya factorial(n: int):
     adre n <= 1:
         kodu 1
     kodu n * factorial(n - 1)
+adre alla (factorial(5) == 120):
+    yese "recursive function failed"
+adre alla (factorial(0) == 1):
+    yese "recursive base case failed"
 
-mudrisu(factorial(5))
+mudrisu("functions: PASS")
 

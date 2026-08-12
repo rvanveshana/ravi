@@ -1,17 +1,19 @@
-# A while loop updates a variable until its condition becomes false.
+# A while loop (`vargu`) repeats its body until the condition is false.
 x = 0
 vargu x < 3:
     x = x + 1
+adre alla (x == 3):
+    yese "basic while loop failed"
 
-mudrisu(x)
-
-# Zero-iteration while loop
+# A while loop whose condition is false from the start never executes.
 zero_count = 0
 vargu zero_count > 10:
     zero_count = zero_count + 1
-mudrisu(zero_count)    # 0
+adre alla (zero_count == 0):
+    yese "zero-iteration while loop failed"
 
-# Nested while loop execution
+# Nested while loops: the inner loop resets and fully re-runs on every
+# outer iteration.
 outer_count = 0
 total_steps = 0
 vargu outer_count < 2:
@@ -20,6 +22,10 @@ vargu outer_count < 2:
         total_steps = total_steps + 1
         inner_count = inner_count + 1
     outer_count = outer_count + 1
+adre alla (total_steps == 6):
+    yese "nested while loop failed"
+adre alla (outer_count == 2):
+    yese "outer while loop counter failed"
 
-mudrisu(total_steps)   # 6
+mudrisu("control_flow: PASS")
 

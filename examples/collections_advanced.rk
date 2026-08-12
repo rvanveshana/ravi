@@ -1,25 +1,34 @@
 # Tuples support positional indexing.
 pair = (10, 20)
-mudrisu(pair[1])
+adre alla (pair[1] == 20):
+    yese "tuple indexing failed"
 
 # Sets keep unique values and can be indexed by their stored position.
 unique = {4, 4, 5}
-mudrisu(unique[0])
+adre alla (unique[0] == 4):
+    yese "set deduplication/indexing failed"
 
 # Dictionaries use key/value pairs and are indexed by key.
 scores = {1: 90, 2: 80}
-mudrisu(scores[2])
-mudrisu(scores.tago(1))
+adre alla (scores[2] == 80):
+    yese "dictionary indexing failed"
+adre alla (scores.tago(1) == 90):
+    yese "dictionary get failed"
 scores.badala(3, 70)
-mudrisu(scores.olagide(3))
+adre alla scores.olagide(3):
+    yese "dictionary update/insert failed"
 scores.tegi(1)
-mudrisu(scores.olagide(1))
+adre alla (alla scores.olagide(1)):
+    yese "dictionary remove failed"
 keys = scores.kili()
 values = scores.bele()
 items = scores.jodi()
-mudrisu(keys[0])
-mudrisu(values[0])
-mudrisu(items[0][0])
+adre alla (keys[0] == 3):
+    yese "dictionary keys view failed"
+adre alla (values[0] == 70):
+    yese "dictionary values view failed"
+adre alla (items[0][0] == 3):
+    yese "dictionary items view failed"
 scores.tegi(2)
 
 # Set operations return new duplicate-free sets.
@@ -28,32 +37,57 @@ right = {2, 3, 4}
 combined = left.koodu(right)
 common = left.ondu(right)
 only_left = left.bere(right)
-mudrisu(combined[0])
-mudrisu(common[0])
-mudrisu(only_left[0])
+adre alla (combined.gatra() == 4):
+    yese "set union size failed"
+adre alla (common.gatra() == 2):
+    yese "set intersection size failed"
+adre alla (only_left.gatra() == 1):
+    yese "set difference size failed"
+adre alla combined.olagide(4):
+    yese "set union membership failed"
 
-# Sets and dictionary views can be iterated with prati/alli.
+# Sets and dictionary views can be iterated with prati/alli. Iteration order
+# over a set/dict is not guaranteed, so verify a count instead of a position.
+iterated_count = 0
 prati item alli {8, 8, 9}:
-    mudrisu(item)
+    iterated_count = iterated_count + 1
+adre alla (iterated_count == 2):
+    yese "set iteration visited the wrong number of elements"
+
+key_count = 0
 prati key alli scores.kili():
-    mudrisu(key)
+    key_count = key_count + 1
+adre alla (key_count == 1):
+    yese "dictionary key iteration count failed"
 
 # Typed and dynamic lists can coexist.
 typed_pair: int[] = [7, 8]
 dynamic_values = {11, 12, 13}
-mudrisu(typed_pair[0])
-mudrisu(dynamic_values[2])
+adre alla (typed_pair[0] == 7):
+    yese "typed list indexing failed"
+adre alla (dynamic_values[2] == 13):
+    yese "dynamic set indexing failed"
 
 # Append, membership, sorting, reversing, counting, and popping.
 typed_pair.serisu(9)
-mudrisu(typed_pair.olagide(9))
+adre alla typed_pair.olagide(9):
+    yese "list append/contains failed"
 typed_pair.jodisu()
-mudrisu(typed_pair[0])
+adre alla (typed_pair[0] == 7):
+    yese "list sort failed"
 typed_pair.ultha()
-mudrisu(typed_pair[0])
-mudrisu(typed_pair.enisu())
-mudrisu(typed_pair.kithu())
+adre alla (typed_pair[0] == 9):
+    yese "list reverse failed"
+adre alla (typed_pair.enisu() == 3):
+    yese "list length via count failed"
+popped = typed_pair.kithu()
+adre alla (popped == 7):
+    yese "list pop value failed"
 typed_pair.haku(1, 8)
-mudrisu(typed_pair[1])
+adre alla (typed_pair[1] == 8):
+    yese "list insert failed"
 typed_pair.tegi(8)
-mudrisu(typed_pair.olagide(8))
+adre alla typed_pair.olagide(8):
+    yese "list remove-one-of-duplicates failed"
+
+mudrisu("collections_advanced: PASS")

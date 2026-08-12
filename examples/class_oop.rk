@@ -6,7 +6,10 @@ roopa Person:
         tanna.name = name
 
     saarva kriya speak():
-        mudrisu(tanna.name)
+        kodu tanna.name
 
-p = Person("Hello from Person class")
-p.speak()
+p = Person("Ravi language")
+adre alla (p.speak() == "Ravi language"):
+    yese "constructor property assignment and method read failed"
+
+mudrisu("class_oop: PASS")

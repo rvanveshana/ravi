@@ -1,20 +1,44 @@
+# `munde` (continue) skips the rest of the current iteration; `nillu`
+# (break) exits the loop entirely. Iterating 0..4, i=1 is skipped and the
+# loop exits at i=3, so only i=0 and i=2 reach the accumulator.
+for_sum = 0
+for_count = 0
 prati i alli 5:
     adre i == 1:
         munde
     adre i == 3:
         nillu
-    mudrisu(i)
+    for_sum = for_sum + i
+    for_count = for_count + 1
+adre alla (for_sum == 2):
+    yese "for-loop continue/break sum failed"
+adre alla (for_count == 2):
+    yese "for-loop continue/break count failed"
 
-# While loop with break and continue
+# The same continue/break behavior applies to a while loop.
 k = 0
+while_sum = 0
+while_count = 0
 vargu k < 10:
     k = k + 1
     adre k == 2:
         munde
     adre k == 5:
         nillu
-    mudrisu(k)
+    while_sum = while_sum + k
+    while_count = while_count + 1
+adre alla (while_sum == 8):
+    yese "while-loop continue/break sum failed"
+adre alla (while_count == 3):
+    yese "while-loop continue/break count failed"
+adre alla (k == 5):
+    yese "while-loop exited at the wrong iteration"
 
-# bidu is an intentional no-op statement.
+# `bidu` is an intentional no-op statement, valid anywhere a statement is
+# expected; it must not change control flow or any variable.
 adre k == 5:
     bidu
+adre alla (k == 5):
+    yese "bidu changed control flow"
+
+mudrisu("loop_control: PASS")

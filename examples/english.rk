@@ -3,18 +3,26 @@
 function double(value: int):
     return value * 2
 
-# Typed function call.
-print(double(3))
+if not (double(3) == 6):
+    raise "typed function call failed"
 
-# Range iteration uses start, end, and step.
+# Range iteration uses start, end, and step; here it visits 1, 2, 3.
+range_sum = 0
 for i in range(1, 4, 1):
-    print(i)
+    range_sum = range_sum + i
+if not (range_sum == 6):
+    raise "range iteration failed"
 
-# Collection methods use English names in an English file.
+# Collection methods use English names in an English-profile file.
 values = [1, 2]
 values.append(3)
-print(values.contains(3))
+if not values.contains(3):
+    raise "list contains failed"
 values.reverse()
-print(values[0])
-print(values.length())
+if not (values[0] == 3):
+    raise "list reverse failed"
+if not (values.length() == 3):
+    raise "list length failed"
+
+print("english: PASS")
 

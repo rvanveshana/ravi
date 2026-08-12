@@ -1,7 +1,10 @@
-# Named functions may be nested and capture enclosing parameters.
+# Named functions may be nested and read the enclosing function's parameters.
 kriya outer(value: int):
     kriya inner(extra: int):
         kodu value + extra
     kodu inner(4)
 
-mudrisu(outer(5))
+adre alla (outer(5) == 9):
+    yese "nested function capture failed"
+
+mudrisu("nested_functions: PASS")

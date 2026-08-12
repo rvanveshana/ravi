@@ -1,0 +1,19 @@
+# Contract: none and boolean values.
+# Assignment must preserve none identity; logical operators must return truthy values.
+kriya expect(condition, message):
+    adre alla condition:
+        yese message
+
+value = none
+expect(value ide none, "none identity after assignment failed")
+expect(true ide true, "true identity failed")
+expect(false ide false, "false identity failed")
+expect(true mattu alla false, "and failed")
+expect(false athva true, "or failed")
+expect(alla false, "not failed")
+adre alla value:
+    bidu
+illa:
+    yese "none should be falsey"
+
+mudrisu("datatype_none_bool: PASS")

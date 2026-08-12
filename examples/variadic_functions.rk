@@ -1,5 +1,9 @@
-# Extra positional values are packed into a tuple and extra keywords into a dictionary.
+# Extra positional arguments pack into a tuple (`*values`), and extra
+# keyword arguments pack into a dictionary (`**options`).
 kriya combine(first: int, *values, **options):
     kodu first + values[0] + options["bonus"]
 
-mudrisu(combine(1, 2, 3, bonus = 4))
+adre alla (combine(1, 2, 3, bonus = 4) == 7):
+    yese "variadic positional/keyword packing failed"
+
+mudrisu("variadic_functions: PASS")

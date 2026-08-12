@@ -1,24 +1,62 @@
-# Iterate over a direct integer: values are 0, 1, and 2.
+# Iterating a bare integer counts from 0 up to (but not including) it.
+sum_direct = 0
+count_direct = 0
 prati i alli 3:
-    mudrisu(i)
+    sum_direct = sum_direct + i
+    count_direct = count_direct + 1
+adre alla (sum_direct == 3):
+    yese "direct integer iteration sum failed"
+adre alla (count_direct == 3):
+    yese "direct integer iteration count failed"
 
-# `shreni` is the Kannada range function.
+# `shreni` is the Kannada range function; a single argument behaves the
+# same as iterating the bare integer above.
+sum_range = 0
 prati i alli shreni(3):
-    mudrisu(i)
+    sum_range = sum_range + i
+adre alla (sum_range == 3):
+    yese "single-argument range failed"
 
-# Range with start and end stops before the end value.
+# Range with start and end stops before the end value: 1, 2, 3.
+sum_start_end = 0
 prati i alli shreni(1, 4):
-    mudrisu(i)
+    sum_start_end = sum_start_end + i
+adre alla (sum_start_end == 6):
+    yese "start/end range failed"
 
-# Range with start, end, and step.
+# Range with start, end, and step: 0, 2, 4, 6.
+sum_stepped = 0
+count_stepped = 0
 prati i alli shreni(0, 7, 2):
-    mudrisu(i)
+    sum_stepped = sum_stepped + i
+    count_stepped = count_stepped + 1
+adre alla (sum_stepped == 12):
+    yese "stepped range sum failed"
+adre alla (count_stepped == 4):
+    yese "stepped range count failed"
 
-# Edge cases: single element range & step
+# Edge case: a range whose start and end differ by exactly one step
+# yields exactly one element.
+sum_single = 0
+count_single = 0
 prati i alli shreni(5, 6):
-    mudrisu(i)
+    sum_single = sum_single + i
+    count_single = count_single + 1
+adre alla (sum_single == 5):
+    yese "single-element range value failed"
+adre alla (count_single == 1):
+    yese "single-element range count failed"
 
-# A negative step walks down toward the end value.
+# A negative step walks downward toward (but not including) the end value.
+sum_descending = 0
+count_descending = 0
 prati i alli shreni(5, 0, -2):
-    mudrisu(i)
+    sum_descending = sum_descending + i
+    count_descending = count_descending + 1
+adre alla (sum_descending == 9):
+    yese "descending range sum failed"
+adre alla (count_descending == 3):
+    yese "descending range count failed"
+
+mudrisu("iteration: PASS")
 

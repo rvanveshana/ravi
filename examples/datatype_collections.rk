@@ -1,0 +1,52 @@
+# Contract: list, tuple, set, and dictionary methods with mutation checks.
+items = [3, 1, 2]
+items.serisu(4)
+items.haku(1, 9)
+adre alla items[1] == 9:
+    yese "list insert failed"
+adre alla items.olagide(4):
+    yese "list contains failed"
+item_count = items.enisu()
+adre alla item_count == 5:
+    yese "list count failed"
+items.jodisu()
+adre alla items[0] == 1:
+    yese "list sort failed"
+items.ultha()
+adre alla items[0] == 9:
+    yese "list reverse failed"
+popped = items.kithu()
+adre alla popped == 1:
+    yese "list pop failed"
+items.tegi(9)
+adre items.olagide(9):
+    yese "list remove failed"
+items.khaali()
+adre alla items.gatra() == 0:
+    yese "list clear failed"
+
+left = {1, 2, 3}
+right = {3, 4}
+union = left.koodu(right)
+intersection = left.ondu(right)
+difference = left.bere(right)
+adre alla union.olagide(4):
+    yese "set union failed"
+adre alla intersection.olagide(3):
+    yese "set intersection failed"
+adre alla difference.olagide(1):
+    yese "set difference failed"
+
+profile = {"name": "Ravi", "score": 10}
+profile_name = profile["name"]
+adre alla profile_name == "Ravi":
+    yese "dictionary index failed"
+profile.badala("score", 11)
+profile_score = profile.tago("score")
+adre alla profile_score == 11:
+    yese "dictionary update failed"
+profile.tegi("score")
+adre profile.olagide("score"):
+    yese "dictionary remove failed"
+
+mudrisu("datatype_collections: PASS")

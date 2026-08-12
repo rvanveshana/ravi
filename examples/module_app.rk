@@ -1,3 +1,7 @@
+# Importing a single name from a module file (lib/math.rk) and calling it.
 math inda answer tago
 value = answer()
-mudrisu(value)
+adre alla (value == 41):
+    yese "imported zero-argument function call failed"
+
+mudrisu("module_app: PASS")

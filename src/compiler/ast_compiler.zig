@@ -25,7 +25,7 @@ pub fn expression(comptime Error: type, self: anytype, chunk: *bytecode.Chunk, m
             try chunk.emit(.{ .op = .make_format, .operand = @intCast(format_index) });
         },
         .boolean => |value| try chunk.emit(.{ .op = if (value) .true_value else .false_value }),
-        .none => try chunk.emit(.{ .op = .constant, .operand = 0 }),
+        .none => try chunk.emit(.{ .op = .none_value }),
         .assignment => |assignment| {
             if (assignment.target) |target| {
                 const member = if (@as(usize, target) < module.expressions.items.len) module.expressions.items[target].kind else return error.InvalidExpression;
@@ -85,6 +85,7 @@ pub fn expression(comptime Error: type, self: anytype, chunk: *bytecode.Chunk, m
                 .subtract => .subtract,
                 .multiply => .multiply,
                 .divide => .divide,
+                .modulo => .modulo,
                 .equal => .equal,
                 .not_equal => .not_equal,
                 .less => .less,

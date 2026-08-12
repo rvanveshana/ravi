@@ -36,7 +36,7 @@ pub fn topLevel(comptime Error: type, self: anytype, chunk: *bytecode.Chunk, mod
                 try chunk.emit(.{ .op = if (capture_info.capture_count == 0) .make_function else .make_closure, .operand = @intCast(function_index) });
                 const slot = try helpers.localSlot(names, self.allocator, function.name);
                 try chunk.emit(.{ .op = .store_local, .operand = @intCast(slot) });
-                try chunk.emit(.{ .op = .load_local, .operand = @intCast(slot) });
+                try chunk.emit(.{ .op = .pop });
                 function_index += 1;
                 index = function.body_first + function.body_count;
             },

@@ -1,4 +1,6 @@
 # Comprehensive Language Features Test - collections, indexing, slicing, lambdas with return type
+# A bare string literal is a valid (and commonly used as a docstring-like)
+# expression statement.
 "Ravi feature module"
 
 numbers = [10, 20, 30, 40]
@@ -7,7 +9,14 @@ first = numbers[0]
 window = numbers[1:3]
 double_value = kriya(value: int) -> int => value * 2
 
-mudrisu(first)                 # 10
-mudrisu(lookup[2])            # 200
-mudrisu(double_value(15))     # 30
+adre alla (first == 10):
+    yese "list indexing failed"
+adre alla (lookup[2] == 200):
+    yese "dictionary indexing failed"
+adre alla (window[0] == 20):
+    yese "list slicing failed"
+adre alla (double_value(15) == 30):
+    yese "typed-return lambda call failed"
+
+mudrisu("language_features: PASS")
 

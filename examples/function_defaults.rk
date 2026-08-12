@@ -1,15 +1,24 @@
-# Comprehensive Function Defaults Test - default values, keyword arguments, missing trailing args
+# Default parameter values, positional overrides, and keyword arguments.
 kriya greet(name: int, repeat: int = 2):
     kodu name * repeat
 
-mudrisu(greet(3))       # 6 (uses repeat default 2)
-mudrisu(greet(3, 4))    # 12 (overrides default)
-mudrisu(greet(name = 3, repeat = 5)) # 15 (named keyword args)
+adre alla (greet(3) == 6):
+    yese "default parameter value failed"
+adre alla (greet(3, 4) == 12):
+    yese "positional override of default failed"
+adre alla (greet(name = 3, repeat = 5) == 15):
+    yese "keyword arguments failed"
 
+# Multiple defaults: only trailing parameters may be omitted.
 kriya multi_defaults(a: int = 10, b: int = 20, c: int = 30):
     kodu a + b + c
 
-mudrisu(multi_defaults(1, 2, 3))   # 6
-mudrisu(multi_defaults(5, 5))      # 40 (uses c default 30)
-mudrisu(multi_defaults(100))       # 150 (uses b=20, c=30 defaults)
+adre alla (multi_defaults(1, 2, 3) == 6):
+    yese "all arguments provided failed"
+adre alla (multi_defaults(5, 5) == 40):
+    yese "trailing default (c) failed"
+adre alla (multi_defaults(100) == 150):
+    yese "trailing defaults (b and c) failed"
+
+mudrisu("function_defaults: PASS")
 

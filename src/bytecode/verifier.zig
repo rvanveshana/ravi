@@ -13,7 +13,7 @@ pub fn verify(chunk: anytype) VerifyError!void {
     var depth: isize = 0;
     for (chunk.code.items) |instruction| {
         switch (instruction.op) {
-            .constant, .make_string, .make_function, .make_instance, .load_local, .load_capture, .load_capture_ref, .true_value, .false_value, .make_float => depth += 1,
+            .constant, .make_string, .make_function, .make_instance, .load_local, .load_capture, .load_capture_ref, .true_value, .false_value, .none_value, .make_float => depth += 1,
             .make_format => {
                 if (instruction.operand < 0 or instruction.operand >= @as(i64, @intCast(chunk.formats.items.len))) return error.InvalidInstruction;
                 const argument_count = chunk.formats.items[@intCast(instruction.operand)].arg_count;
@@ -191,7 +191,7 @@ fn stackAfter(chunk: anytype, instruction: anytype, depth: isize) VerifyError!is
     var required: isize = 0;
     var delta: isize = 0;
     switch (instruction.op) {
-        .constant, .true_value, .false_value => delta = 1,
+        .constant, .true_value, .false_value, .none_value => delta = 1,
         .make_format => {
             if (instruction.operand < 0 or instruction.operand >= @as(i64, @intCast(chunk.formats.items.len))) return error.InvalidInstruction;
             const count = chunk.formats.items[@intCast(instruction.operand)].arg_count;

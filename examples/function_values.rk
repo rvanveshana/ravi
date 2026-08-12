@@ -1,6 +1,10 @@
-# Named functions can be stored in variables and called indirectly.
+# Named functions are first-class values: they can be stored in a variable
+# and invoked indirectly through it.
 kriya double(value: int):
     kodu value * 2
 
 operation = double
-mudrisu(operation(3))
+adre alla (operation(3) == 6):
+    yese "function value assignment/call failed"
+
+mudrisu("function_values: PASS")

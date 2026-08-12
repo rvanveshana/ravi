@@ -1,25 +1,48 @@
-# Comprehensive Conditionals Test - if/else, nested, logical operators
+# Comprehensive conditionals: if/elif/else, nesting, and logical operators.
 x = 4
+a = none
+
+# Identity comparison distinguishes `ide` (is) from equality.
+adre alla (a ide none):
+    yese "none identity failed"
+
+# if/elif/else picks exactly one branch.
+result = 0
 adre x > 5:
-    mudrisu(0)
+    result = 1
 inadre x == 4:
-    mudrisu(2)
+    result = 2
 illa:
-    mudrisu(1)
+    result = 3
+adre alla (result == 2):
+    yese "if/elif/else branch selection failed"
 
-# Multiple boolean checks with and/or/alla and membership/identity.
-adre x > 2 mattu x < 10:
-    mudrisu(10)
+# Logical and/or combine boolean conditions.
+adre alla (x > 2 mattu x < 10):
+    yese "logical and failed"
+adre alla (x == 4 athva x == 5):
+    yese "logical or failed"
 
-adre x == 4 athva x == 5:
-    mudrisu(20)
+# `alla` negates a boolean value.
+adre alla (alla (x == 99)):
+    yese "logical not failed"
 
-mudrisu(4 alli [1, 4, 6])
-mudrisu(none ide none)
+# Membership (`alli`) and identity (`ide`) as boolean expressions.
+adre alla (4 alli [1, 4, 6]):
+    yese "membership check failed"
+adre alla (alla (7 alli [1, 4, 6])):
+    yese "negative membership check failed"
+adre alla (none ide none):
+    yese "none identity as expression failed"
 
-# Nested conditionals
+# Nested conditionals evaluate the innermost matching branch.
+nested_result = 0
 adre x >= 4:
     adre x <= 4:
-        mudrisu(30)
+        nested_result = 30
     illa:
-        mudrisu(0)
+        nested_result = 0
+adre alla (nested_result == 30):
+    yese "nested conditional failed"
+
+mudrisu("conditions: PASS")

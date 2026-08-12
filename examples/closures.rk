@@ -1,12 +1,15 @@
 # Ravi closures capture values from the surrounding scope.
 factor = 3
 scale = kriya(value: int) => value * factor
-mudrisu(scale(4))
+adre alla (scale(4) == 12):
+    yese "single-variable closure capture failed"
 
-# Multiple closed-over environment bindings
+# A closure can capture more than one enclosing binding at once.
 multiplier = 10
 adder = 5
 compute = kriya(x: int) => (x * multiplier) + adder
-mudrisu(compute(2))    # 25
+adre alla (compute(2) == 25):
+    yese "multi-variable closure capture failed"
 
+mudrisu("closures: PASS")
 

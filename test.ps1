@@ -44,17 +44,22 @@ foreach ($example in (Get-ChildItem -Path $EXAMPLES_DIR -Filter "*.rk")) {
     
     Write-Host "Testing $name ... " -NoNewline
     
-    # Run in execute mode
+    # Run each fixture through both compiler paths. The source-level checks in
+    # the fixtures raise on incorrect results, so exit code validates behavior.
     $langFlag = @()
     if ($name -eq "english.rk") {
         $langFlag = @("--lang", "en")
     }
-    
-    $output = & $RAVI run @langFlag $file 2>&1
-    $exitCode = $LASTEXITCODE
+
+    $legacyOutput = (& $RAVI run @langFlag $file 2>&1) -join "`n"
+    $legacyExit = $LASTEXITCODE
+    $astOutput = (& $RAVI run --ast-compiler @langFlag $file 2>&1) -join "`n"
+    $astExit = $LASTEXITCODE
+    $output = $legacyOutput
+    $exitCode = if ($legacyExit -eq 0 -and $astExit -eq 0 -and $legacyOutput -eq $astOutput) { 0 } else { 1 }
     $expectedError = $EXPECTED_FAILURES[$name]
     if ($null -ne $expectedError) {
-        if ($exitCode -ne 0 -and ($output -join "`n") -match [regex]::Escape($expectedError)) {
+        if ($exitCode -ne 0 -and $output -match [regex]::Escape($expectedError)) {
             Write-Host "[EXPECTED FAILURE: $expectedError]" -ForegroundColor DarkYellow
             $EXPECTED_FAILED++
         } else {
@@ -66,8 +71,9 @@ foreach ($example in (Get-ChildItem -Path $EXAMPLES_DIR -Filter "*.rk")) {
         Write-Host "[PASS]" -ForegroundColor Green
         $PASSED++
     } else {
-        Write-Host "[FAIL: Run]" -ForegroundColor Red
-        Write-Host "Error Output: $output" -ForegroundColor Red
+        Write-Host "[FAIL: Execution or result mismatch]" -ForegroundColor Red
+        Write-Host "Legacy ($legacyExit): $legacyOutput" -ForegroundColor Red
+        Write-Host "AST ($astExit): $astOutput" -ForegroundColor Red
         $FAILED++
     }
 }

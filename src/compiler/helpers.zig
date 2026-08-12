@@ -38,6 +38,139 @@ pub fn firstLambda(functions: []const model.FunctionDecl) ?model.FunctionDecl {
     return null;
 }
 
+/// Fixed-capacity set of names visible from a lexical scope, used to tell a
+/// genuinely new local variable apart from an intended capture of an
+/// enclosing variable when both are merely "assigned, then read" locally.
+const NameSet = struct {
+    items: [128][]const u8 = undefined,
+    count: usize = 0,
+
+    fn contains(self: *const NameSet, name: []const u8) bool {
+        for (self.items[0..self.count]) |existing| if (std.mem.eql(u8, existing, name)) return true;
+        return false;
+    }
+
+    fn add(self: *NameSet, name: []const u8) void {
+        if (self.contains(name) or self.count >= self.items.len) return;
+        self.items[self.count] = name;
+        self.count += 1;
+    }
+
+    fn addAll(self: *NameSet, other: *const NameSet) void {
+        for (other.items[0..other.count]) |name| self.add(name);
+    }
+};
+
+/// Collect simple assignment-target names within [first, end), skipping any
+/// token range in `skip_ranges` (used to exclude nested function/lambda bodies,
+/// which introduce their own scope).
+fn collectAssignedNames(tokens: []const lexer.Token, first: usize, end: usize, skip_ranges: []const [2]usize, out: *NameSet) void {
+    var i = first;
+    while (i < end) {
+        var skip_to: ?usize = null;
+        for (skip_ranges) |range| if (i >= range[0] and i < range[1]) {
+            skip_to = range[1];
+            break;
+        };
+        if (skip_to) |target| {
+            i = target;
+            continue;
+        }
+        if (tokens[i].kind == .newline or tokens[i].kind == .indent or tokens[i].kind == .dedent) {
+            i += 1;
+            continue;
+        }
+        const line_start = i;
+        var line_end = i;
+        while (line_end < end and tokens[line_end].kind != .newline and tokens[line_end].kind != .eof) line_end += 1;
+        if (tokens[line_start].kind == .identifier) {
+            if (line_start + 1 < line_end and tokens[line_start + 1].kind == .operator and std.mem.eql(u8, tokens[line_start + 1].lexeme, "=")) {
+                out.add(tokens[line_start].lexeme);
+            } else if (line_start + 1 < line_end and tokens[line_start + 1].kind == .colon) {
+                var cursor = line_start + 2;
+                while (cursor < line_end) : (cursor += 1) {
+                    if (tokens[cursor].kind == .operator and std.mem.eql(u8, tokens[cursor].lexeme, "=")) {
+                        out.add(tokens[line_start].lexeme);
+                        break;
+                    }
+                }
+            }
+        }
+        i = line_end + 1;
+    }
+}
+
+/// Refine the naive token-scan capture lists so only names that are actually
+/// visible in an enclosing scope remain captures; anything else is a fresh
+/// local of the function itself and must not be routed through the closure
+/// capture mechanism (which has no slot for it at plain call sites).
+pub fn refineLegacyCaptures(allocator: std.mem.Allocator, tokens: []const lexer.Token, declarations: []model.FunctionDecl, class_names: []const []const u8) !void {
+    const count = declarations.len;
+    if (count == 0) return;
+    const parent = try allocator.alloc(?usize, count);
+    defer allocator.free(parent);
+    for (0..count) |i| {
+        parent[i] = null;
+        var best_span: usize = std.math.maxInt(usize);
+        // Only consider earlier declarations as a possible parent: declarations
+        // are discovered in left-to-right token order, so an enclosing function
+        // always appears before anything nested in its body. Restricting the
+        // search this way also guarantees parent[i] < i, so `visible[parent[i]]`
+        // below is always already computed instead of reading uninitialized memory.
+        for (0..i) |j| {
+            const di = declarations[i];
+            const dj = declarations[j];
+            if (di.body_first >= dj.body_first and di.body_end <= dj.body_end) {
+                const span = dj.body_end - dj.body_first;
+                if (span < best_span) {
+                    best_span = span;
+                    parent[i] = j;
+                }
+            }
+        }
+    }
+
+    var top_level_scope = NameSet{};
+    {
+        var skip_ranges: [256][2]usize = undefined;
+        var skip_count: usize = 0;
+        for (0..count) |i| if (parent[i] == null and skip_count < skip_ranges.len) {
+            skip_ranges[skip_count] = .{ declarations[i].body_first, declarations[i].body_end };
+            skip_count += 1;
+        };
+        collectAssignedNames(tokens, 0, tokens.len, skip_ranges[0..skip_count], &top_level_scope);
+        for (declarations) |decl| top_level_scope.add(decl.name);
+        for (class_names) |name| top_level_scope.add(name);
+    }
+
+    const visible = try allocator.alloc(NameSet, count);
+    defer allocator.free(visible);
+    for (0..count) |i| {
+        const parent_visible = if (parent[i]) |p| visible[p] else top_level_scope;
+        var write_index: usize = 0;
+        for (declarations[i].captures[0..declarations[i].capture_count]) |capture| {
+            if (parent_visible.contains(capture)) {
+                declarations[i].captures[write_index] = capture;
+                write_index += 1;
+            }
+        }
+        declarations[i].capture_count = write_index;
+
+        var own_locals = NameSet{};
+        var skip_ranges: [256][2]usize = undefined;
+        var skip_count: usize = 0;
+        for (0..count) |j| if (parent[j] != null and parent[j].? == i and skip_count < skip_ranges.len) {
+            skip_ranges[skip_count] = .{ declarations[j].body_first, declarations[j].body_end };
+            skip_count += 1;
+        };
+        collectAssignedNames(tokens, declarations[i].body_first, declarations[i].body_end, skip_ranges[0..skip_count], &own_locals);
+        var scope = parent_visible;
+        scope.addAll(&own_locals);
+        for (declarations[i].param_names[0..declarations[i].params_count]) |name| scope.add(name);
+        visible[i] = scope;
+    }
+}
+
 pub fn findParameter(function: model.FunctionDecl, name: []const u8) ?usize {
     for (function.param_names[0..function.params_count], 0..) |parameter, index| if (std.mem.eql(u8, parameter, name)) return index;
     return null;

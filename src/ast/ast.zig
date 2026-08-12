@@ -6,7 +6,7 @@ pub const StmtId = u32;
 pub const Span = struct { first: usize, last: usize, line: usize };
 
 pub const UnaryOp = enum { negate, not };
-pub const BinaryOp = enum { add, subtract, multiply, divide, equal, not_equal, less, less_equal, greater, greater_equal, logic_and, logic_or, in_op, is };
+pub const BinaryOp = enum { add, subtract, multiply, divide, modulo, equal, not_equal, less, less_equal, greater, greater_equal, logic_and, logic_or, in_op, is };
 pub const Visibility = enum { public, private, protected, internal };
 
 pub const Expr = struct {

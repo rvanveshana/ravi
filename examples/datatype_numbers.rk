@@ -1,0 +1,13 @@
+# Contract: integer and float arithmetic, comparisons, and division edges.
+kriya expect(condition, message):
+    adre alla condition:
+        yese message
+
+expect(2 + 3 * 4 == 14, "integer precedence failed")
+expect((2 + 3) * 4 == 20, "integer grouping failed")
+expect(7 / 2 == 3, "integer division failed")
+expect(3.5 * 2 == 7.0, "float multiplication failed")
+expect(1 + 0.5 == 1.5, "mixed numeric addition failed")
+expect(5 > 4 mattu 4 <= 4, "numeric comparison failed")
+
+mudrisu("datatype_numbers: PASS")

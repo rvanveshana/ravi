@@ -1,18 +1,35 @@
-# Managed strings support indexing, length, concatenation, and comparison.
+# Managed strings support concatenation, indexing, length, comparison, and
+# whitespace/case transformations.
 name = "Ravi"
 greeting = "Hello, " + name
-mudrisu(greeting)
-mudrisu(name[1])
-mudrisu(name.gatra())
-mudrisu(name == "Ravi")
-spaced = "  Ravi  "
-mudrisu(spaced.kadi())
-mudrisu(name.doddu())
-mudrisu(name.chikku())
+adre alla (greeting == "Hello, Ravi"):
+    yese "string concatenation failed"
+adre alla (name[1] == 97):
+    yese "string indexing returns a Unicode codepoint failed"
+adre alla (name.gatra() == 4):
+    yese "string length failed"
+adre alla (name == "Ravi"):
+    yese "string equality failed"
+adre alla (alla (name == "ravi")):
+    yese "string equality is case-sensitive failed"
 
-# String search & replacement
+spaced = "  Ravi  "
+adre alla (spaced.kadi() == "Ravi"):
+    yese "string strip failed"
+adre alla (name.doddu() == "RAVI"):
+    yese "string upper failed"
+adre alla (name.chikku() == "ravi"):
+    yese "string lower failed"
+
+# String search and replacement.
 sample = "Hello World"
-mudrisu(sample.huduk("World") >= 0)
+adre alla (sample.huduk("World") >= 0):
+    yese "string find (present) failed"
+adre alla (sample.huduk("missing") == -1):
+    yese "string find (absent) failed"
 replaced = sample.badla("World", "Ravi")
-mudrisu(replaced)
+adre alla (replaced == "Hello Ravi"):
+    yese "string replace failed"
+
+mudrisu("strings: PASS")
 

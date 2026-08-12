@@ -1,10 +1,20 @@
 # Variables can be introduced dynamically and reused in expressions.
 x = 4
 y = x * 2 + 1
-mudrisu(y)
+adre alla (y == 9):
+    yese "expression using a variable failed"
 
-# Variable re-assignment with updated types/values
+# Variable re-assignment: a name can be rebound to a new value.
 x = 10
 x = x + y
-mudrisu(x)   # 19
+adre alla (x == 19):
+    yese "re-assignment using the prior value failed"
+
+# Dynamic re-typing: the same name can later hold a different value kind.
+dynamic = 10
+dynamic = "ten"
+adre alla (dynamic == "ten"):
+    yese "dynamic re-typing failed"
+
+mudrisu("variables: PASS")
 

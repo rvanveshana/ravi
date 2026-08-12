@@ -1,18 +1,37 @@
 # Explicit exception flow: nodu (try), tappu (except), kone (finally).
+# `kone` always runs, whether or not an exception was raised.
+result = 0
+finally_ran = alla true
 nodu:
     yese 7
 tappu:
-    mudrisu(9)
+    result = 9
 kone:
-    mudrisu(10)
+    finally_ran = true
+adre alla (result == 9):
+    yese "except handler did not run"
+adre alla finally_ran:
+    yese "finally block did not run after except"
 
-# Nested exception handler recovery
+# A nested try/except: the inner handler catches its own exception, so the
+# outer handler never fires, but the outer `kone` still runs.
+inner_result = 0
+outer_result = 0
+outer_finally_ran = alla true
 nodu:
     nodu:
         yese 42
     tappu:
-        mudrisu(100)
+        inner_result = 100
 tappu:
-    mudrisu(0)
+    outer_result = 1
 kone:
-    mudrisu(200)
+    outer_finally_ran = true
+adre alla (inner_result == 100):
+    yese "inner except handler failed"
+adre alla (outer_result == 0):
+    yese "outer except handler should not have run"
+adre alla outer_finally_ran:
+    yese "outer finally block did not run"
+
+mudrisu("exceptions: PASS")
