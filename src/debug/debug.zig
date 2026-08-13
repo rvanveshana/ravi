@@ -2,7 +2,7 @@ const std = @import("std");
 const bytecode = @import("ravi_bytecode");
 
 pub const Breakpoint = struct { id: usize, instruction: usize, enabled: bool = true };
-pub const Frame = struct { function: []const u8, instruction: usize, line: usize };
+pub const Frame = struct { function: []const u8, instruction: usize, line: usize, column: usize = 1, source: ?[]const u8 = null };
 pub const Variable = struct { name: []const u8, value: i64, mutable: bool = true };
 pub const Scope = struct { name: []const u8, variables: []const Variable };
 pub const Request = union(enum) { set_breakpoint: usize, continue_execution, stack_trace };
@@ -12,6 +12,7 @@ pub const Debugger = struct {
     allocator: std.mem.Allocator,
     breakpoints: std.ArrayListUnmanaged(Breakpoint) = .empty,
     frames: std.ArrayListUnmanaged(Frame) = .empty,
+    scopes: std.ArrayListUnmanaged(Scope) = .empty,
     step_mode: StepMode = .none,
     step_depth: usize = 0,
     step_instruction: usize = 0,
@@ -25,6 +26,7 @@ pub const Debugger = struct {
     pub fn deinit(self: *Debugger) void {
         self.breakpoints.deinit(self.allocator);
         self.frames.deinit(self.allocator);
+        self.scopes.deinit(self.allocator);
     }
     pub fn addBreakpoint(self: *Debugger, instruction: usize) !usize {
         const id = self.breakpoints.items.len;
@@ -112,6 +114,10 @@ pub const Debugger = struct {
     pub fn updateFrames(self: *Debugger, frames: []const Frame) !void {
         self.frames.clearRetainingCapacity();
         try self.frames.appendSlice(self.allocator, frames);
+    }
+    pub fn updateScopes(self: *Debugger, scopes: []const Scope) !void {
+        self.scopes.clearRetainingCapacity();
+        try self.scopes.appendSlice(self.allocator, scopes);
     }
     pub fn location(chunk: *const bytecode.Chunk, instruction: usize) ?bytecode.SourceLocation {
         if (instruction >= chunk.source_map.items.len) return null;

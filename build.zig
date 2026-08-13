@@ -230,6 +230,19 @@ pub fn build(b: *std.Build) void {
     phase0_tests_module.addImport("ravi_lexer", lexer_module);
     phase0_tests_module.addImport("ravi_parser", parser_module);
     const phase0_tests = b.addTest(.{ .root_module = phase0_tests_module });
+    const phase1_tests_module = b.createModule(.{ .root_source_file = b.path("tests/phase1_tests.zig"), .target = target, .optimize = optimize });
+    phase1_tests_module.addImport("ravi_bytecode", bytecode_module);
+    phase1_tests_module.addImport("ravi_compiler", compiler_module);
+    phase1_tests_module.addImport("ravi_diagnostics", diagnostics_module);
+    phase1_tests_module.addImport("ravi_lexer", lexer_module);
+    phase1_tests_module.addImport("ravi_parser", parser_module);
+    phase1_tests_module.addImport("ravi_semantic", semantic_module);
+    phase1_tests_module.addImport("ravi_vm", vm_module);
+    phase1_tests_module.addImport("ravi_config", config_module);
+    phase1_tests_module.addImport("ravi_dap", dap_module);
+    phase1_tests_module.addImport("ravi_lsp_protocol", lsp_protocol_module);
+    phase1_tests_module.addImport("ravi_debug", debug_module);
+    const phase1_tests = b.addTest(.{ .root_module = phase1_tests_module });
 
     const test_step = b.step("test", "Run runtime unit tests");
     test_step.dependOn(&value_tests.step);
@@ -264,4 +277,5 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&lsp_protocol_tests.step);
     test_step.dependOn(&jsonrpc_tests.step);
     test_step.dependOn(&phase0_tests.step);
+    test_step.dependOn(&phase1_tests.step);
 }

@@ -18,7 +18,7 @@ pub const Adapter = struct {
     pub fn dispatch(self: *Adapter, body: []const u8) ![]u8 {
         self.request_seq = integerField(body, "seq") orelse 0;
         const command = stringField(body, "command") orelse return self.failure("missing command");
-        if (std.mem.eql(u8, command, "initialize")) return self.success(command, "{\"supportsConfigurationDoneRequest\":true,\"supportsEvaluateForHovers\":false}");
+        if (std.mem.eql(u8, command, "initialize")) return self.success(command, "{\"supportsConfigurationDoneRequest\":true,\"supportsEvaluateForHovers\":true,\"supportsExceptionInfoRequest\":true}");
         if (std.mem.eql(u8, command, "launch") or std.mem.eql(u8, command, "configurationDone")) return self.success(command, "{}");
         if (std.mem.eql(u8, command, "pause")) {
             self.debug.requestPause();
@@ -41,8 +41,12 @@ pub const Adapter = struct {
             return self.success(command, "{}");
         }
         if (std.mem.eql(u8, command, "setBreakpoints")) return self.setBreakpoints(command);
+        if (std.mem.eql(u8, command, "setExceptionBreakpoints")) return self.setExceptionBreakpoints(command, body);
         if (std.mem.eql(u8, command, "threads")) return self.success(command, "{\"threads\":[{\"id\":1,\"name\":\"Ravi main\"}]}");
         if (std.mem.eql(u8, command, "stackTrace")) return self.stackTrace(command);
+        if (std.mem.eql(u8, command, "scopes")) return self.scopes(command);
+        if (std.mem.eql(u8, command, "variables")) return self.variables(command, body);
+        if (std.mem.eql(u8, command, "evaluate")) return self.evaluate(command, body);
         if (std.mem.eql(u8, command, "disconnect") or std.mem.eql(u8, command, "terminate")) return self.success(command, "{}");
         return self.failure("unsupported command");
     }
@@ -52,6 +56,32 @@ pub const Adapter = struct {
         const response = try self.dispatch(frame.body);
         defer self.allocator.free(response);
         return framing.encode(self.allocator, response);
+    }
+
+    /// Serve framed DAP messages over stdio or a connected socket stream.
+    pub fn serve(self: *Adapter, reader: anytype, writer: anytype) !void {
+        var pending: std.ArrayListUnmanaged(u8) = .empty;
+        defer pending.deinit(self.allocator);
+        var buffer: [8192]u8 = undefined;
+        while (true) {
+            const count = try reader.read(&buffer);
+            if (count == 0) return;
+            try pending.appendSlice(self.allocator, buffer[0..count]);
+            while (true) {
+                const frame = framing.decode(pending.items) catch |err| switch (err) {
+                    error.Incomplete => break,
+                    else => return err,
+                };
+                const response = try self.dispatch(frame.body);
+                defer self.allocator.free(response);
+                const encoded = try framing.encode(self.allocator, response);
+                defer self.allocator.free(encoded);
+                try writer.writeAll(encoded);
+                const remaining = pending.items.len - frame.consumed;
+                std.mem.copyForwards(u8, pending.items[0..remaining], pending.items[frame.consumed..]);
+                pending.shrinkRetainingCapacity(remaining);
+            }
+        }
     }
 
     fn success(self: *Adapter, command: []const u8, body: []const u8) ![]u8 {
@@ -76,7 +106,10 @@ pub const Adapter = struct {
             const instruction = if (index == 0) self.debug.paused_instruction orelse frame.instruction else frame.instruction;
             const escaped_name = try escapeJson(self.allocator, frame.function);
             defer self.allocator.free(escaped_name);
-            const frame_json = try std.fmt.bufPrint(&frame_buffer, "{{\"id\":{d},\"name\":\"{s}\",\"line\":{d},\"column\":{d},\"instruction\":{d}}}", .{ index + 1, escaped_name, frame.line, 1, instruction });
+            const source = if (frame.source) |value| value else "";
+            const escaped_source = try escapeJson(self.allocator, source);
+            defer self.allocator.free(escaped_source);
+            const frame_json = try std.fmt.bufPrint(&frame_buffer, "{{\"id\":{d},\"name\":\"{s}\",\"line\":{d},\"column\":{d},\"instruction\":{d},\"source\":{{\"name\":\"{s}\"}}}}", .{ index + 1, escaped_name, frame.line, frame.column, instruction, escaped_source });
             try body.appendSlice(self.allocator, frame_json);
         }
         try body.appendSlice(self.allocator, "]}");
@@ -95,6 +128,56 @@ pub const Adapter = struct {
         }
         try body.appendSlice(self.allocator, "]}");
         return self.success(command, body.items);
+    }
+
+    fn scopes(self: *Adapter, command: []const u8) ![]u8 {
+        var body: std.ArrayListUnmanaged(u8) = .empty;
+        defer body.deinit(self.allocator);
+        try body.appendSlice(self.allocator, "{\"scopes\":[");
+        for (self.debug.scopes.items, 0..) |scope, index| {
+            if (index != 0) try body.append(self.allocator, ',');
+            const name = try escapeJson(self.allocator, scope.name);
+            defer self.allocator.free(name);
+            const scope_json = try std.fmt.allocPrint(self.allocator, "{{\"name\":\"{s}\",\"presentationHint\":\"locals\",\"variablesReference\":{d},\"expensive\":false}}", .{ name, index + 1 });
+            defer self.allocator.free(scope_json);
+            try body.appendSlice(self.allocator, scope_json);
+        }
+        try body.appendSlice(self.allocator, "]}");
+        return self.success(command, body.items);
+    }
+
+    fn variables(self: *Adapter, command: []const u8, request_body: []const u8) ![]u8 {
+        const reference = integerField(request_body, "variablesReference") orelse 0;
+        var body: std.ArrayListUnmanaged(u8) = .empty;
+        defer body.deinit(self.allocator);
+        try body.appendSlice(self.allocator, "{\"variables\":[");
+        if (reference > 0 and @as(usize, @intCast(reference)) <= self.debug.scopes.items.len) {
+            const scope = self.debug.scopes.items[@intCast(reference - 1)];
+            for (scope.variables, 0..) |variable, index| {
+                if (index != 0) try body.append(self.allocator, ',');
+                const name = try escapeJson(self.allocator, variable.name);
+                defer self.allocator.free(name);
+                const variable_json = try std.fmt.allocPrint(self.allocator, "{{\"name\":\"{s}\",\"value\":\"{d}\",\"type\":\"int\",\"variablesReference\":0}}", .{ name, variable.value });
+                defer self.allocator.free(variable_json);
+                try body.appendSlice(self.allocator, variable_json);
+            }
+        }
+        try body.appendSlice(self.allocator, "]}");
+        return self.success(command, body.items);
+    }
+
+    fn evaluate(self: *Adapter, command: []const u8, body: []const u8) ![]u8 {
+        const expression = stringField(body, "expression") orelse return self.failure("missing expression");
+        const value = debugger.Debugger.evaluate(self.debug.scopes.items, expression) catch return self.failure("unknown variable");
+        const result = try std.fmt.allocPrint(self.allocator, "{{\"result\":\"{d}\",\"type\":\"int\",\"variablesReference\":0}}", .{value});
+        defer self.allocator.free(result);
+        return self.success(command, result);
+    }
+
+    fn setExceptionBreakpoints(self: *Adapter, command: []const u8, body: []const u8) ![]u8 {
+        const all = std.mem.indexOf(u8, body, "all") != null;
+        self.debug.setExceptionBreakpoints(all, all);
+        return self.success(command, "{\"breakpoints\":[]}");
     }
 };
 

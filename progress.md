@@ -86,6 +86,23 @@ Remaining Phase 0 architecture work:
   new feature growth; current source-size budgets are guardrails, not
   completion claims.
 
+## Phase 1 Status
+
+Diagnostics and debugger foundation work is implemented and covered by tests:
+
+- DAP now supports lifecycle, stepping, breakpoints, exception-breakpoint
+  configuration, threads, stack traces, scopes, variables, and evaluation.
+- The DAP adapter provides an incremental framed stream host reusable with
+  stdio, sockets, and in-process test streams.
+- Source-aware stack frames retain function names, source names, lines,
+  columns, and instruction identities.
+- Golden Phase 1 tests cover lexical, parse, semantic, compile, verifier, and
+  runtime diagnostic contracts, including source excerpts and carets.
+- Kannada/Kanglish and English profiles pass end-to-end lexer, parser,
+  semantic, compiler, verifier, and VM execution tests.
+- Resumable source identity and runtime failure source locations are covered
+  by the Phase 1 test target.
+
 ## Phase 0 Baseline
 
 ReleaseFast baseline on Windows x64 with Zig `0.17.0-dev.1415+64dfaa568`:
