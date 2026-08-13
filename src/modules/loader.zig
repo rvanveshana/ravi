@@ -79,8 +79,7 @@ pub const Loader = struct {
     /// malformed, corrupted, or incompatible artifacts are never reusable.
     pub fn artifactReusable(self: *const Loader, bytes: []const u8, module_name: []const u8, compiler_key: []const u8, profile: config.SourceLanguage, limits: artifact.Limits) !bool {
         var decoded = artifact.decode(self.allocator, bytes, limits) catch |err| switch (err) {
-            error.InvalidMagic, error.UnsupportedVersion, error.InvalidLength,
-            error.ResourceLimit, error.ChecksumMismatch, error.TrailingData => return false,
+            error.InvalidMagic, error.UnsupportedVersion, error.InvalidLength, error.ResourceLimit, error.ChecksumMismatch, error.TrailingData => return false,
             else => return err,
         };
         defer decoded.deinit();

@@ -13,7 +13,13 @@ fn codepoint(text: []const u8, start: usize) ?struct { value: i64, width: usize 
         if (continuation & 0xC0 != 0x80) return null;
         value = (value << 6) | @as(i64, continuation & 0x3F);
     }
-    const minimum: i64 = switch (byte_width) { 1 => 0, 2 => 0x80, 3 => 0x800, 4 => 0x10000, else => unreachable };
+    const minimum: i64 = switch (byte_width) {
+        1 => 0,
+        2 => 0x80,
+        3 => 0x800,
+        4 => 0x10000,
+        else => unreachable,
+    };
     if (value < minimum or value > 0x10FFFF or (value >= 0xD800 and value <= 0xDFFF)) return null;
     return .{ .value = value, .width = byte_width };
 }

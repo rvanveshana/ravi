@@ -29,7 +29,10 @@ pub const Cache = struct {
         if (self.find(name)) |index| self.removeAt(index);
         if (self.entries.items.len >= self.max_entries) self.removeAt(0);
         var entry = Entry{ .name = try self.allocator.dupe(u8, name), .fingerprint = fingerprint, .bytes = try self.allocator.dupe(u8, bytes) };
-        errdefer { self.allocator.free(entry.name); self.allocator.free(entry.bytes); }
+        errdefer {
+            self.allocator.free(entry.name);
+            self.allocator.free(entry.bytes);
+        }
         for (dependencies) |dependency| try entry.dependencies.append(self.allocator, try self.allocator.dupe(u8, dependency));
         try self.entries.append(self.allocator, entry);
     }
@@ -62,17 +65,22 @@ pub const Cache = struct {
             }
         }
     }
-    fn find(self: *const Cache, name: []const u8) ?usize { for (self.entries.items, 0..) |entry, i| if (std.mem.eql(u8, entry.name, name)) return i; return null; }
+    fn find(self: *const Cache, name: []const u8) ?usize {
+        for (self.entries.items, 0..) |entry, i| if (std.mem.eql(u8, entry.name, name)) return i;
+        return null;
+    }
     fn removeAt(self: *Cache, index: usize) void {
         var entry = self.entries.orderedRemove(index);
-        self.allocator.free(entry.name); self.allocator.free(entry.bytes);
+        self.allocator.free(entry.name);
+        self.allocator.free(entry.bytes);
         for (entry.dependencies.items) |dependency| self.allocator.free(dependency);
         entry.dependencies.deinit(self.allocator);
     }
 };
 
 test "artifact cache reuses entries and invalidates dependents" {
-    var cache = Cache.init(std.testing.allocator, 4); defer cache.deinit();
+    var cache = Cache.init(std.testing.allocator, 4);
+    defer cache.deinit();
     const deps = [_][]const u8{"core"};
     try cache.put("app", 7, "bytecode", &deps);
     try std.testing.expectEqualStrings("bytecode", cache.get("app", 7).?);
@@ -82,7 +90,8 @@ test "artifact cache reuses entries and invalidates dependents" {
 }
 
 test "artifact cache invalidation propagates through dependency chains" {
-    var cache = Cache.init(std.testing.allocator, 8); defer cache.deinit();
+    var cache = Cache.init(std.testing.allocator, 8);
+    defer cache.deinit();
     const core_deps = [_][]const u8{"core"};
     const app_deps = [_][]const u8{"lib"};
     try cache.put("lib", 1, "lib-bytes", &core_deps);

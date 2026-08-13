@@ -456,5 +456,4 @@ pub const Compiler = struct {
     fn compileAstExpression(self: *Compiler, chunk: *bytecode.Chunk, module: *const ast.Module, expression_id: ast.ExprId, names: *std.ArrayListUnmanaged([]const u8)) CompileError!void {
         return ast_compiler.expression(CompileError, self, chunk, module, expression_id, names);
     }
-
 };
