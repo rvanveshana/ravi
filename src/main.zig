@@ -1,6 +1,5 @@
 const std = @import("std");
 const Lexer = @import("ravi_lexer").Lexer;
-const lexer_mod = @import("ravi_lexer");
 const TokenKind = @import("ravi_lexer").TokenKind;
 const Parser = @import("ravi_parser").Parser;
 const Analyzer = @import("semantic/analyzer.zig").Analyzer;
@@ -52,7 +51,6 @@ pub fn main(init: std.process.Init) !void {
     var path: ?[]const u8 = null;
     var language_override: ?config.SourceLanguage = null;
     var diagnostic_format: DiagnosticFormat = .human;
-    var use_ast_compiler = false;
 
     if (std.mem.eql(u8, first_arg, "check") or std.mem.eql(u8, first_arg, "run") or std.mem.eql(u8, first_arg, "trace") or std.mem.eql(u8, first_arg, "tokens") or std.mem.eql(u8, first_arg, "bytecode") or std.mem.eql(u8, first_arg, "fmt") or std.mem.eql(u8, first_arg, "fmt-check")) {
         mode = first_arg;
@@ -89,8 +87,6 @@ pub fn main(init: std.process.Init) !void {
                 std.debug.print("unknown diagnostic format: {s}\n", .{name});
                 std.process.exit(2);
             };
-        } else if (std.mem.eql(u8, argument, "--ast-compiler")) {
-            use_ast_compiler = true;
         } else if (path == null) path = argument;
     }
     const loaded_source = if (path) |file_path| try std.Io.Dir.cwd().readFileAlloc(init.io, file_path, collector.allocator(), .limited(16 * 1024 * 1024)) else sample;
@@ -159,16 +155,10 @@ pub fn main(init: std.process.Init) !void {
             if (imports_loaded) return;
         };
         var compiler = Compiler.initWithLanguage(collector.allocator(), language);
-        var chunk: bytecode.Chunk = if (use_ast_compiler)
-            compiler.compileAstModule(&module) catch |err| {
-                printDiagnostic(collector.allocator(), diagnostic_format, managed_source.name, source, "RAVI-AST-001", @errorName(err), compiler.last_location);
-                std.process.exit(1);
-            }
-        else
-            compiler.compileProgram(tokens) catch |err| {
-                printDiagnostic(collector.allocator(), diagnostic_format, managed_source.name, source, "RAVI-COMPILE-001", @errorName(err), compiler.last_location);
-                std.process.exit(1);
-            };
+        var chunk: bytecode.Chunk = compiler.compileAstModule(&module) catch |err| {
+            printDiagnostic(collector.allocator(), diagnostic_format, managed_source.name, source, "RAVI-COMPILE-001", @errorName(err), compiler.last_location);
+            std.process.exit(1);
+        };
         defer chunk.deinit();
         // Release execution uses the verified bytecode optimizer; trace and
         // bytecode modes retain the original instruction layout for precise
@@ -224,21 +214,28 @@ fn runWithImports(allocator: std.mem.Allocator, io: std.Io, root_path: []const u
     const order = try loader.load(root_path);
     defer allocator.free(order);
     if (order.len < 2) return error.FileNotFound;
-    var combined = std.ArrayListUnmanaged(lexer_mod.Token).empty;
-    defer combined.deinit(allocator);
-    var root_eof: ?lexer_mod.Token = null;
+    var combined_source = std.ArrayListUnmanaged(u8).empty;
+    defer combined_source.deinit(allocator);
+    var root_language = config.SourceLanguage.kn;
     for (order) |module_id| {
         const loaded = loader.module(module_id) orelse return error.InvalidModule;
-        var scan = try Lexer.initWithLanguage(allocator, loaded.source, loaded.language);
-        defer scan.deinit();
-        const tokens = try scan.tokenize();
-        if (module_id == order[order.len - 1]) root_eof = tokens[tokens.len - 1];
-        for (tokens) |token| if (token.kind != .eof) try combined.append(allocator, token);
-        if (module_id != order[order.len - 1]) try combined.append(allocator, .{ .kind = .newline, .lexeme = "", .line = tokens[tokens.len - 1].line, .column = tokens[tokens.len - 1].column });
+        if (module_id == order[order.len - 1]) root_language = loaded.language;
+        try combined_source.appendSlice(allocator, loaded.source);
+        if (module_id != order[order.len - 1]) try combined_source.appendSlice(allocator, "\n");
     }
-    try combined.append(allocator, root_eof orelse return error.InvalidModule);
-    var compiler = Compiler.initWithLanguage(allocator, loader.module(order[order.len - 1]).?.language);
-    var chunk = try compiler.compileProgram(combined.items);
+    var scan = try Lexer.initWithLanguage(allocator, combined_source.items, root_language);
+    defer scan.deinit();
+    const tokens = try scan.tokenize();
+    var parser = Parser.initWithLanguage(allocator, tokens, root_language);
+    var module = try parser.parseRecovering();
+    defer module.deinit();
+    if (module.diagnostics.items.len != 0) return error.InvalidModule;
+    var analyzer = Analyzer.init(allocator);
+    defer analyzer.deinit();
+    try analyzer.analyzeWithLanguage(tokens, root_language);
+    try analyzer.analyzeModule(&module);
+    var compiler = Compiler.initWithLanguage(allocator, root_language);
+    var chunk = try compiler.compileAstModule(&module);
     defer chunk.deinit();
     _ = Optimizer.optimize(&chunk);
     var vm = try Vm.init(allocator);
@@ -264,7 +261,6 @@ fn printHelp() void {
         \\Options:
         \\  --lang kn|en  Override the source language profile
         \\  --diagnostic-format human|compact|json
-        \\  --ast-compiler  Use the AST compiler for migration testing
         \\  -h, --help    Show this help
         \\  -V, --version Show the compiler version
         \\

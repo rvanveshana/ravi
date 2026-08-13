@@ -3,9 +3,19 @@ const lexer = @import("ravi_lexer");
 const bytecode = @import("ravi_bytecode");
 const vm_mod = @import("ravi_vm");
 const compiler = @import("ravi_compiler");
+const parser = @import("ravi_parser");
 
 const collection_primitives = vm_mod.collection_primitives;
 const Value = vm_mod.RuntimeValue;
+
+fn compileTokens(tokens: anytype, language: anytype) !bytecode.Chunk {
+    var parse = parser.Parser.initWithLanguage(std.testing.allocator, tokens, language);
+    var module = try parse.parseRecovering();
+    defer module.deinit();
+    if (module.diagnostics.items.len != 0) return error.InvalidExpression;
+    var compile = compiler.Compiler.initWithLanguage(std.testing.allocator, language);
+    return compile.compileAstModule(&module);
+}
 
 test "array primitives preserve ordered mutation semantics" {
     var array = collection_primitives.Array.init(std.testing.allocator);
@@ -59,8 +69,7 @@ test "source list methods support sort reverse count and pop" {
     var scan = try lexer.Lexer.init(std.testing.allocator, source);
     defer scan.deinit();
     const tokens = try scan.tokenize();
-    var compile = compiler.Compiler.initWithLanguage(std.testing.allocator, .kn);
-    var chunk = try compile.compileProgram(tokens);
+    var chunk = try compileTokens(tokens, .kn);
     defer chunk.deinit();
     var vm = try vm_mod.Vm.init(std.testing.allocator);
     defer vm.deinit();
@@ -73,8 +82,7 @@ test "source dictionary methods use hashed storage" {
     var scan = try lexer.Lexer.init(std.testing.allocator, source);
     defer scan.deinit();
     const tokens = try scan.tokenize();
-    var compile = compiler.Compiler.initWithLanguage(std.testing.allocator, .kn);
-    var chunk = try compile.compileProgram(tokens);
+    var chunk = try compileTokens(tokens, .kn);
     defer chunk.deinit();
     var vm = try vm_mod.Vm.init(std.testing.allocator);
     defer vm.deinit();
@@ -87,8 +95,7 @@ test "source indexing supports list and dictionary updates" {
     var scan = try lexer.Lexer.init(std.testing.allocator, source);
     defer scan.deinit();
     const tokens = try scan.tokenize();
-    var compile = compiler.Compiler.initWithLanguage(std.testing.allocator, .kn);
-    var chunk = try compile.compileProgram(tokens);
+    var chunk = try compileTokens(tokens, .kn);
     defer chunk.deinit();
     var vm = try vm_mod.Vm.init(std.testing.allocator);
     defer vm.deinit();
@@ -101,8 +108,7 @@ test "source dictionaries expose views and keyed pop" {
     var scan = try lexer.Lexer.init(std.testing.allocator, source);
     defer scan.deinit();
     const tokens = try scan.tokenize();
-    var compile = compiler.Compiler.initWithLanguage(std.testing.allocator, .kn);
-    var chunk = try compile.compileProgram(tokens);
+    var chunk = try compileTokens(tokens, .kn);
     defer chunk.deinit();
     var vm = try vm_mod.Vm.init(std.testing.allocator);
     defer vm.deinit();
@@ -115,8 +121,7 @@ test "sets remove duplicates and provide set algebra" {
     var scan = try lexer.Lexer.init(std.testing.allocator, source);
     defer scan.deinit();
     const tokens = try scan.tokenize();
-    var compile = compiler.Compiler.initWithLanguage(std.testing.allocator, .kn);
-    var chunk = try compile.compileProgram(tokens);
+    var chunk = try compileTokens(tokens, .kn);
     defer chunk.deinit();
     var vm = try vm_mod.Vm.init(std.testing.allocator);
     defer vm.deinit();
@@ -129,8 +134,7 @@ test "source strings are managed by the VM" {
     var scan = try lexer.Lexer.init(std.testing.allocator, source);
     defer scan.deinit();
     const tokens = try scan.tokenize();
-    var compile = compiler.Compiler.initWithLanguage(std.testing.allocator, .kn);
-    var chunk = try compile.compileProgram(tokens);
+    var chunk = try compileTokens(tokens, .kn);
     defer chunk.deinit();
     var vm = try vm_mod.Vm.init(std.testing.allocator);
     defer vm.deinit();
@@ -203,8 +207,7 @@ test "English dictionary pop accepts a key" {
     var scan = try lexer.Lexer.initWithLanguage(std.testing.allocator, source, .en);
     defer scan.deinit();
     const tokens = try scan.tokenize();
-    var compile = compiler.Compiler.initWithLanguage(std.testing.allocator, .en);
-    var chunk = try compile.compileProgram(tokens);
+    var chunk = try compileTokens(tokens, .en);
     defer chunk.deinit();
     var vm = try vm_mod.Vm.init(std.testing.allocator);
     defer vm.deinit();
@@ -217,8 +220,7 @@ test "string methods lower upper and strip" {
     var scan = try lexer.Lexer.init(std.testing.allocator, source);
     defer scan.deinit();
     const tokens = try scan.tokenize();
-    var compile = compiler.Compiler.initWithLanguage(std.testing.allocator, .kn);
-    var chunk = try compile.compileProgram(tokens);
+    var chunk = try compileTokens(tokens, .kn);
     defer chunk.deinit();
     var vm = try vm_mod.Vm.init(std.testing.allocator);
     defer vm.deinit();

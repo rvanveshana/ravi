@@ -7,16 +7,20 @@ const compiler = @import("ravi_compiler");
 const ast = @import("ravi_ast");
 const parser = @import("ravi_parser");
 
-fn run(source: []const u8, language: anytype) !i64 {
+fn compileSource(source: []const u8, language: anytype) !bytecode.Chunk {
     var scan = try lexer.Lexer.initWithLanguage(std.testing.allocator, source, language);
     defer scan.deinit();
     const tokens = try scan.tokenize();
+    var parse = parser.Parser.initWithLanguage(std.testing.allocator, tokens, language);
+    var module = try parse.parseRecovering();
+    defer module.deinit();
+    if (module.diagnostics.items.len != 0) return error.InvalidExpression;
     var compile = compiler.Compiler.initWithLanguage(std.testing.allocator, language);
-    var chunk = try compile.compileProgram(tokens);
-    defer chunk.deinit();
-    var vm = try vm_mod.Vm.init(std.testing.allocator);
-    defer vm.deinit();
-    return vm.run(&chunk);
+    return compile.compileAstModule(&module);
+}
+
+fn run(source: []const u8, language: anytype) !i64 {
+    return runAst(source, language);
 }
 
 fn runAst(source: []const u8, language: anytype) !i64 {
@@ -54,11 +58,7 @@ test "guards and arithmetic execute in the VM" {
 
 test "nested generator suspension metadata stays with the nested function" {
     const source = "kriya outer():\n    kriya inner():\n        taru 1\n    kodu 2\n";
-    var scan = try lexer.Lexer.init(std.testing.allocator, source);
-    defer scan.deinit();
-    const tokens = try scan.tokenize();
-    var compile = compiler.Compiler.init(std.testing.allocator);
-    var chunk = try compile.compileProgram(tokens);
+    var chunk = try compileSource(source, .kn);
     defer chunk.deinit();
     try std.testing.expectEqual(@as(usize, 2), chunk.functions.items.len);
     try std.testing.expect(!chunk.functions.items[0].resumable);
@@ -544,13 +544,6 @@ test "pass is an executable no-op in both compiler paths" {
     defer module.deinit();
     try std.testing.expectEqual(@as(usize, 0), module.diagnostics.items.len);
 
-    var legacy_compile = compiler.Compiler.init(std.testing.allocator);
-    var legacy_chunk = try legacy_compile.compileProgram(tokens);
-    defer legacy_chunk.deinit();
-    var legacy_vm = try vm_mod.Vm.init(std.testing.allocator);
-    defer legacy_vm.deinit();
-    try std.testing.expectEqual(@as(i64, 3), try legacy_vm.run(&legacy_chunk));
-
     var ast_compile = compiler.Compiler.init(std.testing.allocator);
     var ast_chunk = try ast_compile.compileAstModule(&module);
     defer ast_chunk.deinit();
@@ -975,11 +968,7 @@ test "VM precise roots reclaim an unreachable object during execution" {
 }
 
 test "compiler emits real source locations" {
-    var scan = try lexer.Lexer.init(std.testing.allocator, "value = 40 + 2\nvalue\n");
-    defer scan.deinit();
-    const tokens = try scan.tokenize();
-    var compile = compiler.Compiler.init(std.testing.allocator);
-    var chunk = try compile.compileProgram(tokens);
+    var chunk = try compileSource("value = 40 + 2\nvalue\n", .kn);
     defer chunk.deinit();
     try std.testing.expectEqual(chunk.code.items.len, chunk.source_map.items.len);
     var located = false;
@@ -1037,11 +1026,7 @@ test "classes create instances and dispatch methods" {
 
 test "single inheritance is recorded in class bytecode metadata" {
     const source = "roopa Parent:\n    kodu none\nroopa Child guru Parent:\n    kodu none\n";
-    var scan = try lexer.Lexer.initWithLanguage(std.testing.allocator, source, .kn);
-    defer scan.deinit();
-    const tokens = try scan.tokenize();
-    var compile = compiler.Compiler.initWithLanguage(std.testing.allocator, .kn);
-    var chunk = try compile.compileProgram(tokens);
+    var chunk = try compileSource(source, .kn);
     defer chunk.deinit();
     try std.testing.expectEqual(@as(usize, 2), chunk.classes.items.len);
     try std.testing.expect(chunk.classes.items[0].base == null);
@@ -1050,11 +1035,7 @@ test "single inheritance is recorded in class bytecode metadata" {
 
 test "class method tables retain owning class and function identity" {
     const source = "roopa Parent:\n    kriya speak():\n        kodu 1\nroopa Child guru Parent:\n    kriya speak():\n        kodu 2\n";
-    var scan = try lexer.Lexer.initWithLanguage(std.testing.allocator, source, .kn);
-    defer scan.deinit();
-    const tokens = try scan.tokenize();
-    var compile = compiler.Compiler.initWithLanguage(std.testing.allocator, .kn);
-    var chunk = try compile.compileProgram(tokens);
+    var chunk = try compileSource(source, .kn);
     defer chunk.deinit();
     try std.testing.expectEqual(@as(usize, 2), chunk.methods.items.len);
     try std.testing.expectEqual(@as(usize, 0), chunk.methods.items[0].class_index);
@@ -1079,11 +1060,7 @@ test "runtime method dispatch can explicitly call a parent with guru" {
 
 test "private methods cannot be called from external code" {
     const source = "roopa Secret:\n    swanta kriya hidden():\n        kodu 1\nsecret = Secret()\nsecret.hidden()\n";
-    var scan = try lexer.Lexer.initWithLanguage(std.testing.allocator, source, .kn);
-    defer scan.deinit();
-    const tokens = try scan.tokenize();
-    var compile = compiler.Compiler.initWithLanguage(std.testing.allocator, .kn);
-    try std.testing.expectError(error.PrivateAccess, compile.compileProgram(tokens));
+    try std.testing.expectError(error.PrivateAccess, compileSource(source, .kn));
 }
 
 test "protected methods reject unrelated external callers at runtime" {
@@ -1146,11 +1123,7 @@ test "runtime division faults enter tappu handlers" {
 
 test "runtime failures retain active Ravi frames and source locations" {
     const source = "kriya fail(value: int):\n    kodu value / 0\n\nfail(2)\n";
-    var scan = try lexer.Lexer.init(std.testing.allocator, source);
-    defer scan.deinit();
-    const tokens = try scan.tokenize();
-    var compile = compiler.Compiler.init(std.testing.allocator);
-    var chunk = try compile.compileProgram(tokens);
+    var chunk = try compileSource(source, .kn);
     defer chunk.deinit();
     var vm = try vm_mod.Vm.init(std.testing.allocator);
     defer vm.deinit();
