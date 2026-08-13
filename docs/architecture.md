@@ -311,12 +311,43 @@ analysis caches can be invalidated precisely.
 
 The bytecode backend lowers MIR to a compact, versioned instruction format. The
 format includes a constant pool, function metadata, exception tables, source
-maps, GC stack maps, and optional type feedback slots. A mandatory verifier
-checks instruction bounds, control-flow targets, register or stack discipline,
-constant references, exception regions, and root metadata before execution.
+maps, per-instruction root metadata, and optional type feedback slots. A
+mandatory verifier checks instruction bounds, control-flow targets, stack
+discipline, constant references, exception regions, source-map alignment, and
+root-map alignment before execution.
 
 The VM is a separate library with no parser or AST dependency. Its dispatch
 engine may evolve independently from the bytecode format.
+
+### Runtime value, GC, and ownership model
+
+The VM uses the 64-bit NaN-boxed `Value` ABI from `src/vm/value.zig` for all
+runtime values. Integers are checked signed 48-bit payloads; booleans and none
+are tagged values; strings, collections, closures, cells, instances, futures,
+and channels use typed handles or object pointers according to their ABI role.
+The former union-based runtime value module is not part of the build.
+
+Runtime records are allocated through the non-moving mark/sweep collector.
+Managed records provide destruction callbacks for owned payloads, including
+collection storage and string bytes. Dynamic VM tables and frame/local storage
+grow with checked allocator operations; table capacity alone never keeps an
+object alive.
+
+At each instruction safepoint, the VM rebuilds precise roots from live operand
+stack values, frame locals, captures, and the active exception. The root walk
+recursively traces values stored in arrays, dictionaries, closures, cells, and
+instances. Mutable stores invoke a write barrier, and stale handles are
+rejected when their allocation has been swept. Collector stress mode and tiny
+thresholds are available for tests through VM collector options.
+
+### Verifier guarantees
+
+Before execution, bytecode verification requires one source-map and one root-map
+entry per instruction. It validates constant, function, class, local, capture,
+jump, and handler operands; function resumable metadata; stack underflow and
+stack effects; call/return effects; and consistent stack depths at reachable
+control-flow joins. Invalid metadata or bytecode returns a verifier/runtime
+error and cannot enter the instruction loop.
 
 ### Native backend
 

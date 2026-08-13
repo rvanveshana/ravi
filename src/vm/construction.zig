@@ -7,7 +7,6 @@ const Value = @import("ravi_vm_value").Value;
 pub fn instance(comptime Error: type, self: anytype, operand: i64, class_count: usize) Error!void {
     if (operand < 0 or operand >= @as(i64, @intCast(class_count))) return error.InvalidFunction;
     const slot = try object_storage.newInstance(self, @intCast(operand));
-    self.instance_count += 1;
     try state_helpers.push(self, try value_runtime.makeHandle(.instance, slot));
 }
 

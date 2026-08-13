@@ -16,8 +16,12 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     const packed_bytecode_module = b.createModule(.{ .root_source_file = b.path("src/bytecode/packed.zig"), .target = target, .optimize = optimize });
+    const opcode_spec_module = b.createModule(.{ .root_source_file = b.path("src/bytecode/spec.zig"), .target = target, .optimize = optimize });
+    opcode_spec_module.addImport("ravi_packed_bytecode", packed_bytecode_module);
     bytecode_module.addImport("ravi_packed_bytecode", packed_bytecode_module);
+    bytecode_module.addImport("ravi_opcode_spec", opcode_spec_module);
     const verifier_module = b.createModule(.{ .root_source_file = b.path("src/bytecode/verifier.zig"), .target = target, .optimize = optimize });
+    verifier_module.addImport("ravi_opcode_spec", opcode_spec_module);
     bytecode_module.addImport("ravi_bytecode_verifier", verifier_module);
     const nan_value_module = b.createModule(.{ .root_source_file = b.path("src/vm/value.zig"), .target = target, .optimize = optimize });
     const vm_collections_module = b.createModule(.{ .root_source_file = b.path("src/vm/collections.zig"), .target = target, .optimize = optimize });
@@ -60,12 +64,6 @@ pub fn build(b: *std.Build) void {
     compiler_module.addImport("ravi_bytecode", bytecode_module);
     compiler_module.addImport("ravi_config", config_module);
 
-    const value_module = b.createModule(.{
-        .root_source_file = b.path("src/runtime/value.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-
     const backend_module = b.createModule(.{ .root_source_file = b.path("src/backend/backend.zig"), .target = target, .optimize = optimize });
     const optimizer_module = b.createModule(.{ .root_source_file = b.path("src/optimizer/optimizer.zig"), .target = target, .optimize = optimize });
     optimizer_module.addImport("ravi_bytecode", bytecode_module);
@@ -84,11 +82,43 @@ pub fn build(b: *std.Build) void {
     const hir_module = b.createModule(.{ .root_source_file = b.path("src/ir/hir.zig"), .target = target, .optimize = optimize });
     const mir_module = b.createModule(.{ .root_source_file = b.path("src/ir/mir.zig"), .target = target, .optimize = optimize });
     mir_module.addImport("ravi_hir", hir_module);
+    const mir_verify_module = b.createModule(.{ .root_source_file = b.path("src/ir/mir_verify.zig"), .target = target, .optimize = optimize });
+    mir_verify_module.addImport("ravi_mir", mir_module);
+    mir_module.addImport("ravi_mir_verify", mir_verify_module);
+    const mir_contract_module = b.createModule(.{ .root_source_file = b.path("src/backend/mir_contract.zig"), .target = target, .optimize = optimize });
+    mir_contract_module.addImport("ravi_mir", mir_module);
+    const native_backend_module = b.createModule(.{ .root_source_file = b.path("src/backend/native.zig"), .target = target, .optimize = optimize });
+    native_backend_module.addImport("ravi_mir", mir_module);
+    native_backend_module.addImport("ravi_mir_contract", mir_contract_module);
+    backend_module.addImport("ravi_mir", mir_module);
+    backend_module.addImport("ravi_native_backend", native_backend_module);
+    const hir_compatibility_module = b.createModule(.{ .root_source_file = b.path("src/compiler/hir_compatibility.zig"), .target = target, .optimize = optimize });
+    hir_compatibility_module.addImport("ravi_ast", ast_module);
+    hir_compatibility_module.addImport("ravi_bytecode", bytecode_module);
+    hir_compatibility_module.addImport("ravi_compiler", compiler_module);
     const mir_bytecode_module = b.createModule(.{ .root_source_file = b.path("src/ir/mir_bytecode.zig"), .target = target, .optimize = optimize });
     mir_bytecode_module.addImport("ravi_mir", mir_module);
     mir_bytecode_module.addImport("ravi_bytecode", bytecode_module);
     mir_bytecode_module.addImport("ravi_hir", hir_module);
     mir_bytecode_module.addImport("ravi_vm", vm_module);
+    const mir_bytecode_emit_module = b.createModule(.{ .root_source_file = b.path("src/ir/mir_bytecode_emit.zig"), .target = target, .optimize = optimize });
+    mir_bytecode_emit_module.addImport("ravi_mir", mir_module);
+    mir_bytecode_emit_module.addImport("ravi_bytecode", bytecode_module);
+    mir_bytecode_module.addImport("ravi_mir_bytecode_emit", mir_bytecode_emit_module);
+    const hir_pipeline_module = b.createModule(.{ .root_source_file = b.path("src/compiler/hir_pipeline.zig"), .target = target, .optimize = optimize });
+    const hir_lowering_module = b.createModule(.{ .root_source_file = b.path("src/compiler/hir_lowering.zig"), .target = target, .optimize = optimize });
+    hir_lowering_module.addImport("ravi_ast", ast_module);
+    hir_lowering_module.addImport("ravi_hir", hir_module);
+    hir_lowering_module.addImport("ravi_mir", mir_module);
+    hir_pipeline_module.addImport("ravi_compiler", compiler_module);
+    hir_pipeline_module.addImport("ravi_ast", ast_module);
+    hir_pipeline_module.addImport("ravi_hir", hir_module);
+    hir_pipeline_module.addImport("ravi_mir", mir_module);
+    hir_pipeline_module.addImport("ravi_mir_bytecode", mir_bytecode_module);
+    hir_pipeline_module.addImport("ravi_bytecode", bytecode_module);
+    hir_pipeline_module.addImport("ravi_hir_compatibility", hir_compatibility_module);
+    hir_pipeline_module.addImport("ravi_vm", vm_module);
+    hir_pipeline_module.addImport("ravi_hir_lowering", hir_lowering_module);
     const parser_module = b.createModule(.{ .root_source_file = b.path("src/parser/parser.zig"), .target = target, .optimize = optimize });
     parser_module.addImport("ravi_lexer", lexer_module);
     parser_module.addImport("ravi_ast", ast_module);
@@ -125,7 +155,7 @@ pub fn build(b: *std.Build) void {
     root_module.addImport("ravi_vm", vm_module);
     root_module.addImport("ravi_gc", gc_module);
     root_module.addImport("ravi_lexer", lexer_module);
-    root_module.addImport("ravi_compiler", compiler_module);
+    root_module.addImport("ravi_hir_pipeline", hir_pipeline_module);
     root_module.addImport("ravi_backend", backend_module);
     root_module.addImport("ravi_optimizer", optimizer_module);
     root_module.addImport("ravi_debug", debug_module);
@@ -150,7 +180,6 @@ pub fn build(b: *std.Build) void {
     const run_step = b.step("run", "Tokenize the sample Ravi program");
     run_step.dependOn(&run.step);
 
-    const value_tests = b.addTest(.{ .root_module = value_module });
     const semantic_module = b.createModule(.{ .root_source_file = b.path("src/semantic/analyzer.zig"), .target = target, .optimize = optimize });
     semantic_module.addImport("ravi_lexer", lexer_module);
     semantic_module.addImport("ravi_ast", ast_module);
@@ -184,7 +213,8 @@ pub fn build(b: *std.Build) void {
     const semantic_tests = b.addTest(.{ .root_module = semantic_tests_module });
 
     const value_tests_module = b.createModule(.{ .root_source_file = b.path("tests/runtime_value_tests.zig"), .target = target, .optimize = optimize });
-    value_tests_module.addImport("ravi_value", value_module);
+    value_tests_module.addImport("ravi_vm_value", nan_value_module);
+    value_tests_module.addImport("ravi_vm_collections", vm_collections_module);
     const value_tests_split = b.addTest(.{ .root_module = value_tests_module });
 
     const collection_tests_module = b.createModule(.{ .root_source_file = b.path("tests/collection_tests.zig"), .target = target, .optimize = optimize });
@@ -211,6 +241,7 @@ pub fn build(b: *std.Build) void {
     const bytecode_tests_module = b.createModule(.{ .root_source_file = b.path("tests/bytecode_tests.zig"), .target = target, .optimize = optimize });
     bytecode_tests_module.addImport("ravi_bytecode", bytecode_module);
     const bytecode_tests = b.addTest(.{ .root_module = bytecode_tests_module });
+    const opcode_spec_tests = b.addTest(.{ .root_module = opcode_spec_module });
     const source_tests = b.addTest(.{ .root_module = source_module });
     const diagnostics_tests = b.addTest(.{ .root_module = diagnostics_module });
     const formatter_tests = b.addTest(.{ .root_module = formatter_module });
@@ -221,7 +252,12 @@ pub fn build(b: *std.Build) void {
     const module_cache_tests = b.addTest(.{ .root_module = module_cache_module });
     const hir_tests = b.addTest(.{ .root_module = hir_module });
     const mir_tests = b.addTest(.{ .root_module = mir_module });
+    const mir_tests_module = b.createModule(.{ .root_source_file = b.path("src/ir/mir_tests.zig"), .target = target, .optimize = optimize });
+    mir_tests_module.addImport("ravi_hir", hir_module);
+    mir_tests_module.addImport("ravi_mir", mir_module);
+    const mir_tests_split = b.addTest(.{ .root_module = mir_tests_module });
     const mir_bytecode_tests = b.addTest(.{ .root_module = mir_bytecode_module });
+    const hir_pipeline_tests = b.addTest(.{ .root_module = hir_pipeline_module });
     const lsp_tests = b.addTest(.{ .root_module = lsp_module });
     const lsp_protocol_tests = b.addTest(.{ .root_module = lsp_protocol_module });
     const jsonrpc_tests = b.addTest(.{ .root_module = jsonrpc_module });
@@ -245,7 +281,6 @@ pub fn build(b: *std.Build) void {
     const phase1_tests = b.addTest(.{ .root_module = phase1_tests_module });
 
     const test_step = b.step("test", "Run runtime unit tests");
-    test_step.dependOn(&value_tests.step);
     test_step.dependOn(&lexer_tests.step);
     test_step.dependOn(&parser_tests.step);
     test_step.dependOn(&compiler_tests.step);
@@ -263,6 +298,7 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&nan_value_tests.step);
     test_step.dependOn(&dispatch_tests.step);
     test_step.dependOn(&bytecode_tests.step);
+    test_step.dependOn(&opcode_spec_tests.step);
     test_step.dependOn(&source_tests.step);
     test_step.dependOn(&diagnostics_tests.step);
     test_step.dependOn(&formatter_tests.step);
@@ -272,7 +308,9 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&module_cache_tests.step);
     test_step.dependOn(&hir_tests.step);
     test_step.dependOn(&mir_tests.step);
+    test_step.dependOn(&mir_tests_split.step);
     test_step.dependOn(&mir_bytecode_tests.step);
+    test_step.dependOn(&hir_pipeline_tests.step);
     test_step.dependOn(&lsp_tests.step);
     test_step.dependOn(&lsp_protocol_tests.step);
     test_step.dependOn(&jsonrpc_tests.step);

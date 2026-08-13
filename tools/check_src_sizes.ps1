@@ -10,7 +10,9 @@ $temporaryBudgets = @{
 
 $oversized = Get-ChildItem -Path src -Recurse -Filter *.zig | ForEach-Object {
     $lines = (Get-Content -LiteralPath $_.FullName).Count
-    $relative = [System.IO.Path]::GetRelativePath((Get-Location).Path, $_.FullName).Replace('\', '/')
+    $rootUri = [System.Uri]::new(((Get-Location).Path.TrimEnd('\') + '\'))
+    $fileUri = [System.Uri]::new($_.FullName)
+    $relative = [System.Uri]::UnescapeDataString($rootUri.MakeRelativeUri($fileUri).ToString()).Replace('\', '/')
     $limit = if ($temporaryBudgets.ContainsKey($relative)) { $temporaryBudgets[$relative] } else { $MaxLines }
     if ($lines -gt $limit) {
         [pscustomobject]@{ File = $relative; Lines = $lines; Limit = $limit }

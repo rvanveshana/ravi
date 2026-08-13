@@ -72,6 +72,12 @@ test "verifier rejects invalid locals captures constants and metadata" {
     try source_map.emit(.{ .op = .halt });
     _ = source_map.source_map.pop();
     try std.testing.expectError(error.InvalidInstruction, source_map.verify());
+
+    var root_map = bytecode.Chunk.init(std.testing.allocator);
+    defer root_map.deinit();
+    try root_map.emit(.{ .op = .halt });
+    _ = root_map.root_map.pop();
+    try std.testing.expectError(error.InvalidInstruction, root_map.verify());
 }
 
 test "verifier rejects invalid handler and jump targets" {

@@ -10,6 +10,11 @@ const config = @import("ravi_config");
 const dap = @import("ravi_dap");
 const framing = @import("ravi_lsp_protocol");
 
+fn initializeVm(allocator: std.mem.Allocator) !void {
+    var vm = try vm_mod.Vm.initWithCollectorOptions(allocator, .{ .collection_threshold = 1, .stress = true });
+    vm.deinit();
+}
+
 fn diagnosticText(code: []const u8, message: []const u8, line: usize, column: usize, source: []const u8) ![]u8 {
     return diagnostics.renderHuman(std.testing.allocator, "golden.rk", source, .{
         .code = code,
@@ -131,4 +136,25 @@ test "DAP serializes scopes variables evaluation and serves framed requests" {
     defer writer.bytes.deinit(std.testing.allocator);
     try adapter.serve(&reader, &writer);
     try std.testing.expect(std.mem.indexOf(u8, writer.bytes.items, "Content-Length:") != null);
+}
+
+test "VM stress collection reclaims transient strings without stale handles" {
+    var chunk = bytecode.Chunk.init(std.testing.allocator);
+    defer chunk.deinit();
+    const string_index = try chunk.addString("transient");
+    for (0..128) |_| {
+        try chunk.emit(.{ .op = .make_string, .operand = @intCast(string_index) });
+        try chunk.emit(.{ .op = .pop });
+    }
+    try chunk.emit(.{ .op = .halt });
+    var vm = try vm_mod.Vm.initWithCollectorOptions(std.testing.allocator, .{ .collection_threshold = 1, .stress = true });
+    defer vm.deinit();
+    _ = try vm.runValue(&chunk);
+    try std.testing.expect(vm.collectorStatistics().collections > 0);
+    try vm.collectGarbage();
+    try std.testing.expect(vm.collectorStatistics().live == 0);
+}
+
+test "VM and managed runtime initialization propagates every allocation failure" {
+    try std.testing.checkAllAllocationFailures(std.testing.allocator, initializeVm, .{});
 }

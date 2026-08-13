@@ -1,10 +1,12 @@
 const std = @import("std");
+const opcode_spec = @import("ravi_opcode_spec");
 
 pub const VerifyError = error{ EmptyChunk, InvalidJump, InvalidLocal, StackUnderflow, InvalidInstruction };
 
 pub fn verify(chunk: anytype) VerifyError!void {
     if (chunk.code.items.len == 0) return error.EmptyChunk;
     if (chunk.source_map.items.len != chunk.code.items.len) return error.InvalidInstruction;
+    if (chunk.root_map.items.len != chunk.code.items.len) return error.InvalidInstruction;
     for (chunk.functions.items) |function| {
         if (function.entry == 0 or function.entry >= chunk.code.items.len) return error.InvalidInstruction;
         if ((!function.resumable and function.suspension_count != 0) or (function.resumable and function.suspension_count == 0)) return error.InvalidInstruction;
@@ -12,6 +14,8 @@ pub fn verify(chunk: anytype) VerifyError!void {
     for (chunk.captures.items) |capture| if (capture.function >= chunk.functions.items.len) return error.InvalidInstruction;
     var depth: isize = 0;
     for (chunk.code.items) |instruction| {
+        const contract = opcode_spec.effect(instruction.op);
+        if (depth < @as(isize, @intCast(contract.minimum_stack))) return error.StackUnderflow;
         switch (instruction.op) {
             .constant, .make_string, .make_function, .make_instance, .load_local, .load_capture, .load_capture_ref, .true_value, .false_value, .none_value, .make_float => depth += 1,
             .make_format => {

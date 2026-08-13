@@ -51,7 +51,34 @@
     "analyzed": true,
     "lowered": true,
     "executed": true,
-    "tested": false
+    "tested": true
+  },
+  {
+    "feature": "Runtime Value ABI",
+    "designed": true,
+    "parsed": false,
+    "analyzed": false,
+    "lowered": true,
+    "executed": true,
+    "tested": true
+  },
+  {
+    "feature": "Managed GC and ownership",
+    "designed": true,
+    "parsed": false,
+    "analyzed": false,
+    "lowered": true,
+    "executed": true,
+    "tested": true
+  },
+  {
+    "feature": "Diagnostics and DAP",
+    "designed": true,
+    "parsed": true,
+    "analyzed": true,
+    "lowered": true,
+    "executed": true,
+    "tested": true
   },
   {
     "feature": "Async and generators",

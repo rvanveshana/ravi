@@ -1,9 +1,11 @@
 const std = @import("std");
 const hir = @import("ravi_hir");
+const verifier = @import("ravi_mir_verify");
 
 pub const ValueId = enum(u32) { _ };
 pub const BlockId = enum(u32) { _ };
 pub const Type = hir.Type;
+pub const Unary = hir.Unary;
 
 pub const Instruction = struct {
     result: ?ValueId = null,
@@ -13,43 +15,79 @@ pub const Instruction = struct {
 
     pub const Operation = union(enum) {
         constant_integer: i64,
+        constant_float: f64,
+        constant_string: []const u8,
+        constant_boolean: bool,
+        constant_none,
+        unary: struct { operator: Unary, operand: ValueId },
+        parameter: usize,
+        load_local: usize,
+        store_local: struct { slot: usize, value: ValueId },
+        phi: []const PhiInput,
         binary: struct { operator: hir.Binary, left: ValueId, right: ValueId },
+        call: struct { function: usize, arguments: []const ValueId },
+        print: ValueId,
         guard: struct { value: ValueId, expected: Type },
         suspend_point: struct { resume_line: usize },
         jump: BlockId,
         branch: struct { condition: ValueId, then_block: BlockId, else_block: BlockId },
         return_value: ?ValueId,
+        raise_value: ?ValueId,
     };
 };
 
 pub const Block = struct { first_instruction: usize, instruction_count: usize };
+pub const PhiInput = struct { block: BlockId, value: ValueId };
 
 pub const Function = struct {
     allocator: std.mem.Allocator,
+    name: []const u8 = "<function>",
     instructions: std.ArrayListUnmanaged(Instruction) = .empty,
     blocks: std.ArrayListUnmanaged(Block) = .empty,
     value_count: u32 = 0,
     resumable: bool = false,
     suspension_count: usize = 0,
+    parameter_count: usize = 0,
+    local_count: usize = 0,
 
     pub fn init(allocator: std.mem.Allocator) Function {
         return .{ .allocator = allocator };
     }
     pub fn deinit(self: *Function) void {
+        for (self.instructions.items) |instruction| switch (instruction.operation) {
+            .call => |call| self.allocator.free(call.arguments),
+            .phi => |inputs| self.allocator.free(inputs),
+            else => {},
+        };
         self.instructions.deinit(self.allocator);
         self.blocks.deinit(self.allocator);
     }
 
     pub fn lower(allocator: std.mem.Allocator, source: *const hir.Function) !Function {
+        try source.verify();
         var result = Function.init(allocator);
         errdefer result.deinit();
         for (source.instructions.items) |instruction| {
             const lowered: Instruction.Operation = switch (instruction.operation) {
                 .constant_integer => |value| .{ .constant_integer = value },
+                .constant_float => |value| .{ .constant_float = value },
+                .constant_string => |value| .{ .constant_string = value },
+                .constant_boolean => |value| .{ .constant_boolean = value },
+                .constant_none => .constant_none,
+                .unary => |value| .{ .unary = .{ .operator = value.operator, .operand = mapValue(value.operand) } },
+                .parameter => |slot| .{ .parameter = slot },
+                .load_local => |slot| .{ .load_local = slot },
+                .store_local => |value| .{ .store_local = .{ .slot = value.slot, .value = mapValue(value.value) } },
+                .phi => |inputs| .{ .phi = try mapPhiInputs(allocator, inputs) },
                 .binary => |value| .{ .binary = .{ .operator = value.operator, .left = mapValue(value.left), .right = mapValue(value.right) } },
+                .call => |value| .{ .call = .{ .function = value.function, .arguments = try mapArguments(allocator, value.arguments) } },
+                .print => |value| .{ .print = mapValue(value) },
+                .jump => |target| .{ .jump = @enumFromInt(@intFromEnum(target)) },
+                .branch => |value| .{ .branch = .{ .condition = mapValue(value.condition), .then_block = @enumFromInt(@intFromEnum(value.then_block)), .else_block = @enumFromInt(@intFromEnum(value.else_block)) } },
                 .guard => |value| .{ .guard = .{ .value = mapValue(value.value), .expected = value.expected } },
                 .suspend_point => |value| .{ .suspend_point = .{ .resume_line = value.resume_line } },
                 .return_value => |value| .{ .return_value = if (value) |id| mapValue(id) else null },
+                .raise_value => |value| .{ .raise_value = if (value) |id| mapValue(id) else null },
             };
             try result.instructions.append(allocator, .{
                 .result = if (instruction.result) |id| mapValue(id) else null,
@@ -59,9 +97,14 @@ pub const Function = struct {
             });
         }
         result.value_count = source.next_value;
+        result.name = source.name;
         result.resumable = source.resumable;
         result.suspension_count = source.suspension_count;
-        try result.blocks.append(allocator, .{ .first_instruction = 0, .instruction_count = result.instructions.items.len });
+        result.parameter_count = source.parameter_count;
+        result.local_count = source.local_count;
+        if (source.blocks.items.len == 0) {
+            try result.blocks.append(allocator, .{ .first_instruction = 0, .instruction_count = result.instructions.items.len });
+        } else for (source.blocks.items) |block| try result.blocks.append(allocator, .{ .first_instruction = block.first_instruction, .instruction_count = block.instruction_count });
         try result.verify();
         return result;
     }
@@ -96,10 +139,25 @@ pub const Function = struct {
                 const instruction = self.instructions.items[instruction_index];
                 const is_last = instruction_index + 1 == block_end;
                 switch (instruction.operation) {
+                    .parameter => |slot| if (slot >= self.parameter_count) return error.InvalidParameter,
+                    .load_local => |slot| if (slot >= self.local_count) return error.InvalidLocal,
                     .binary => |value| {
                         try requireDefined(definitions, value.left);
                         try requireDefined(definitions, value.right);
                     },
+                    .store_local => |value| {
+                        if (value.slot >= self.local_count) return error.InvalidLocal;
+                        try requireDefined(definitions, value.value);
+                    },
+                    .phi => |inputs| {
+                        if (inputs.len == 0) return error.InvalidPhi;
+                        for (inputs) |input| {
+                            try requireBlock(self, input.block);
+                            if (@intFromEnum(input.value) >= self.value_count) return error.UndefinedValue;
+                        }
+                    },
+                    .call => |value| for (value.arguments) |argument| try requireDefined(definitions, argument),
+                    .print => |value| try requireDefined(definitions, value),
                     .guard => |value| try requireDefined(definitions, value.value),
                     .branch => |value| {
                         if (!is_last) return error.InvalidBlock;
@@ -115,6 +173,10 @@ pub const Function = struct {
                         if (!is_last) return error.InvalidBlock;
                         if (value) |id| try requireDefined(definitions, id);
                     },
+                    .raise_value => |value| {
+                        if (!is_last) return error.InvalidBlock;
+                        if (value) |id| try requireDefined(definitions, id);
+                    },
                     else => {},
                 }
                 if (instruction.result) |id| {
@@ -125,6 +187,7 @@ pub const Function = struct {
             }
         }
         for (covered) |is_covered| if (!is_covered) return error.InvalidBlock;
+        try verifier.verifyDominance(self);
     }
 
     pub fn foldConstants(self: *Function) !usize {
@@ -152,6 +215,7 @@ pub const Function = struct {
                         .modulo => if (right == 0) null else @mod(left, right),
                         .equal => @intFromBool(left == right),
                         .less => @intFromBool(left < right),
+                        .not_equal, .less_equal, .greater, .greater_equal, .logic_and, .logic_or => null,
                     };
                     if (folded) |value| {
                         instruction.operation = .{ .constant_integer = value };
@@ -170,113 +234,20 @@ pub const Function = struct {
 fn mapValue(value: hir.ValueId) ValueId {
     return @enumFromInt(@intFromEnum(value));
 }
+fn mapArguments(allocator: std.mem.Allocator, arguments: []const hir.ValueId) ![]ValueId {
+    const mapped = try allocator.alloc(ValueId, arguments.len);
+    for (arguments, 0..) |argument, index| mapped[index] = mapValue(argument);
+    return mapped;
+}
+fn mapPhiInputs(allocator: std.mem.Allocator, inputs: []const hir.PhiInput) ![]PhiInput {
+    const mapped = try allocator.alloc(PhiInput, inputs.len);
+    for (inputs, 0..) |input, index| mapped[index] = .{ .block = @enumFromInt(@intFromEnum(input.block)), .value = mapValue(input.value) };
+    return mapped;
+}
 fn requireDefined(definitions: []const bool, value: ValueId) !void {
     const index: usize = @intFromEnum(value);
     if (index >= definitions.len or !definitions[index]) return error.UndefinedValue;
 }
 fn requireBlock(function: *const Function, block: BlockId) !void {
     if (@intFromEnum(block) >= function.blocks.items.len) return error.InvalidBlock;
-}
-
-test "HIR lowers to verified MIR with stable source lines" {
-    var source = hir.Function.init(std.testing.allocator, "main");
-    defer source.deinit();
-    const left = try source.appendValue(.integer, .{ .constant_integer = 20 }, 1);
-    const right = try source.appendValue(.integer, .{ .constant_integer = 22 }, 1);
-    const sum = try source.appendValue(.integer, .{ .binary = .{ .operator = .add, .left = left, .right = right } }, 1);
-    try source.appendEffect(.{ .return_value = sum }, 1);
-    var function = try Function.lower(std.testing.allocator, &source);
-    defer function.deinit();
-    try std.testing.expectEqual(@as(usize, 1), function.blocks.items.len);
-    try std.testing.expectEqual(@as(usize, 1), function.instructions.items[2].source_line);
-    try std.testing.expectEqual(@as(usize, 1), try function.foldConstants());
-    try std.testing.expectEqual(@as(i64, 42), function.instructions.items[2].operation.constant_integer);
-}
-
-test "constant folding preserves trapping division" {
-    var source = hir.Function.init(std.testing.allocator, "main");
-    defer source.deinit();
-    const numerator = try source.appendValue(.integer, .{ .constant_integer = 1 }, 1);
-    const zero = try source.appendValue(.integer, .{ .constant_integer = 0 }, 1);
-    _ = try source.appendValue(.integer, .{ .binary = .{ .operator = .divide, .left = numerator, .right = zero } }, 1);
-    var function = try Function.lower(std.testing.allocator, &source);
-    defer function.deinit();
-    try std.testing.expectEqual(@as(usize, 0), try function.foldConstants());
-    try std.testing.expect(function.instructions.items[2].operation == .binary);
-}
-
-test "constant folding handles modulo and preserves zero divisor" {
-    var source = hir.Function.init(std.testing.allocator, "main");
-    defer source.deinit();
-    const left = try source.appendValue(.integer, .{ .constant_integer = 17 }, 1);
-    const right = try source.appendValue(.integer, .{ .constant_integer = 5 }, 1);
-    _ = try source.appendValue(.integer, .{ .binary = .{ .operator = .modulo, .left = left, .right = right } }, 1);
-    var function = try Function.lower(std.testing.allocator, &source);
-    defer function.deinit();
-    try std.testing.expectEqual(@as(usize, 1), try function.foldConstants());
-    try std.testing.expectEqual(@as(i64, 2), function.instructions.items[2].operation.constant_integer);
-}
-
-test "MIR preserves resumable machine metadata" {
-    var source = hir.Function.init(std.testing.allocator, "async_main");
-    defer source.deinit();
-    source.resumable = true;
-    source.suspension_count = 1;
-    try source.appendEffect(.{ .suspend_point = .{ .resume_line = 8 } }, 8);
-    var lowered = try Function.lower(std.testing.allocator, &source);
-    defer lowered.deinit();
-    try std.testing.expect(lowered.resumable);
-    try std.testing.expectEqual(@as(usize, 1), lowered.suspension_count);
-    try std.testing.expectEqual(@as(usize, 8), lowered.instructions.items[0].operation.suspend_point.resume_line);
-}
-
-test "MIR constant folding rejects malformed value identifiers" {
-    var function = Function.init(std.testing.allocator);
-    defer function.deinit();
-    function.value_count = 1;
-    try function.instructions.append(std.testing.allocator, .{
-        .result = @enumFromInt(0),
-        .result_type = .integer,
-        .source_line = 1,
-        .operation = .{ .binary = .{ .operator = .add, .left = @enumFromInt(9), .right = @enumFromInt(0) } },
-    });
-    try function.blocks.append(std.testing.allocator, .{ .first_instruction = 0, .instruction_count = 1 });
-    try std.testing.expectError(error.UndefinedValue, function.foldConstants());
-}
-
-test "MIR verifier rejects overlapping and overflowing blocks" {
-    var function = Function.init(std.testing.allocator);
-    defer function.deinit();
-    try function.instructions.append(std.testing.allocator, .{ .source_line = 1, .operation = .{ .return_value = null } });
-    try function.blocks.append(std.testing.allocator, .{ .first_instruction = 0, .instruction_count = 1 });
-    try function.blocks.append(std.testing.allocator, .{ .first_instruction = 0, .instruction_count = 1 });
-    try std.testing.expectError(error.InvalidBlock, function.verify());
-    function.blocks.items[1] = .{ .first_instruction = std.math.maxInt(usize), .instruction_count = 1 };
-    try std.testing.expectError(error.InvalidBlock, function.verify());
-}
-
-test "MIR verifier rejects uncovered instructions" {
-    var function = Function.init(std.testing.allocator);
-    defer function.deinit();
-    try function.instructions.append(std.testing.allocator, .{ .source_line = 1, .operation = .{ .return_value = null } });
-    try function.instructions.append(std.testing.allocator, .{ .source_line = 2, .operation = .{ .return_value = null } });
-    try function.blocks.append(std.testing.allocator, .{ .first_instruction = 0, .instruction_count = 1 });
-    try std.testing.expectError(error.InvalidBlock, function.verify());
-}
-
-test "MIR verifier requires the first block to be the entry offset" {
-    var function = Function.init(std.testing.allocator);
-    defer function.deinit();
-    try function.instructions.append(std.testing.allocator, .{ .source_line = 1, .operation = .{ .return_value = null } });
-    try function.blocks.append(std.testing.allocator, .{ .first_instruction = 1, .instruction_count = 0 });
-    try std.testing.expectError(error.InvalidBlock, function.verify());
-}
-
-test "MIR verifier requires control-flow terminators at block end" {
-    var function = Function.init(std.testing.allocator);
-    defer function.deinit();
-    try function.instructions.append(std.testing.allocator, .{ .source_line = 1, .operation = .{ .jump = @enumFromInt(0) } });
-    try function.instructions.append(std.testing.allocator, .{ .source_line = 1, .operation = .{ .return_value = null } });
-    try function.blocks.append(std.testing.allocator, .{ .first_instruction = 0, .instruction_count = 2 });
-    try std.testing.expectError(error.InvalidBlock, function.verify());
 }

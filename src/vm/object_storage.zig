@@ -107,14 +107,14 @@ fn markValue(self: anytype, value: Value, seen: *std.AutoHashMap(u64, void)) err
     if (seen.contains(key)) return;
     try seen.put(key, {});
     switch (kind) {
-        .string => if (index < self.strings.items.len) try addRoot(self, @ptrCast(self.strings.items[index])) else return error.InvalidInstruction,
+        .string => if (index < self.strings.items.len and self.collector.isManaged(@ptrCast(self.strings.items[index]))) try addRoot(self, @ptrCast(self.strings.items[index])) else return error.InvalidInstruction,
         .array, .tuple, .set => {
-            if (index >= self.array_count) return error.InvalidInstruction;
+            if (index >= self.array_count or !self.collector.isManaged(@ptrCast(self.arrays[index]))) return error.InvalidInstruction;
             try addRoot(self, @ptrCast(self.arrays[index]));
             for (self.arrays[index].items[0..self.arrays[index].len]) |child| try markValue(self, child, seen);
         },
         .dictionary => {
-            if (index >= self.dict_count) return error.InvalidInstruction;
+            if (index >= self.dict_count or !self.collector.isManaged(@ptrCast(self.dicts[index]))) return error.InvalidInstruction;
             try addRoot(self, @ptrCast(self.dicts[index]));
             for (self.dicts[index].occupied, 0..) |occupied, slot| if (occupied) {
                 try markValue(self, self.dicts[index].keys[slot], seen);
@@ -122,17 +122,17 @@ fn markValue(self: anytype, value: Value, seen: *std.AutoHashMap(u64, void)) err
             };
         },
         .closure => {
-            if (index >= self.closure_count) return error.InvalidInstruction;
+            if (index >= self.closure_count or !self.collector.isManaged(@ptrCast(self.closures[index]))) return error.InvalidInstruction;
             try addRoot(self, @ptrCast(self.closures[index]));
             for (self.closures[index].captures) |child| try markValue(self, child, seen);
         },
         .cell => {
-            if (index >= self.cell_count) return error.InvalidInstruction;
+            if (index >= self.cell_count or !self.collector.isManaged(@ptrCast(self.cells[index]))) return error.InvalidInstruction;
             try addRoot(self, @ptrCast(self.cells[index]));
             try markValue(self, self.cells[index].value, seen);
         },
         .instance => {
-            if (index >= self.instance_count) return error.InvalidInstruction;
+            if (index >= self.instance_count or !self.collector.isManaged(@ptrCast(self.instances[index]))) return error.InvalidInstruction;
             try addRoot(self, @ptrCast(self.instances[index]));
             for (self.instances[index].fields.occupied, 0..) |occupied, slot| if (occupied) {
                 try markValue(self, self.instances[index].fields.keys[slot], seen);
@@ -158,12 +158,12 @@ fn objectPointer(self: anytype, value: Value) ?*anyopaque {
     const kind = value.handleKind() orelse return null;
     const index = value.handleIndex().?;
     return switch (kind) {
-        .string => if (index < self.strings.items.len) @ptrCast(self.strings.items[index]) else null,
-        .array, .tuple, .set => if (index < self.array_count) @ptrCast(self.arrays[index]) else null,
-        .dictionary => if (index < self.dict_count) @ptrCast(self.dicts[index]) else null,
-        .closure => if (index < self.closure_count) @ptrCast(self.closures[index]) else null,
-        .cell => if (index < self.cell_count) @ptrCast(self.cells[index]) else null,
-        .instance => if (index < self.instance_count) @ptrCast(self.instances[index]) else null,
+        .string => if (index < self.strings.items.len and self.collector.isManaged(@ptrCast(self.strings.items[index]))) @ptrCast(self.strings.items[index]) else null,
+        .array, .tuple, .set => if (index < self.array_count and self.collector.isManaged(@ptrCast(self.arrays[index]))) @ptrCast(self.arrays[index]) else null,
+        .dictionary => if (index < self.dict_count and self.collector.isManaged(@ptrCast(self.dicts[index]))) @ptrCast(self.dicts[index]) else null,
+        .closure => if (index < self.closure_count and self.collector.isManaged(@ptrCast(self.closures[index]))) @ptrCast(self.closures[index]) else null,
+        .cell => if (index < self.cell_count and self.collector.isManaged(@ptrCast(self.cells[index]))) @ptrCast(self.cells[index]) else null,
+        .instance => if (index < self.instance_count and self.collector.isManaged(@ptrCast(self.instances[index]))) @ptrCast(self.instances[index]) else null,
         else => null,
     };
 }

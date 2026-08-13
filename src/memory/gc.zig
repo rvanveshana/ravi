@@ -146,6 +146,11 @@ pub const Collector = struct {
         return false;
     }
 
+    pub fn isManaged(self: *const Collector, object: *anyopaque) bool {
+        for (self.managed.items) |allocation| if (allocation.object == object) return true;
+        return false;
+    }
+
     pub fn collect(self: *Collector) !void {
         self.collections += 1;
         self.marked.clearRetainingCapacity();

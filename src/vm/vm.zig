@@ -52,13 +52,16 @@ pub const Vm = struct {
     debugger: ?*debug.Debugger = null,
     collector: gc.Collector,
     pub fn init(allocator: std.mem.Allocator) !Vm {
+        return initWithCollectorOptions(allocator, .{});
+    }
+    pub fn initWithCollectorOptions(allocator: std.mem.Allocator, options: gc.Collector.Options) !Vm {
         const stack = try allocator.alloc(Value, 256);
         errdefer allocator.free(stack);
         const call_frames = try allocator.alloc(Frame, 64);
         errdefer allocator.free(call_frames);
         for (call_frames) |*frame| frame.* = .{};
         const trace_frames = try allocator.alloc(TraceFrame, 64);
-        return .{ .allocator = allocator, .stack = stack, .frames = call_frames, .trace = trace_frames, .collector = gc.Collector.init(allocator) };
+        return .{ .allocator = allocator, .stack = stack, .frames = call_frames, .trace = trace_frames, .collector = gc.Collector.initWithOptions(allocator, options) };
     }
     pub fn deinit(self: *Vm) void {
         state_helpers.deinit(self);
@@ -103,6 +106,7 @@ pub const Vm = struct {
         // A release chunk still needs a structurally valid source map for the
         // verifier; locations are intentionally zeroed rather than guessed.
         for (chunk.code.items) |_| chunk.source_map.append(self.allocator, .{ .start_offset = 0, .end_offset = 0, .line = 0, .column = 0 }) catch return error.OutOfMemory;
+        for (chunk.code.items) |_| chunk.root_map.append(self.allocator, .{}) catch return error.OutOfMemory;
         chunk.strings.appendSlice(self.allocator, template.strings.items) catch return error.OutOfMemory;
         chunk.formats.appendSlice(self.allocator, template.formats.items) catch return error.OutOfMemory;
         chunk.functions.appendSlice(self.allocator, template.functions.items) catch return error.OutOfMemory;
@@ -116,6 +120,12 @@ pub const Vm = struct {
     }
     pub fn detachDebugger(self: *Vm) void {
         self.debugger = null;
+    }
+    pub fn collectGarbage(self: *Vm) RuntimeError!void {
+        return self.collector.collect() catch error.OutOfMemory;
+    }
+    pub fn collectorStatistics(self: *const Vm) gc.Collector.Statistics {
+        return self.collector.statistics();
     }
     fn execute(self: *Vm, chunk: *const bytecode.Chunk) RuntimeError!Value {
         return execution.execute(self, chunk);

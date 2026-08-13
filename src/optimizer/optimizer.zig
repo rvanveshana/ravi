@@ -22,6 +22,10 @@ pub const Optimizer = struct {
                     _ = chunk.source_map.orderedRemove(i);
                     _ = chunk.source_map.orderedRemove(i);
                 }
+                if (chunk.root_map.items.len >= i + 2) {
+                    _ = chunk.root_map.orderedRemove(i);
+                    _ = chunk.root_map.orderedRemove(i);
+                }
                 for (chunk.code.items) |*inst| switch (inst.op) {
                     .jump, .jump_if_false, .try_begin => {
                         if (inst.operand == @as(i64, @intCast(i + 1))) {
@@ -66,6 +70,10 @@ pub const Optimizer = struct {
                 if (chunk.source_map.items.len >= i + 3) {
                     _ = chunk.source_map.orderedRemove(i + 1);
                     _ = chunk.source_map.orderedRemove(i + 1);
+                }
+                if (chunk.root_map.items.len >= i + 3) {
+                    _ = chunk.root_map.orderedRemove(i + 1);
+                    _ = chunk.root_map.orderedRemove(i + 1);
                 }
                 // Fix jump targets and function entry points after instruction removal
                 for (chunk.code.items) |*inst| {

@@ -34,7 +34,10 @@ pub fn handleFault(self: anytype, ip: *usize) bool {
 
 pub fn internString(self: anytype, text: []const u8) errors.RuntimeError!@import("ravi_vm_value").Value {
     const Value = @import("ravi_vm_value").Value;
-    for (self.strings.items, 0..) |existing, slot| if (std.mem.eql(u8, existing.bytes, text)) return Value.fromHandle(.string, slot) catch unreachable;
+    for (self.strings.items, 0..) |existing, slot| {
+        if (!self.collector.isManaged(@ptrCast(existing))) continue;
+        if (std.mem.eql(u8, existing.bytes, text)) return Value.fromHandle(.string, slot) catch unreachable;
+    }
     // The backing array grows with the allocator; a fixed string-count cap
     // made otherwise valid programs fail arbitrarily at 1,000 interned
     // strings. `Value.fromHandle` still enforces the representable handle

@@ -1,6 +1,7 @@
 const std = @import("std");
 const packed_codec = @import("ravi_packed_bytecode");
 const verifier = @import("ravi_bytecode_verifier");
+pub const opcode_spec = @import("ravi_opcode_spec");
 
 pub const OpCode = packed_codec.OpCode;
 pub const Instruction = packed_codec.Instruction;
@@ -65,6 +66,7 @@ pub fn canAccessProtected(classes: []const ClassInfo, declaring_class: usize, ca
 
 pub const CaptureInfo = struct { function: usize, slot: usize };
 pub const SourceLocation = struct { start_offset: usize, end_offset: usize, line: usize, column: usize };
+pub const RootMetadata = struct { stack_slots: usize = 0, local_slots: usize = 0, capture_slots: usize = 0 };
 
 pub const Chunk = struct {
     code: std.ArrayListUnmanaged(Instruction) = .empty,
@@ -72,6 +74,7 @@ pub const Chunk = struct {
     formats: std.ArrayListUnmanaged(struct { template: []const u8, arg_count: usize }) = .empty,
     floats: std.ArrayListUnmanaged(f64) = .empty,
     source_map: std.ArrayListUnmanaged(SourceLocation) = .empty,
+    root_map: std.ArrayListUnmanaged(RootMetadata) = .empty,
     functions: std.ArrayListUnmanaged(FunctionInfo) = .empty,
     classes: std.ArrayListUnmanaged(ClassInfo) = .empty,
     methods: std.ArrayListUnmanaged(MethodInfo) = .empty,
@@ -89,6 +92,7 @@ pub const Chunk = struct {
         self.formats.deinit(self.allocator);
         self.floats.deinit(self.allocator);
         self.source_map.deinit(self.allocator);
+        self.root_map.deinit(self.allocator);
         self.functions.deinit(self.allocator);
         self.classes.deinit(self.allocator);
         self.methods.deinit(self.allocator);
@@ -99,6 +103,12 @@ pub const Chunk = struct {
         try self.code.append(self.allocator, instruction);
         errdefer _ = self.code.pop();
         try self.source_map.append(self.allocator, self.current_location);
+        try self.root_map.append(self.allocator, .{});
+    }
+
+    pub fn setRootMetadata(self: *Chunk, first: usize, metadata: RootMetadata) !void {
+        if (first > self.root_map.items.len) return error.InvalidMetadata;
+        for (self.root_map.items[first..]) |*entry| entry.* = metadata;
     }
 
     pub fn encodePacked(self: *const Chunk, allocator: std.mem.Allocator) ![]u8 {

@@ -4,7 +4,7 @@ const TokenKind = @import("ravi_lexer").TokenKind;
 const Parser = @import("ravi_parser").Parser;
 const Analyzer = @import("semantic/analyzer.zig").Analyzer;
 const gc = @import("ravi_gc");
-const Compiler = @import("ravi_compiler").Compiler;
+const hir_pipeline = @import("ravi_hir_pipeline");
 const bytecode = @import("ravi_bytecode");
 const Vm = @import("ravi_vm").Vm;
 const Backend = @import("ravi_backend").Backend;
@@ -20,7 +20,6 @@ const ModuleLoader = @import("ravi_loader").Loader;
 const config = @import("ravi_config");
 const version = "0.1.0-dev";
 const DiagnosticFormat = enum { human, compact, json };
-
 const sample =
     "math inda add tago\n" ++
     "kriya calculate(a: int, b: int):\n" ++
@@ -51,7 +50,6 @@ pub fn main(init: std.process.Init) !void {
     var path: ?[]const u8 = null;
     var language_override: ?config.SourceLanguage = null;
     var diagnostic_format: DiagnosticFormat = .human;
-
     if (std.mem.eql(u8, first_arg, "check") or std.mem.eql(u8, first_arg, "run") or std.mem.eql(u8, first_arg, "trace") or std.mem.eql(u8, first_arg, "tokens") or std.mem.eql(u8, first_arg, "bytecode") or std.mem.eql(u8, first_arg, "fmt") or std.mem.eql(u8, first_arg, "fmt-check")) {
         mode = first_arg;
     } else if (std.mem.eql(u8, first_arg, "--lang")) {
@@ -67,7 +65,6 @@ pub fn main(init: std.process.Init) !void {
         path = first_arg;
         mode = "run";
     }
-
     while (args.next()) |argument| {
         if (std.mem.eql(u8, argument, "--lang")) {
             const name = args.next() orelse {
@@ -154,15 +151,12 @@ pub fn main(init: std.process.Init) !void {
             };
             if (imports_loaded) return;
         };
-        var compiler = Compiler.initWithLanguage(collector.allocator(), language);
-        var chunk: bytecode.Chunk = compiler.compileAstModule(&module) catch |err| {
-            printDiagnostic(collector.allocator(), diagnostic_format, managed_source.name, source, "RAVI-COMPILE-001", @errorName(err), compiler.last_location);
+        var chunk: bytecode.Chunk = undefined;
+        chunk = hir_pipeline.lower(collector.allocator(), &module) catch |err| {
+            printDiagnostic(collector.allocator(), diagnostic_format, managed_source.name, source, "RAVI-HIR-001", @errorName(err), .{ .start_offset = 0, .end_offset = source.len, .line = 1, .column = 1 });
             std.process.exit(1);
         };
         defer chunk.deinit();
-        // Release execution uses the verified bytecode optimizer; trace and
-        // bytecode modes retain the original instruction layout for precise
-        // debugger/source inspection.
         if (std.mem.eql(u8, mode, "run")) _ = Optimizer.optimize(&chunk);
         if (std.mem.eql(u8, mode, "bytecode") or std.mem.eql(u8, mode, "trace")) {
             var buffer: [192]u8 = undefined;
@@ -191,7 +185,7 @@ pub fn main(init: std.process.Init) !void {
         return;
     }
     std.debug.print("valid Ravi module: {d} syntax nodes\n", .{module.statements.items.len});
-    _ = TokenKind; // Keep the token contract available to the CLI module.
+    _ = TokenKind;
     _ = Backend;
     _ = Debugger;
     _ = Scheduler;
@@ -234,8 +228,7 @@ fn runWithImports(allocator: std.mem.Allocator, io: std.Io, root_path: []const u
     defer analyzer.deinit();
     try analyzer.analyzeWithLanguage(tokens, root_language);
     try analyzer.analyzeModule(&module);
-    var compiler = Compiler.initWithLanguage(allocator, root_language);
-    var chunk = try compiler.compileAstModule(&module);
+    var chunk = try hir_pipeline.lower(allocator, &module);
     defer chunk.deinit();
     _ = Optimizer.optimize(&chunk);
     var vm = try Vm.init(allocator);
