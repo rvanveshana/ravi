@@ -225,6 +225,11 @@ pub fn build(b: *std.Build) void {
     const lsp_tests = b.addTest(.{ .root_module = lsp_module });
     const lsp_protocol_tests = b.addTest(.{ .root_module = lsp_protocol_module });
     const jsonrpc_tests = b.addTest(.{ .root_module = jsonrpc_module });
+    const phase0_tests_module = b.createModule(.{ .root_source_file = b.path("tests/phase0_tests.zig"), .target = target, .optimize = optimize });
+    phase0_tests_module.addImport("ravi_bytecode", bytecode_module);
+    phase0_tests_module.addImport("ravi_lexer", lexer_module);
+    phase0_tests_module.addImport("ravi_parser", parser_module);
+    const phase0_tests = b.addTest(.{ .root_module = phase0_tests_module });
 
     const test_step = b.step("test", "Run runtime unit tests");
     test_step.dependOn(&value_tests.step);
@@ -258,4 +263,5 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&lsp_tests.step);
     test_step.dependOn(&lsp_protocol_tests.step);
     test_step.dependOn(&jsonrpc_tests.step);
+    test_step.dependOn(&phase0_tests.step);
 }

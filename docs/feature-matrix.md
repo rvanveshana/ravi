@@ -1,0 +1,14 @@
+# Ravi Feature Matrix
+
+Generated from `config/feature-matrix.json` by `tools/generate_feature_matrix.ps1`.
+
+| Feature | designed | parsed | analyzed | lowered | executed | tested |
+| --- | --- | --- | --- | --- | --- | --- |
+| Lexer and parser | yes | yes | yes | yes | yes | yes |
+| Single AST compiler | yes | yes | yes | yes | yes | yes |
+| Bytecode verifier | yes | no | no | yes | yes | yes |
+| Classes and inheritance | yes | yes | no | yes | no | no |
+| Gradual typing | yes | yes | no | no | no | no |
+| Modules and artifacts | yes | yes | yes | yes | yes | no |
+| Async and generators | yes | yes | no | no | no | no |
+| Native backend | yes | no | no | no | no | no |

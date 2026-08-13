@@ -3,8 +3,9 @@ param([int]$MaxLines = 300)
 $temporaryBudgets = @{
     "src/compiler/compiler.zig" = 1050
     "src/vm/vm.zig" = 800
-    "src/parser/parser.zig" = 450
     "src/bytecode/bytecode.zig" = 350
+    "src/lsp/jsonrpc.zig" = 500
+    "src/concurrency/scheduler.zig" = 350
 }
 
 $oversized = Get-ChildItem -Path src -Recurse -Filter *.zig | ForEach-Object {

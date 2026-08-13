@@ -1,0 +1,74 @@
+[
+  {
+    "feature": "Lexer and parser",
+    "designed": true,
+    "parsed": true,
+    "analyzed": true,
+    "lowered": true,
+    "executed": true,
+    "tested": true
+  },
+  {
+    "feature": "Single AST compiler",
+    "designed": true,
+    "parsed": true,
+    "analyzed": true,
+    "lowered": true,
+    "executed": true,
+    "tested": true
+  },
+  {
+    "feature": "Bytecode verifier",
+    "designed": true,
+    "parsed": false,
+    "analyzed": false,
+    "lowered": true,
+    "executed": true,
+    "tested": true
+  },
+  {
+    "feature": "Classes and inheritance",
+    "designed": true,
+    "parsed": true,
+    "analyzed": false,
+    "lowered": true,
+    "executed": false,
+    "tested": false
+  },
+  {
+    "feature": "Gradual typing",
+    "designed": true,
+    "parsed": true,
+    "analyzed": false,
+    "lowered": false,
+    "executed": false,
+    "tested": false
+  },
+  {
+    "feature": "Modules and artifacts",
+    "designed": true,
+    "parsed": true,
+    "analyzed": true,
+    "lowered": true,
+    "executed": true,
+    "tested": false
+  },
+  {
+    "feature": "Async and generators",
+    "designed": true,
+    "parsed": true,
+    "analyzed": false,
+    "lowered": false,
+    "executed": false,
+    "tested": false
+  },
+  {
+    "feature": "Native backend",
+    "designed": true,
+    "parsed": false,
+    "analyzed": false,
+    "lowered": false,
+    "executed": false,
+    "tested": false
+  }
+]

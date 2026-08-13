@@ -20,6 +20,11 @@ jobs:
       - name: Check formatting
         shell: pwsh
         run: zig fmt --check build.zig config src tests
+      - name: Check generated feature matrix
+        shell: pwsh
+        run: |
+          ./tools/generate_feature_matrix.ps1
+          git diff --exit-code -- docs/feature-matrix.md
       - name: Enforce source size budgets
         shell: pwsh
         run: ./tools/check_src_sizes.ps1

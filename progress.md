@@ -5,14 +5,13 @@ until it executes and is covered by a test or an example contract.
 
 ## Current Status
 
-- Both compiler paths — the legacy token compiler (default) and the AST
-  compiler (`--ast-compiler`) — compile and execute the full example corpus
-  with identical, verified output.
+- The AST/semantic compiler is the only compiler. The legacy token compiler and
+  `--ast-compiler` selection path have been removed.
 - All 30 files under `examples/` are self-verifying contracts (they assert
   real results with `adre ... : yese "message"` and end with a `PASS`
   marker), not just printed values a human has to eyeball.
-- `zig build test` and `.\test.ps1` both pass (30/30 examples, dual-compiler
-  output comparison). This is the standing acceptance bar for any change.
+- `zig build test` and `.\test.ps1` both pass (30/30 examples through the sole
+  compiler). This is the standing acceptance bar for any change.
 
 ## Recently Fixed
 
@@ -21,24 +20,24 @@ fixed while hardening the examples into assertion contracts (root causes and
 debugging notes are kept in `/memories/repo/ravi-compiler-bugs-fixed.md`):
 
 - AST: top-level function declarations leaked a stack value on every call.
-- AST/legacy: naive capture detection treated any fresh local variable as a
+- Compiler: naive capture detection treated any fresh local variable as a
   required closure capture, breaking functions with their own new locals.
 - AST: generic `for`/`prati x alli y` loops pushed the loop-condition operands
   in the wrong order, so they silently ran zero iterations.
-- Legacy: `for x in <bare variable>` failed instead of iterating; `for`
+- Runtime: `for x in <bare variable>` failed instead of iterating; `for`
   iterables are now resolved uniformly (list/set/dict/int) at runtime.
 - AST parser: `%` (modulo) was not recognized at all.
-- Legacy: leading unary minus (`-5 + 3`) miscomputed as `-(5 + 3)`.
-- Legacy: `true`/`false` literals were stored as untagged integers and
+- Compiler: leading unary minus (`-5 + 3`) miscomputed as `-(5 + 3)`.
+- Compiler: `true`/`false` literals were stored as untagged integers and
   printed as `1`/`0` once round-tripped through a variable.
-- Legacy: bare, call-free expression statements (e.g. a `try`-body expression
+- Compiler: bare, call-free expression statements (e.g. a `try`-body expression
   with no assignment) never popped their result, corrupting later stack
   depth once anything followed the block.
 
 ## Known Gaps / Next Work
 
-- **AST authority**: semantic/HIR/MIR integration and default CLI routing to
-  the AST path are still pending; `--ast-compiler` remains opt-in.
+- **AST authority**: CLI, imports, tests, and examples now route through the
+  AST compiler. Full semantic/HIR/MIR authority remains a later milestone.
 - **Classes**: inheritance and visibility contracts are not implemented.
 - **Iteration/generators**: no general iterator protocol or `yield`-backed
   generator state machines yet.
@@ -55,6 +54,37 @@ debugging notes are kept in `/memories/repo/ravi-compiler-bugs-fixed.md`):
   persistent artifact caching, and native code generation are pending.
 - Benchmark phase timings and GC pause timings remain unmeasured; only macro
   runtime distributions and binary size currently have budgets.
+
+## Phase 0 Status
+
+Completed validation work:
+
+- CI checks formatting, source-size budgets, Debug/ReleaseSafe/ReleaseFast
+  builds, unit tests, and the executable example corpus on Windows and Linux.
+- Dedicated verifier tests cover control-flow joins, stack effects, handlers,
+  locals, captures, constants, jumps, source metadata, and malformed input.
+- `std.testing.checkAllAllocationFailures` covers bytecode construction and
+  lexer/parser cleanup paths.
+- `tests/phase0_tests.zig` provides a deterministic lexer/parser fuzz entry
+  point over arbitrary byte sequences.
+- The generated feature matrix is maintained in
+  [config/feature-matrix.json](config/feature-matrix.json) and rendered to
+  [docs/feature-matrix.md](docs/feature-matrix.md) by
+  `tools/generate_feature_matrix.ps1`.
+
+Remaining Phase 0 architecture work:
+
+- Parser coordinator extraction is complete: `src/parser/parser.zig` now keeps
+  the public parser API and delegates concrete implementations to
+  `src/parser/parser_statements.zig`,
+  `src/parser/parser_simple_statements.zig`, and
+  `src/parser/parser_expressions.zig`.
+- VM execute-loop coordinator extraction is complete: `src/vm/vm.zig` now keeps
+  VM lifecycle/public API coordination while the instruction dispatch loop
+  lives in `src/vm/execution.zig`.
+- Remaining VM coordinator work is limited to any future splits identified by
+  new feature growth; current source-size budgets are guardrails, not
+  completion claims.
 
 ## Phase 0 Baseline
 
