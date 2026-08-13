@@ -2,7 +2,7 @@ const std = @import("std");
 const bytecode = @import("ravi_bytecode");
 const ast = @import("ravi_ast");
 const helpers = @import("helpers.zig");
-const ast_helpers = @import("ast_helpers.zig");
+const ast_helpers = @import("ravi_ast_helpers");
 
 pub fn finalizers(comptime Error: type, self: anytype, chunk: *bytecode.Chunk, module: *const ast.Module, names: *std.ArrayListUnmanaged([]const u8), loops: *std.ArrayListUnmanaged(ast_helpers.LoopContext), break_targets: *std.ArrayListUnmanaged(usize)) Error!void {
     const finalizer_list = self.ast_state.finalizers orelse return;

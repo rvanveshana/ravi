@@ -139,15 +139,7 @@ pub const Debugger = struct {
 };
 
 pub fn stackEffect(instruction: bytecode.Instruction) i16 {
-    return switch (instruction.op) {
-        .constant, .make_string, .make_function, .make_instance, .load_local, .load_capture, .load_capture_ref, .dup => 1,
-        .pop, .print, .clear_collection, .reverse_collection, .sort_collection => -1,
-        .add, .subtract, .multiply, .divide, .modulo, .equal, .not_equal, .less, .less_equal, .greater, .greater_equal, .logic_and, .logic_or, .index, .contains_collection, .dict_get, .dict_contains, .set_union, .set_intersection, .set_difference => -1,
-        .make_array, .make_tuple, .make_set => 1 - @as(i16, @intCast(instruction.operand)),
-        .make_dict => 1 - @as(i16, @intCast(instruction.operand * 2)),
-        .set_property => -2,
-        else => 0,
-    };
+    return @intCast(bytecode.opcode_spec.effect(instruction.op).stack_delta);
 }
 
 pub fn formatInstruction(buffer: []u8, chunk: *const bytecode.Chunk, instruction: usize) ![]const u8 {
@@ -238,4 +230,11 @@ test "disassembler includes offset opcode effect and source" {
     const text = try formatInstruction(&buffer, &chunk, 0);
     try std.testing.expect(std.mem.indexOf(u8, text, "constant") != null);
     try std.testing.expect(std.mem.indexOf(u8, text, "3:5") != null);
+}
+
+test "disassembler stack effects match the shared opcode contract" {
+    try std.testing.expectEqual(@as(i16, 1), stackEffect(.{ .op = .true_value }));
+    try std.testing.expectEqual(@as(i16, -2), stackEffect(.{ .op = .append_collection }));
+    try std.testing.expectEqual(@as(i16, 1), stackEffect(.{ .op = .make_array, .operand = 3 }));
+    try std.testing.expectEqual(@as(i16, 0), stackEffect(.{ .op = .suspend_point, .operand = 1 }));
 }

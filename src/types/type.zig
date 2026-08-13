@@ -16,6 +16,19 @@ pub fn isValid(t: Type) bool {
 pub fn consistent(actual: Type, expected: Type) bool {
     return actual.kind == expected.kind or actual.kind == .dynamic or expected.kind == .dynamic;
 }
+
+pub fn assignable(actual: Type, expected: Type) bool {
+    if (actual.kind == .never) return true;
+    return consistent(actual, expected);
+}
+
+pub fn join(left: Type, right: Type) Type {
+    if (left.kind == .never) return right;
+    if (right.kind == .never) return left;
+    if (left.kind == right.kind) return left;
+    return .{ .kind = .dynamic, .name = "dinamika" };
+}
+
 pub fn guardFor(actual: Type, expected: Type) Guard {
     if (actual.kind == .dynamic and expected.kind != .dynamic) return switch (expected.kind) {
         .integer => .check_integer,
@@ -26,4 +39,15 @@ pub fn guardFor(actual: Type, expected: Type) Guard {
     };
     if (expected.kind == .dynamic and actual.kind != .dynamic) return .box_dynamic;
     return .none;
+}
+
+test "type algebra handles assignability and joins" {
+    const integer = fromName("int");
+    const floating = fromName("float");
+    const dynamic = fromName("dinamika");
+    try std.testing.expect(assignable(.{ .kind = .never, .name = "never" }, integer));
+    try std.testing.expect(assignable(integer, dynamic));
+    try std.testing.expect(!assignable(integer, floating));
+    try std.testing.expectEqual(Kind.integer, join(integer, .{ .kind = .never, .name = "never" }).kind);
+    try std.testing.expectEqual(Kind.dynamic, join(integer, floating).kind);
 }

@@ -46,6 +46,19 @@ test "parser accepts function defaults and variadic parameters" {
     try std.testing.expectEqual(.keyword_variadic, module.parameters.items[function.params_first + 2].kind);
 }
 
+test "parser preserves yield as a distinct statement" {
+    const source = "kriya values():\n    yese 1\n    kodu 2\n";
+    var scan = try lexer.Lexer.init(std.testing.allocator, source);
+    defer scan.deinit();
+    const tokens = try scan.tokenize();
+    var instance = parser.Parser.init(std.testing.allocator, tokens);
+    var module = try instance.parseRecovering();
+    defer module.deinit();
+    try std.testing.expectEqual(@as(usize, 0), module.diagnostics.items.len);
+    try std.testing.expect(module.statements.items.len >= 3);
+    try std.testing.expect(module.statements.items[0].kind == .yield_stmt);
+}
+
 test "parser preserves member assignment targets" {
     const source = "box.value = 42\n";
     var scan = try lexer.Lexer.init(std.testing.allocator, source);

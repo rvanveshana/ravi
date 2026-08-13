@@ -110,6 +110,11 @@ test "parsed AST functions bind parameters and return values" {
     try std.testing.expectEqual(@as(i64, 5), try vm.run(&chunk));
 }
 
+test "parsed AST named functions capture and mutate outer locals" {
+    const source = "value = 0\nkriya inc():\n    value = value + 1\n    kodu value\ninc()\ninc()\n";
+    try std.testing.expectEqual(@as(i64, 2), try runAst(source, .kn));
+}
+
 test "parsed AST typed function parameters bind as locals" {
     const source = "kriya double(value: int):\n    kodu value * 2\ndouble(3)\n";
     try std.testing.expectEqual(@as(i64, 6), try runAst(source, .kn));

@@ -18,6 +18,20 @@ pub fn parseReturn(
     try out.append(parser.allocator, .{ .span = .{ .first = start, .last = parser.index, .line = parser.tokens[start].line }, .kind = .{ .return_stmt = value } });
 }
 
+pub fn parseYield(
+    parser: anytype,
+    module: *ast.Module,
+    out: *std.ArrayListUnmanaged(ast.Stmt),
+    start: usize,
+    parseExpressionFn: fn (@TypeOf(parser), *ast.Module, u8) ParseError!ast.ExprId,
+) ParseError!void {
+    parser.index += 1;
+    var value: ?ast.ExprId = null;
+    if (!parser.at(.newline) and !parser.at(.dedent) and !parser.at(.eof)) value = try parseExpressionFn(parser, module, 0);
+    if (parser.at(.newline)) parser.index += 1;
+    try out.append(parser.allocator, .{ .span = .{ .first = start, .last = parser.index, .line = parser.tokens[start].line }, .kind = .{ .yield_stmt = value } });
+}
+
 pub fn parseTransfer(
     parser: anytype,
     module: *ast.Module,

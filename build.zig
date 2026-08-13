@@ -26,6 +26,8 @@ pub fn build(b: *std.Build) void {
     const nan_value_module = b.createModule(.{ .root_source_file = b.path("src/vm/value.zig"), .target = target, .optimize = optimize });
     const vm_collections_module = b.createModule(.{ .root_source_file = b.path("src/vm/collections.zig"), .target = target, .optimize = optimize });
     vm_collections_module.addImport("ravi_vm_value", nan_value_module);
+    const async_state_module = b.createModule(.{ .root_source_file = b.path("src/concurrency/async_state.zig"), .target = target, .optimize = optimize });
+    async_state_module.addImport("ravi_vm_value", nan_value_module);
     const debug_module = b.createModule(.{ .root_source_file = b.path("src/debug/debug.zig"), .target = target, .optimize = optimize });
     debug_module.addImport("ravi_bytecode", bytecode_module);
 
@@ -34,6 +36,7 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
+    vm_module.addImport("ravi_async_state", async_state_module);
     vm_module.addImport("ravi_vm_collections", vm_collections_module);
     vm_module.addImport("ravi_vm_value", nan_value_module);
     vm_module.addImport("ravi_bytecode", bytecode_module);
@@ -53,6 +56,8 @@ pub fn build(b: *std.Build) void {
     lexer_module.addImport("ravi_config", config_module);
 
     const ast_module = b.createModule(.{ .root_source_file = b.path("src/ast/ast.zig"), .target = target, .optimize = optimize });
+    const ast_helpers_module = b.createModule(.{ .root_source_file = b.path("src/compiler/ast_helpers.zig"), .target = target, .optimize = optimize });
+    ast_helpers_module.addImport("ravi_ast", ast_module);
     const types_module = b.createModule(.{ .root_source_file = b.path("src/types/type.zig"), .target = target, .optimize = optimize });
 
     const compiler_module = b.createModule(.{
@@ -63,14 +68,13 @@ pub fn build(b: *std.Build) void {
     compiler_module.addImport("ravi_ast", ast_module);
     compiler_module.addImport("ravi_bytecode", bytecode_module);
     compiler_module.addImport("ravi_config", config_module);
+    compiler_module.addImport("ravi_ast_helpers", ast_helpers_module);
 
     const backend_module = b.createModule(.{ .root_source_file = b.path("src/backend/backend.zig"), .target = target, .optimize = optimize });
     const optimizer_module = b.createModule(.{ .root_source_file = b.path("src/optimizer/optimizer.zig"), .target = target, .optimize = optimize });
     optimizer_module.addImport("ravi_bytecode", bytecode_module);
 
     const scheduler_module = b.createModule(.{ .root_source_file = b.path("src/concurrency/scheduler.zig"), .target = target, .optimize = optimize });
-    const async_state_module = b.createModule(.{ .root_source_file = b.path("src/concurrency/async_state.zig"), .target = target, .optimize = optimize });
-    async_state_module.addImport("ravi_vm_value", nan_value_module);
     const syntax_module = b.createModule(.{ .root_source_file = b.path("src/syntax/syntax.zig"), .target = target, .optimize = optimize });
     syntax_module.addImport("ravi_lexer", lexer_module);
     const source_module = b.createModule(.{ .root_source_file = b.path("src/source/source.zig"), .target = target, .optimize = optimize });
@@ -106,10 +110,24 @@ pub fn build(b: *std.Build) void {
     mir_bytecode_emit_module.addImport("ravi_bytecode", bytecode_module);
     mir_bytecode_module.addImport("ravi_mir_bytecode_emit", mir_bytecode_emit_module);
     const hir_pipeline_module = b.createModule(.{ .root_source_file = b.path("src/compiler/hir_pipeline.zig"), .target = target, .optimize = optimize });
+    const hir_pipeline_helpers_module = b.createModule(.{ .root_source_file = b.path("src/compiler/hir_pipeline_helpers.zig"), .target = target, .optimize = optimize });
+    hir_pipeline_helpers_module.addImport("ravi_ast", ast_module);
+    const hir_pipeline_support_module = b.createModule(.{ .root_source_file = b.path("src/compiler/hir_pipeline_support.zig"), .target = target, .optimize = optimize });
+    hir_pipeline_support_module.addImport("ravi_ast", ast_module);
+    hir_pipeline_support_module.addImport("ravi_hir_pipeline_helpers", hir_pipeline_helpers_module);
     const hir_lowering_module = b.createModule(.{ .root_source_file = b.path("src/compiler/hir_lowering.zig"), .target = target, .optimize = optimize });
+    const hir_expr_lowering_module = b.createModule(.{ .root_source_file = b.path("src/compiler/hir_expr_lowering.zig"), .target = target, .optimize = optimize });
+    const hir_call_lowering_module = b.createModule(.{ .root_source_file = b.path("src/compiler/hir_call_lowering.zig"), .target = target, .optimize = optimize });
+    hir_expr_lowering_module.addImport("ravi_ast", ast_module);
+    hir_expr_lowering_module.addImport("ravi_hir", hir_module);
+    hir_expr_lowering_module.addImport("ravi_hir_call_lowering", hir_call_lowering_module);
+    hir_call_lowering_module.addImport("ravi_ast", ast_module);
+    hir_call_lowering_module.addImport("ravi_hir", hir_module);
     hir_lowering_module.addImport("ravi_ast", ast_module);
     hir_lowering_module.addImport("ravi_hir", hir_module);
     hir_lowering_module.addImport("ravi_mir", mir_module);
+    hir_lowering_module.addImport("ravi_hir_expr_lowering", hir_expr_lowering_module);
+    hir_pipeline_support_module.addImport("ravi_hir_lowering", hir_lowering_module);
     hir_pipeline_module.addImport("ravi_compiler", compiler_module);
     hir_pipeline_module.addImport("ravi_ast", ast_module);
     hir_pipeline_module.addImport("ravi_hir", hir_module);
@@ -119,6 +137,9 @@ pub fn build(b: *std.Build) void {
     hir_pipeline_module.addImport("ravi_hir_compatibility", hir_compatibility_module);
     hir_pipeline_module.addImport("ravi_vm", vm_module);
     hir_pipeline_module.addImport("ravi_hir_lowering", hir_lowering_module);
+    hir_pipeline_module.addImport("ravi_ast_helpers", ast_helpers_module);
+    hir_pipeline_module.addImport("ravi_hir_pipeline_helpers", hir_pipeline_helpers_module);
+    hir_pipeline_module.addImport("ravi_hir_pipeline_support", hir_pipeline_support_module);
     const parser_module = b.createModule(.{ .root_source_file = b.path("src/parser/parser.zig"), .target = target, .optimize = optimize });
     parser_module.addImport("ravi_lexer", lexer_module);
     parser_module.addImport("ravi_ast", ast_module);
@@ -185,6 +206,10 @@ pub fn build(b: *std.Build) void {
     semantic_module.addImport("ravi_ast", ast_module);
     semantic_module.addImport("ravi_config", config_module);
     semantic_module.addImport("ravi_types", types_module);
+    const semantic_symbols_module = b.createModule(.{ .root_source_file = b.path("src/semantic/symbols.zig"), .target = target, .optimize = optimize });
+    semantic_symbols_module.addImport("ravi_types", types_module);
+    semantic_module.addImport("ravi_semantic_symbols", semantic_symbols_module);
+    root_module.addImport("ravi_semantic_symbols", semantic_symbols_module);
     const lexer_tests_module = b.createModule(.{ .root_source_file = b.path("tests/lexer_tests.zig"), .target = target, .optimize = optimize });
     lexer_tests_module.addImport("ravi_lexer", lexer_module);
     lexer_tests_module.addImport("ravi_config", config_module);
@@ -211,6 +236,7 @@ pub fn build(b: *std.Build) void {
     semantic_tests_module.addImport("ravi_parser", parser_module);
     semantic_tests_module.addImport("ravi_semantic", semantic_module);
     const semantic_tests = b.addTest(.{ .root_module = semantic_tests_module });
+    const semantic_symbols_tests = b.addTest(.{ .root_module = semantic_symbols_module });
 
     const value_tests_module = b.createModule(.{ .root_source_file = b.path("tests/runtime_value_tests.zig"), .target = target, .optimize = optimize });
     value_tests_module.addImport("ravi_vm_value", nan_value_module);
@@ -285,6 +311,7 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&parser_tests.step);
     test_step.dependOn(&compiler_tests.step);
     test_step.dependOn(&semantic_tests.step);
+    test_step.dependOn(&semantic_symbols_tests.step);
     test_step.dependOn(&value_tests_split.step);
     test_step.dependOn(&collection_tests.step);
     test_step.dependOn(&string_runtime_tests.step);

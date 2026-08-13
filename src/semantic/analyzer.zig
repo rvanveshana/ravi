@@ -3,30 +3,28 @@ const lexer = @import("ravi_lexer");
 const types = @import("ravi_types");
 const ast = @import("ravi_ast");
 const config = @import("ravi_config");
+const symbols = @import("ravi_semantic_symbols");
 
 pub const SemanticError = std.mem.Allocator.Error || error{ DuplicateDeclaration, MissingFunctionType, UnknownVisibilityTarget, UnknownType, UnknownBaseClass, TypeMismatch };
-pub const Visibility = enum { public, private, protected, internal };
-pub const Symbol = struct { name: []const u8, type: types.Type, visibility: Visibility, scope_depth: usize };
-pub const Scope = struct { parent: ?usize, symbols: std.ArrayListUnmanaged(Symbol) = .empty, captures: std.ArrayListUnmanaged([]const u8) = .empty };
+pub const Visibility = symbols.Visibility;
+pub const Symbol = symbols.Symbol;
+pub const Scope = symbols.Scope;
+pub const Reference = symbols.Reference;
 pub const Boundary = struct { expression: ast.ExprId, from: types.Type, to: types.Type, guard: types.Guard };
 
 pub const Analyzer = struct {
     allocator: std.mem.Allocator,
     declarations: std.ArrayListUnmanaged([]const u8) = .empty,
-    scopes: std.ArrayListUnmanaged(Scope) = .empty,
+    symbols: symbols.Graph,
     boundaries: std.ArrayListUnmanaged(Boundary) = .empty,
     last_token: ?lexer.Token = null,
 
     pub fn init(allocator: std.mem.Allocator) Analyzer {
-        return .{ .allocator = allocator };
+        return .{ .allocator = allocator, .symbols = symbols.Graph.init(allocator) };
     }
     pub fn deinit(self: *Analyzer) void {
         self.declarations.deinit(self.allocator);
-        for (self.scopes.items) |*scope| {
-            scope.symbols.deinit(self.allocator);
-            scope.captures.deinit(self.allocator);
-        }
-        self.scopes.deinit(self.allocator);
+        self.symbols.deinit();
         self.boundaries.deinit(self.allocator);
     }
 
@@ -48,7 +46,7 @@ pub const Analyzer = struct {
             .class_decl => |class_decl| {
                 if (class_decl.base) |base| {
                     var found = false;
-                    for (self.scopes.items[root].symbols.items) |symbol| {
+                    for (self.symbols.scopes.items[@intFromEnum(root)].symbols.items) |symbol| {
                         if (std.mem.eql(u8, symbol.name, base)) found = true;
                     }
                     if (!found) return error.UnknownBaseClass;
@@ -95,23 +93,31 @@ pub const Analyzer = struct {
         }
     }
 
-    fn pushScope(self: *Analyzer, parent: ?usize) !usize {
-        const id = self.scopes.items.len;
-        try self.scopes.append(self.allocator, .{ .parent = parent });
-        return id;
+    fn pushScope(self: *Analyzer, parent: ?symbols.ScopeId) !symbols.ScopeId {
+        return self.symbols.pushScope(parent);
     }
-    fn declare(self: *Analyzer, scope_id: usize, name: []const u8, ty: types.Type, visibility: Visibility) SemanticError!void {
-        for (self.scopes.items[scope_id].symbols.items) |symbol| if (std.mem.eql(u8, symbol.name, name)) return error.DuplicateDeclaration;
-        try self.scopes.items[scope_id].symbols.append(self.allocator, .{ .name = name, .type = ty, .visibility = visibility, .scope_depth = scope_id });
+    fn declare(self: *Analyzer, scope_id: symbols.ScopeId, name: []const u8, ty: types.Type, visibility: Visibility) SemanticError!void {
+        _ = self.symbols.declare(scope_id, name, ty, visibility) catch |err| switch (err) {
+            error.DuplicateDeclaration => return error.DuplicateDeclaration,
+            error.InvalidScope => return error.UnknownType,
+            error.OutOfMemory => return error.OutOfMemory,
+        };
     }
     pub fn recordBoundary(self: *Analyzer, expression: ast.ExprId, from: types.Type, to: types.Type) !void {
-        if (!types.consistent(from, to)) return error.UnknownType;
+        if (!types.assignable(from, to)) return error.UnknownType;
         try self.boundaries.append(self.allocator, .{ .expression = expression, .from = from, .to = to, .guard = types.guardFor(from, to) });
     }
-    pub fn capture(self: *Analyzer, scope_id: usize, name: []const u8) !void {
-        if (scope_id >= self.scopes.items.len) return error.UnknownType;
-        for (self.scopes.items[scope_id].captures.items) |existing| if (std.mem.eql(u8, existing, name)) return;
-        try self.scopes.items[scope_id].captures.append(self.allocator, name);
+    pub fn resolve(self: *const Analyzer, scope_id: symbols.ScopeId, name: []const u8) ?Symbol {
+        return self.symbols.resolve(scope_id, name);
+    }
+
+    pub fn reference(self: *Analyzer, scope_id: symbols.ScopeId, name: []const u8) !symbols.SymbolId {
+        return self.symbols.reference(scope_id, name);
+    }
+
+    pub fn capture(self: *Analyzer, scope_id: symbols.ScopeId, name: []const u8) !void {
+        const symbol = self.resolve(scope_id, name) orelse return error.UnknownType;
+        try self.symbols.capture(scope_id, symbol.id);
     }
 
     pub fn analyze(self: *Analyzer, tokens: []const lexer.Token) SemanticError!void {

@@ -21,31 +21,47 @@ const range_operations = @import("range_operations.zig");
 const stack_operations = @import("stack_operations.zig");
 const arithmetic_operations = @import("arithmetic_operations.zig");
 const control_flow = @import("control_flow.zig");
+const async_state = @import("ravi_async_state");
 
 const integer = value_runtime.integer;
 const makeHandle = value_runtime.makeHandle;
 const dictSlot = value_runtime.dictSlot;
 
+pub const ResumableResult = union(enum) { suspended: Value, completed: Value };
+
 pub fn execute(self: anytype, chunk: *const bytecode.Chunk) RuntimeError!Value {
+    return switch (try executeInternal(self, chunk, null, 0, null, true)) {
+        .completed => |value| value,
+        .suspended => unreachable,
+    };
+}
+
+pub fn executeResumable(self: anytype, chunk: *const bytecode.Chunk, machine: *async_state.Machine, next_ip: *usize, reset: bool) RuntimeError!ResumableResult {
+    return executeInternal(self, chunk, machine, next_ip.*, next_ip, reset);
+}
+
+fn executeInternal(self: anytype, chunk: *const bytecode.Chunk, machine: ?*async_state.Machine, ip_start: usize, next_ip: ?*usize, reset: bool) RuntimeError!ResumableResult {
     chunk.verify() catch return error.InvalidInstruction;
-    state_helpers.clearFrames(self);
-    state_helpers.clearClosures(self);
-    self.frames[0] = .{ .return_ip = 0, .base = 0 };
-    self.frame_top = 0;
-    self.pub_printed = false;
-    self.stack_top = 0;
-    state_helpers.clearContainers(self);
-    state_helpers.clearStrings(self);
-    self.collector.collect() catch return error.OutOfMemory;
-    self.cell_count = 0;
-    self.last_exception = Value.nil();
-    self.trace_count = 0;
-    self.handler_active = false;
-    self.handler_stack_top = 0;
-    self.handler_frame_top = 0;
-    self.handler_trace_count = 0;
-    self.fault_ip = 0;
-    var ip: usize = 0;
+    if (reset) {
+        state_helpers.clearFrames(self);
+        state_helpers.clearClosures(self);
+        self.frames[0] = .{ .return_ip = 0, .base = 0 };
+        self.frame_top = 0;
+        self.pub_printed = false;
+        self.stack_top = 0;
+        state_helpers.clearContainers(self);
+        state_helpers.clearStrings(self);
+        self.collector.collect() catch return error.OutOfMemory;
+        self.cell_count = 0;
+        self.last_exception = Value.nil();
+        self.trace_count = 0;
+        self.handler_active = false;
+        self.handler_stack_top = 0;
+        self.handler_frame_top = 0;
+        self.handler_trace_count = 0;
+        self.fault_ip = 0;
+    }
+    var ip: usize = ip_start;
 
     // Root reconstruction is comparatively expensive. Traced allocation
     // paths perform their own safepoint before allocating, so normal
@@ -71,8 +87,19 @@ pub fn execute(self: anytype, chunk: *const bytecode.Chunk) RuntimeError!Value {
         if (self.trace_count > 0) self.trace[self.trace_count - 1].instruction = ip;
         const instruction = chunk.code.items[ip];
         switch (instruction.op) {
-            .halt => return if (self.stack_top == 0) Value.nil() else self.stack[self.stack_top - 1],
-            .suspend_point => {},
+            .halt => {
+                const value = if (self.stack_top == 0) Value.nil() else self.stack[self.stack_top - 1];
+                if (machine) |state| state.complete(value) catch |err| return machineError(err);
+                return .{ .completed = value };
+            },
+            .suspend_point => {
+                if (machine) |state| {
+                    const value = if (self.stack_top == 0) Value.nil() else self.stack[self.stack_top - 1];
+                    state.yieldValue(ip, @intCast(@max(instruction.operand, 0)), value) catch |err| return machineError(err);
+                    if (next_ip) |resume_ip| resume_ip.* = ip + 1;
+                    return .{ .suspended = value };
+                }
+            },
             .constant => try state_helpers.push(self, try integer(instruction.operand)),
             .make_float => {
                 if (instruction.operand < 0 or instruction.operand >= @as(i64, @intCast(chunk.floats.items.len))) return error.InvalidInstruction;
@@ -204,12 +231,24 @@ pub fn execute(self: anytype, chunk: *const bytecode.Chunk) RuntimeError!Value {
             .call_super => try doCall(self, .call_super, chunk, instruction.operand, &ip),
             .call_value => try doCall(self, .call_value, chunk, instruction.operand, &ip),
             .return_value => {
-                if (try control_flow.returnValue(RuntimeError, self, &ip)) |value| return value;
+                if (try control_flow.returnValue(RuntimeError, self, &ip)) |value| {
+                    if (machine) |state| state.complete(value) catch |err| return machineError(err);
+                    return .{ .completed = value };
+                }
             },
         }
     }
 
-    return if (self.stack_top == 0) Value.nil() else self.stack[self.stack_top - 1];
+    const value = if (self.stack_top == 0) Value.nil() else self.stack[self.stack_top - 1];
+    if (machine) |state| state.complete(value) catch |err| return machineError(err);
+    return .{ .completed = value };
+}
+
+fn machineError(err: anyerror) RuntimeError {
+    return switch (err) {
+        error.OutOfMemory => error.OutOfMemory,
+        else => error.InvalidInstruction,
+    };
 }
 
 const CallKind = enum { call, call_method, call_super, call_value };

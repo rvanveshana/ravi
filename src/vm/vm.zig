@@ -13,11 +13,13 @@ const heap = @import("heap.zig");
 const Value = @import("ravi_vm_value").Value;
 const value_runtime = @import("value_runtime.zig");
 const execution = @import("execution.zig");
+const async_state = @import("ravi_async_state");
 pub const RuntimeValue = Value;
 pub const collection_primitives = collections;
 
 pub const RuntimeError = errors.RuntimeError;
 pub const RuntimeType = errors.TypeId;
+pub const ResumableResult = execution.ResumableResult;
 const Frame = frames.Frame;
 
 pub const TraceFrame = trace_runtime.Frame;
@@ -51,6 +53,10 @@ pub const Vm = struct {
     fault_ip: usize = 0,
     debugger: ?*debug.Debugger = null,
     collector: gc.Collector,
+    resumable_machine: ?async_state.Machine = null,
+    resumable_chunk: ?*const bytecode.Chunk = null,
+    resumable_ip: usize = 0,
+    resumable_started: bool = false,
     pub fn init(allocator: std.mem.Allocator) !Vm {
         return initWithCollectorOptions(allocator, .{});
     }
@@ -64,6 +70,7 @@ pub const Vm = struct {
         return .{ .allocator = allocator, .stack = stack, .frames = call_frames, .trace = trace_frames, .collector = gc.Collector.initWithOptions(allocator, options) };
     }
     pub fn deinit(self: *Vm) void {
+        if (self.resumable_machine) |*machine| machine.deinit();
         state_helpers.deinit(self);
         self.collector.deinit();
     }
@@ -80,6 +87,29 @@ pub const Vm = struct {
             };
         }
         return self.execute(chunk);
+    }
+    pub fn runResumable(self: *Vm, chunk: *const bytecode.Chunk) RuntimeError!ResumableResult {
+        if (self.resumable_machine != null) return error.InvalidInstruction;
+        var machine = async_state.Machine.init(self.allocator);
+        machine.start() catch return error.OutOfMemory;
+        self.resumable_machine = machine;
+        self.resumable_chunk = chunk;
+        self.resumable_ip = 0;
+        self.resumable_started = false;
+        return self.resumeResumable();
+    }
+    pub fn resumeResumable(self: *Vm) RuntimeError!ResumableResult {
+        const chunk = self.resumable_chunk orelse return error.InvalidInstruction;
+        const machine = &(self.resumable_machine orelse return error.InvalidInstruction);
+        if (machine.status == .suspended) machine.resumeExecution() catch return error.InvalidInstruction;
+        if (machine.status == .completed) return .{ .completed = machine.result };
+        if (machine.status != .running) return error.InvalidInstruction;
+        const result = try execution.executeResumable(self, chunk, machine, &self.resumable_ip, !self.resumable_started);
+        self.resumable_started = true;
+        return result;
+    }
+    pub fn resumableStatus(self: *const Vm) ?async_state.Status {
+        return if (self.resumable_machine) |machine| machine.status else null;
     }
 
     /// Execute a compact release artifact using the normal VM semantics.
@@ -176,6 +206,26 @@ test "VM debugger attachment pauses at instruction breakpoints" {
     try std.testing.expectError(error.DebuggerPaused, vm.runValue(&chunk));
     vm.detachDebugger();
     _ = try vm.runValue(&chunk);
+}
+
+test "VM resumable execution yields and resumes at the next instruction" {
+    var chunk = bytecode.Chunk.init(std.testing.allocator);
+    defer chunk.deinit();
+    try chunk.emit(.{ .op = .constant, .operand = 7 });
+    try chunk.emit(.{ .op = .suspend_point, .operand = 12 });
+    try chunk.emit(.{ .op = .return_value });
+    var vm = try Vm.init(std.testing.allocator);
+    defer vm.deinit();
+    switch (try vm.runResumable(&chunk)) {
+        .suspended => |value| try std.testing.expectEqual(@as(i64, 7), value.asInt()),
+        .completed => return error.TestExpectedEqual,
+    }
+    try std.testing.expectEqual(async_state.Status.suspended, vm.resumableStatus().?);
+    switch (try vm.resumeResumable()) {
+        .suspended => return error.TestExpectedEqual,
+        .completed => |value| try std.testing.expectEqual(@as(i64, 7), value.asInt()),
+    }
+    try std.testing.expectEqual(async_state.Status.completed, vm.resumableStatus().?);
 }
 
 test "VM interning scales beyond the legacy thousand-string cap" {

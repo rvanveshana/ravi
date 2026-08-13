@@ -24,8 +24,10 @@ pub fn parseStatement(
         try parseClass(parser, module, out, start, visibility, parseExpressionFn);
     } else if (parser.word("function")) {
         try parseFunction(parser, module, out, start, visibility, parseExpressionFn);
-    } else if (parser.word("return") or parser.word("yield")) {
+    } else if (parser.word("return")) {
         try parser_simple_statements.parseReturn(parser, module, out, start, parseExpressionFn);
+    } else if (parser.word("yield")) {
+        try parser_simple_statements.parseYield(parser, module, out, start, parseExpressionFn);
     } else if (parser.word("break") or parser.word("continue") or parser.word("pass") or parser.word("raise")) {
         try parser_simple_statements.parseTransfer(parser, module, out, start, parseExpressionFn);
     } else if (isControl(parser)) {

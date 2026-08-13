@@ -48,6 +48,7 @@ pub const Stmt = struct {
     pub const Kind = union(enum) {
         expression: ExprId,
         return_stmt: ?ExprId,
+        yield_stmt: ?ExprId,
         raise_stmt: ?ExprId,
         import: struct { module: []const u8, names_first: usize, names_count: usize },
         function: struct { name: []const u8, params_first: usize, params_count: usize, return_type: ?[]const u8, body_first: usize, body_count: usize, decorators_first: usize, decorators_count: usize, visibility: Visibility },

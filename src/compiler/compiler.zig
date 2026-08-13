@@ -3,7 +3,7 @@ const bytecode = @import("ravi_bytecode");
 const config = @import("ravi_config");
 const helpers = @import("helpers.zig");
 const ast = @import("ravi_ast");
-const ast_helpers = @import("ast_helpers.zig");
+const ast_helpers = @import("ravi_ast_helpers");
 const ast_compiler = @import("ast_compiler.zig");
 const ast_statements = @import("ast_statements.zig");
 

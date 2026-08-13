@@ -12,11 +12,59 @@ until it executes and is covered by a test or an example contract.
 - All 30 files under `examples/` are self-verifying contracts (they assert
   real results with `adre ... : yese "message"` and end with a `PASS`
   marker), not just printed values a human has to eyeball.
-- `zig build test --summary all` passes all 35 test targets, `zig build
+- `zig build test --summary all` passes all 37 test targets, `zig build
   --summary all` passes, and `.\test.ps1` passes all 30 examples. These are
   the standing acceptance bars for any change. The examples passing does not
   prove that every example is currently lowered by HIR/MIR because the
   compatibility adapter remains active.
+
+## Ordered TODOs
+
+Work through these items in order. Mark an item complete only after its
+focused tests and the standing acceptance gates pass.
+
+- [x] Extract oversized HIR/MIR coordinators under the source-size budget; the
+  current source-size gate is green.
+- [x] Complete the shared opcode contract across verifier, VM, debugger,
+  disassembler, and compiler emission; debugger stack accounting now consumes
+  the shared effect table and all emitted chunks remain verifier-checked.
+- [ ] Establish canonical semantic symbols, scopes, stable IDs, and the full
+  type algebra used by typed HIR.
+- [x] Semantic symbol sub-step: add canonical `SymbolId` lookup and reject
+  self/unrelated captures in the lexical graph.
+- [x] Type-algebra sub-step: add canonical assignability and deterministic
+  type-join operations with regression coverage.
+- [x] Typed-HIR sub-step: add a checked annotation-name mapping for the HIR
+  value-type domain and reject unsupported semantic kinds explicitly.
+- [x] Typed-HIR sub-step: preserve supported parameter annotations in HIR
+  parameter definitions and references, with pipeline regression coverage.
+- [x] Typed-HIR sub-step: preserve supported function return annotations and
+  reject mismatched explicit return values during HIR verification.
+- [x] HIR/MIR sub-step: lower omitted trailing integer defaults at direct call
+  sites, with end-to-end VM regression coverage.
+- [ ] Expand typed HIR/MIR lowering beyond the current supported subset,
+  including defaults, variadics, recursion, function values, closures,
+  collections, classes, modules, and general statement CFGs.
+- [ ] Remove the HIR compatibility adapter after production parity coverage.
+- [ ] Remove the legacy compiler after VM behavior and example parity are
+  demonstrated through HIR/MIR.
+- [ ] Generalize exceptions and cleanup to nested handlers, arbitrary bodies,
+  return/break/continue composition, cancellation, timeout, and suspension-
+  aware unwind.
+- [ ] Complete iterator and generator state machines for loops, branches,
+  multi-yield functions, and send semantics.
+- [ ] Integrate async scheduling, task ownership, structured cancellation,
+  send/share rules, race stress coverage, and worker-scaling measurements.
+- [ ] Implement context-manager enter/exit cleanup and decorators.
+- [ ] Complete gradual typing, narrowing, inference, generics, signatures,
+  ownership rules, and runtime conversion boundaries.
+- [ ] Complete shared module globals and profile-aware class behavior.
+- [ ] Replace textual native MIR with executable x86-64 code, ABI calls,
+  linking, unwind/debug data, and VM/native differential tests.
+- [ ] Add optimization, allocation/GC measurements, native comparisons, and
+  multi-core scaling evidence.
+- [ ] Complete semantic LSP services, versioned artifacts, package caching,
+  lockfiles, FFI generation, package security, and reproducible releases.
 
 ## Review Alignment
 
@@ -73,8 +121,10 @@ debugging notes are kept in `/memories/repo/ravi-compiler-bugs-fixed.md`):
   fragmentation/pause measurement, and complete thread-ownership contract
   remain open.
 - **Classes**: inheritance and visibility contracts are not implemented.
-- **Iteration/generators**: no general iterator protocol or `yield`-backed
-  generator state machines yet.
+- **Iteration/generators**: straight-line terminal and sequential `yield`
+  statements now lower through resumable HIR metadata, and the VM can suspend
+  and resume one bytecode machine. General iterator protocol, loop/branch
+  generator state machines, and send semantics remain open.
 - **Context managers**: `jote`/`aagi` parse, but enter/exit protocol
   execution and guaranteed cleanup are not implemented.
 - **Decorators**: not implemented.
@@ -83,12 +133,17 @@ debugging notes are kept in `/memories/repo/ravi-compiler-bugs-fixed.md`):
   complete runtime conversion boundaries are not implemented.
 - **Modules**: shared module globals and full profile-aware class behavior
   need further integration.
-- **Exceptions/cleanup**: try/except and resumable metadata exist, but a
-  unified unwind protocol for `finally`, return, break/continue, cancellation,
-  timeout, and suspension is not complete.
-- **Async/concurrency**: scheduler primitives exist, but language-level async
-  lowering, structured cancellation, task ownership, send/share rules, race
-  stress coverage, and measured 1/2/4/8-worker scaling are pending.
+- **Exceptions/cleanup**: the HIR/MIR path now covers constrained single-body
+  try/except recovery, payload binding, literal matching with mismatch
+  re-raise, and single-return try/finally cleanup. Nested handlers, arbitrary
+  statement bodies, return/break/continue composition, cancellation, timeout,
+  and suspension-aware unwind remain open.
+- **Async/concurrency**: the parser now preserves `yield_stmt`, terminal yield
+  lowering records resumable function metadata, and the VM exposes a
+  machine-backed suspend/resume API with preserved stack and instruction
+  position. General async scheduling, loop/branch state machines, structured
+  cancellation, task ownership, send/share rules, race stress coverage, and
+  measured 1/2/4/8-worker scaling remain pending.
 - **Native/backend**: `src/backend/native.zig` currently emits verified,
   deterministic textual `RAVI-NATIVE-MIR` records only. Executable machine
   code, target ABI calls, unwind/debug data, linking, and VM/native
