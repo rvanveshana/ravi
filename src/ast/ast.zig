@@ -56,7 +56,7 @@ pub const Stmt = struct {
         function: struct { name: []const u8, params_first: usize, params_count: usize, return_type: ?[]const u8, body_first: usize, body_count: usize, decorators_first: usize, decorators_count: usize, visibility: Visibility },
         class_decl: struct { name: []const u8, base: ?[]const u8 = null, body_first: usize, body_count: usize, visibility: Visibility },
         control: struct { keyword: []const u8, condition: ?ExprId, body_first: usize, body_count: usize, else_first: usize = 0, else_count: usize = 0, target: ?[]const u8 = null, iterable: ?ExprId = null },
-        try_stmt: struct { body_first: usize, body_count: usize, except_first: usize = 0, except_count: usize = 0, except_binding: ?[]const u8 = null, except_match: ?ExprId = null, finally_first: usize = 0, finally_count: usize = 0 },
+        try_stmt: struct { body_first: usize, body_count: usize, except_first: usize = 0, except_count: usize = 0, except_binding: ?[]const u8 = null, except_match: ?ExprId = null, except_type: ?[]const u8 = null, finally_first: usize = 0, finally_count: usize = 0 },
         context: struct { value: ExprId, binding: ?[]const u8 = null, body_first: usize, body_count: usize },
         transfer: []const u8,
     };

@@ -95,6 +95,8 @@ pub const Vm = struct {
     cell_count: usize = 0,
     instances: []*heap.ManagedInstance = &.{},
     instance_count: usize = 0,
+    exceptions: []*heap.ManagedException = &.{},
+    exception_count: usize = 0,
     last_exception: Value = Value.nil(),
     trace: []TraceFrame,
     trace_count: usize = 0,

@@ -170,6 +170,12 @@ pub fn expression(comptime Error: type, self: anytype, chunk: *bytecode.Chunk, m
                     try chunk.emit(.{ .op = .sleep });
                     return;
                 }
+                if (std.mem.eql(u8, name, "__ravi_exception")) {
+                    if (call.arg_count != 1) return error.InvalidFunction;
+                    try expression(Error, self, chunk, module, module.call_args.items[call.first_arg], names);
+                    try chunk.emit(.{ .op = .make_exception });
+                    return;
+                }
                 if (std.mem.eql(u8, name, "add") or std.mem.eql(u8, name, "sub") or std.mem.eql(u8, name, "mul") or std.mem.eql(u8, name, "div") or std.mem.eql(u8, name, "mod")) {
                     for (module.call_args.items[call.first_arg .. call.first_arg + call.arg_count]) |argument_id| try expression(Error, self, chunk, module, argument_id, names);
                     const op: bytecode.OpCode = if (std.mem.eql(u8, name, "add")) .add else if (std.mem.eql(u8, name, "sub")) .subtract else if (std.mem.eql(u8, name, "mul")) .multiply else if (std.mem.eql(u8, name, "div")) .divide else .modulo;

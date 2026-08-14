@@ -22,19 +22,24 @@ mudrisu(add(2, 3))
 
 ## Planned library groups
 
-The library is expected to grow into focused modules rather than one giant namespace:
+The full scalable layout and namespace policy are maintained in
+[Standard Library Structure](standard-library-structure.md). The planned
+families are:
 
-- `math`: arithmetic, numeric helpers, constants;
-- `strings`: text transformations, searching, Unicode helpers;
-- `collections`: sequence and dictionary helpers;
-- `io`: files, paths, streams, and resource handling;
-- `os`: environment, process, and platform information;
-- `json`: encoding and decoding structured data;
-- `time`: clocks, durations, and date/time values;
-- `async`: futures, channels, tasks, and cancellation;
-- `testing`: assertions and test helpers.
+- `math`, `random`: numeric operations and random sources;
+- `text`, `regex`: strings, Unicode, and pattern matching;
+- `collections`: sequences, mappings, sets, queues, and iteration;
+- `io`, `os`, `process`: resources, platform access, and subprocesses;
+- `time`: clocks, durations, dates, and time zones;
+- `json`, `encoding`: structured data and codecs;
+- `network`, `crypto`: protocols and security primitives;
+- `async`, `sync`: tasks, cancellation, locks, events, and channels;
+- `logging`, `testing`: observability and verification;
+- `kirana`: optional UI/application integration.
 
-These planned modules do not imply that the APIs already exist. Each module needs implementation, profile-aware names, resource limits, tests, and documentation before it becomes part of the stable reference.
+These planned modules do not imply that the APIs already exist. Each module
+needs implementation, profile-aware names, resource limits, tests, and
+documentation before it becomes part of the stable reference.
 
 ## Library design rules
 

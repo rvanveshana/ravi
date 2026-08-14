@@ -45,6 +45,21 @@ test "parsed AST explicit raise payloads recover through except" {
     try std.testing.expectEqual(@as(i64, 9), try vm.run(&chunk));
 }
 
+test "custom exception classes match by type and inheritance" {
+    const source = "roopa PaymentDeclined guru Exception:\n    bidu\nroopa CardDeclined guru PaymentDeclined:\n    bidu\nvalue = 0\nnodu:\n    yese CardDeclined()\ntappu PaymentDeclined aagi error:\n    value = 1\nvalue\n";
+    try std.testing.expectEqual(@as(i64, 1), try helpers.runAst(source, .kn));
+}
+
+test "PascalCase exception handlers can omit the binding" {
+    const source = "roopa PaymentDeclined guru Exception:\n    bidu\nvalue = 0\nnodu:\n    yese PaymentDeclined()\ntappu PaymentDeclined:\n    value = 1\nvalue\n";
+    try std.testing.expectEqual(@as(i64, 1), try helpers.runAst(source, .kn));
+}
+
+test "typed handlers match native exception hierarchy" {
+    const source = "value = 0\nnodu:\n    5 / 0\ntappu ArithmeticError aagi error:\n    value = 1\nvalue\n";
+    try std.testing.expectEqual(@as(i64, 1), try helpers.runAst(source, .kn));
+}
+
 test "native faults use the same exception reference as Ravi constructors" {
     const source = "caught = false\nnodu:\n    5 / 0\ntappu exception:\n    caught = (exception == \"ZeroDivisionError\")\nvalue = 1 if caught else 0\nvalue\n";
     try std.testing.expectEqual(@as(i64, 1), try helpers.runAst(source, .kn));

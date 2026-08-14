@@ -16,7 +16,7 @@ pub const Value = enum(u64) {
     const TAG_OBJ: u64 = 5;
     const TAG_HANDLE: u64 = 6;
     const HANDLE_INDEX_MASK: u64 = (@as(u64, 1) << 40) - 1;
-    pub const ObjectKind = enum(u8) { string, array, tuple, set, dictionary, function, closure, cell, instance, future, channel };
+    pub const ObjectKind = enum(u8) { string, array, tuple, set, dictionary, function, closure, cell, instance, exception, future, channel };
     pub const min_int: i64 = -(@as(i64, 1) << 47);
     pub const max_int: i64 = (@as(i64, 1) << 47) - 1;
 

@@ -77,6 +77,19 @@ pub fn newInstance(self: anytype, class_index: usize) errors.RuntimeError!usize 
     return slot;
 }
 
+pub fn newException(self: anytype, name: []const u8) errors.RuntimeError!usize {
+    try ensure(self.allocator, *heap.ManagedException, &self.exceptions, self.exception_count + 1);
+    const slot = self.exception_count;
+    const exception = self.collector.createManaged(heap.ManagedException, heap.destroyException) catch return error.OutOfMemory;
+    exception.* = .{ .name = self.allocator.dupe(u8, name) catch return error.OutOfMemory };
+    errdefer self.allocator.free(exception.name);
+    self.collector.addRoot(@ptrCast(exception)) catch return error.OutOfMemory;
+    self.gc_roots.append(self.allocator, @ptrCast(exception)) catch return error.OutOfMemory;
+    self.exceptions[slot] = exception;
+    self.exception_count += 1;
+    return slot;
+}
+
 /// Tests an instance against a class or any of its single-inheritance bases.
 /// Keeping this beside instance allocation gives VM operators and debugger
 /// inspectors one bounds-checked ancestry implementation.
@@ -139,6 +152,10 @@ fn markValue(self: anytype, value: Value, seen: *std.AutoHashMap(u64, void)) err
                 try markValue(self, self.instances[index].fields.values[slot], seen);
             };
         },
+        .exception => {
+            if (index >= self.exception_count or !self.collector.isManaged(@ptrCast(self.exceptions[index]))) return error.InvalidInstruction;
+            try addRoot(self, @ptrCast(self.exceptions[index]));
+        },
         else => {},
     }
 }
@@ -164,6 +181,7 @@ fn objectPointer(self: anytype, value: Value) ?*anyopaque {
         .closure => if (index < self.closure_count and self.collector.isManaged(@ptrCast(self.closures[index]))) @ptrCast(self.closures[index]) else null,
         .cell => if (index < self.cell_count and self.collector.isManaged(@ptrCast(self.cells[index]))) @ptrCast(self.cells[index]) else null,
         .instance => if (index < self.instance_count and self.collector.isManaged(@ptrCast(self.instances[index]))) @ptrCast(self.instances[index]) else null,
+            .exception => if (index < self.exception_count and self.collector.isManaged(@ptrCast(self.exceptions[index]))) @ptrCast(self.exceptions[index]) else null,
         else => null,
     };
 }

@@ -27,7 +27,8 @@ pub fn handleFault(self: anytype, ip: *usize) bool {
 pub fn handleFaultWithError(self: anytype, ip: *usize, err: anyerror) bool {
     if (!self.handler_active) return false;
     const name = errors.publicExceptionName(err) orelse return false;
-    self.last_exception = internString(self, name) catch return false;
+    const slot = @import("object_storage.zig").newException(self, name) catch return false;
+    self.last_exception = @import("ravi_vm_value").Value.fromHandle(.exception, slot) catch return false;
     self.handler_active = false;
     self.stack_top = self.handler_stack_top;
     push(self, self.last_exception) catch return false;
@@ -63,9 +64,11 @@ pub fn clearContainers(self: anytype) void {
     for (self.arrays[0..self.array_count]) |array| self.collector.removeRoot(@ptrCast(array));
     for (self.dicts[0..self.dict_count]) |dict| self.collector.removeRoot(@ptrCast(dict));
     for (self.instances[0..self.instance_count]) |instance| self.collector.removeRoot(@ptrCast(instance));
+    for (self.exceptions[0..self.exception_count]) |exception| self.collector.removeRoot(@ptrCast(exception));
     self.array_count = 0;
     self.dict_count = 0;
     self.instance_count = 0;
+    self.exception_count = 0;
 }
 
 pub fn clearFrames(self: anytype) void {
@@ -105,6 +108,7 @@ pub fn deinit(self: anytype) void {
     if (self.closures.len != 0) self.allocator.free(self.closures);
     if (self.cells.len != 0) self.allocator.free(self.cells);
     if (self.instances.len != 0) self.allocator.free(self.instances);
+    if (self.exceptions.len != 0) self.allocator.free(self.exceptions);
     clearStrings(self);
     self.strings.deinit(self.allocator);
     self.gc_roots.deinit(self.allocator);

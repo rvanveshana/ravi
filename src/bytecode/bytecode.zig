@@ -26,6 +26,7 @@ pub const FunctionInfo = struct {
 pub const ClassInfo = struct {
     name: []const u8,
     base: ?usize = null,
+    is_exception: bool = false,
 
     pub fn inheritsFrom(classes: []const ClassInfo, child: usize, ancestor: usize) bool {
         if (child >= classes.len or ancestor >= classes.len) return false;

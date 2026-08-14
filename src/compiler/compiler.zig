@@ -71,7 +71,8 @@ pub const Compiler = struct {
                     };
                     break :blk null;
                 } else null;
-                try chunk.classes.append(self.allocator, .{ .name = class_decl.name, .base = base });
+                const is_exception = if (class_decl.base) |base_name| std.mem.eql(u8, base_name, "Exception") or std.mem.eql(u8, base_name, "BaseException") or (base != null and chunk.classes.items[base.?].is_exception) else false;
+                try chunk.classes.append(self.allocator, .{ .name = class_decl.name, .base = base, .is_exception = is_exception });
                 for (function_statements.items, 0..) |statement_index, function_index| {
                     if (statement_index >= class_decl.body_first and statement_index < class_decl.body_first + class_decl.body_count) {
                         const method = module.statements.items[statement_index].kind.function;
@@ -222,7 +223,13 @@ pub const Compiler = struct {
                     try chunk.emit(.{ .op = .jump, .operand = 0 });
                     chunk.code.items[begin_try].operand = @intCast(chunk.code.items.len);
                     var no_match: ?usize = null;
-                    if (try_stmt.except_match) |match| {
+                    if (try_stmt.except_type) |exception_type| {
+                        try chunk.emit(.{ .op = .dup });
+                        const type_name = try chunk.addString(exception_type);
+                        try chunk.emit(.{ .op = .make_string, .operand = @intCast(type_name) });
+                        try chunk.emit(.{ .op = .make_exception });
+                        try chunk.emit(.{ .op = .exception_match });
+                    } else if (try_stmt.except_match) |match| {
                         try chunk.emit(.{ .op = .dup });
                         try self.compileAstExpression(chunk, module, match, names);
                         try chunk.emit(.{ .op = .equal });

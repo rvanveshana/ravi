@@ -154,7 +154,7 @@ pub fn verify(chunk: anytype) VerifyError!void {
                     depth -= instruction.operand;
                 },
                 .jump => if (instruction.operand < 0 or instruction.operand >= @as(i64, @intCast(chunk.code.items.len))) return error.InvalidJump,
-                .try_begin, .try_end, .return_value, .halt => {},
+                .try_begin, .try_end, .return_value, .halt, .exception_match => {},
                 .raise_value => if (depth < 1) return error.StackUnderflow,
             }
         }
@@ -222,6 +222,10 @@ fn stackAfter(chunk: anytype, instruction: anytype, depth: isize) VerifyError!is
             if (instruction.operand < 0 or instruction.operand >= @as(i64, @intCast(chunk.strings.items.len))) return error.InvalidInstruction;
             delta = 1;
         },
+        .make_exception => {
+            required = 1;
+            delta = 0;
+        },
         .make_function => {
             if (instruction.operand < 0 or instruction.operand >= @as(i64, @intCast(chunk.functions.items.len))) return error.InvalidInstruction;
             delta = 1;
@@ -282,6 +286,10 @@ fn stackAfter(chunk: anytype, instruction: anytype, depth: isize) VerifyError!is
             delta = -1;
         },
         .raise_value => required = 1,
+        .exception_match => {
+            required = 2;
+            delta = -1;
+        },
         .call => {
             if (instruction.operand < 0 or instruction.operand >= @as(i64, @intCast(chunk.functions.items.len))) return error.InvalidInstruction;
             required = @intCast(chunk.functions.items[@intCast(instruction.operand)].arity);

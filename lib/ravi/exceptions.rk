@@ -2,157 +2,162 @@
 # Public exception facade. Kannada/Kanglish names are the canonical
 # implementations; English names are stable references to those operations.
 # Exception names use PascalCase in both profiles, like MoolaDosha and
-# BaseException. The returned string is the shared exception reference used
-# by Ravi code and by native runtime faults. Numeric identities are private
-# diagnostic metadata.
+# BaseException. The returned value is a managed exception object shared by
+# Ravi code and native runtime faults. Numeric identities are private
+# diagnostic metadata. This file defines built-in references; application code
+# defines custom classes with `roopa MyError guru Exception` and raises their
+# instances through typed `tappu MyError aagi value` handlers.
+
+kriya _exception(name):
+    kodu __ravi_exception(name)
 
 kriya MoolaDosha():
-    kodu "BaseException"
+    kodu _exception("BaseException")
 kriya BaseException():
     kodu MoolaDosha()
 
 kriya Dosha():
-    kodu "Exception"
+    kodu _exception("Exception")
 kriya Exception():
     kodu Dosha()
 
 kriya ChalaneyaDosha():
-    kodu "RuntimeError"
+    kodu _exception("RuntimeError")
 kriya RuntimeError():
     kodu ChalaneyaDosha()
 
 kriya GanitaDosha():
-    kodu "ArithmeticError"
+    kodu _exception("ArithmeticError")
 kriya ArithmeticError():
     kodu GanitaDosha()
 
 kriya ShunyaBhagaDosha():
-    kodu "ZeroDivisionError"
+    kodu _exception("ZeroDivisionError")
 kriya ZeroDivisionError():
     kodu ShunyaBhagaDosha()
 
 kriya ParimanaDosha():
-    kodu "OverflowError"
+    kodu _exception("OverflowError")
 kriya OverflowError():
     kodu ParimanaDosha()
 
 kriya HudukuDosha():
-    kodu "LookupError"
+    kodu _exception("LookupError")
 kriya LookupError():
     kodu HudukuDosha()
 
 kriya SuchiDosha():
-    kodu "IndexError"
+    kodu _exception("IndexError")
 kriya IndexError():
     kodu SuchiDosha()
 
 kriya KeyDosha():
-    kodu "KeyError"
+    kodu _exception("KeyError")
 kriya KeyError():
     kodu KeyDosha()
 
 kriya HesaruDosha():
-    kodu "NameError"
+    kodu _exception("NameError")
 kriya NameError():
     kodu HesaruDosha()
 
 kriya BandhavilladaSathaliyaDosha():
-    kodu "UnboundLocalError"
+    kodu _exception("UnboundLocalError")
 kriya UnboundLocalError():
     kodu BandhavilladaSathaliyaDosha()
 
 kriya GunaDosha():
-    kodu "AttributeError"
+    kodu _exception("AttributeError")
 kriya AttributeError():
     kodu GunaDosha()
 
 kriya AmanyaKriyaDosha():
-    kodu "InvalidFunctionError"
+    kodu _exception("InvalidFunctionError")
 kriya InvalidFunctionError():
     kodu AmanyaKriyaDosha()
 
 kriya AmanyaNirdeshaDosha():
-    kodu "InvalidInstructionError"
+    kodu _exception("InvalidInstructionError")
 kriya InvalidInstructionError():
     kodu AmanyaNirdeshaDosha()
 
 kriya StackDosha():
-    kodu "StackError"
+    kodu _exception("StackError")
 kriya StackError():
     kodu StackDosha()
 
 kriya StackKelaginaDosha():
-    kodu "StackUnderflowError"
+    kodu _exception("StackUnderflowError")
 kriya StackUnderflowError():
     kodu StackKelaginaDosha()
 
 kriya StackMelinaDosha():
-    kodu "StackOverflowError"
+    kodu _exception("StackOverflowError")
 kriya StackOverflowError():
     kodu StackMelinaDosha()
 
 kriya KareyaStackMelinaDosha():
-    kodu "CallStackOverflowError"
+    kodu _exception("CallStackOverflowError")
 kriya CallStackOverflowError():
     kodu KareyaStackMelinaDosha()
 
 kriya AmanyaSthaliyaDosha():
-    kodu "InvalidLocalError"
+    kodu _exception("InvalidLocalError")
 kriya InvalidLocalError():
     kodu AmanyaSthaliyaDosha()
 
 kriya AmanyaJumpsDosha():
-    kodu "InvalidJumpError"
+    kodu _exception("InvalidJumpError")
 kriya InvalidJumpError():
     kodu AmanyaJumpsDosha()
 
 kriya SangrahaDosha():
-    kodu "CollectionError"
+    kodu _exception("CollectionError")
 kriya CollectionError():
     kodu SangrahaDosha()
 
 kriya SangrahaThumbidaDosha():
-    kodu "CollectionFullError"
+    kodu _exception("CollectionFullError")
 kriya CollectionFullError():
     kodu SangrahaThumbidaDosha()
 
 kriya StringHecchuDoddaDosha():
-    kodu "StringTooLongError"
+    kodu _exception("StringTooLongError")
 kriya StringTooLongError():
     kodu StringHecchuDoddaDosha()
 
 kriya MemoryDosha():
-    kodu "MemoryError"
+    kodu _exception("MemoryError")
 kriya MemoryError():
     kodu MemoryDosha()
 
 kriya MemorySakuIllaDosha():
-    kodu "OutOfMemoryError"
+    kodu _exception("OutOfMemoryError")
 kriya OutOfMemoryError():
     kodu MemorySakuIllaDosha()
 
 kriya DebugNillisidaDosha():
-    kodu "DebuggerPausedError"
+    kodu _exception("DebuggerPausedError")
 kriya DebuggerPausedError():
     kodu DebugNillisidaDosha()
 
 kriya YeseDosha():
-    kodu "RaisedExceptionError"
+    kodu _exception("RaisedExceptionError")
 kriya RaisedExceptionError():
     kodu YeseDosha()
 
 # Common application-facing names use the same public exception contract.
 kriya MulyamanaDosha():
-    kodu "ValueError"
+    kodu _exception("ValueError")
 kriya ValueError():
     kodu MulyamanaDosha()
 
 kriya PrakaraDosha():
-    kodu "TypeError"
+    kodu _exception("TypeError")
 kriya TypeError():
     kodu PrakaraDosha()
 
 kriya ParikshaneDosha():
-    kodu "ValidationError"
+    kodu _exception("ValidationError")
 kriya ValidationError():
     kodu ParikshaneDosha()

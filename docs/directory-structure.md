@@ -184,9 +184,22 @@ ravi/
 |   `-- cli/
 |       |-- cli.zig
 |       `-- options.zig
-|-- stdlib/
-|   |-- src/
-|   `-- tests/
+|-- lib/
+|   |-- README.md
+|   `-- ravi/
+|       |-- README.md
+|       |-- core.rk
+|       |-- exceptions.rk
+|       |-- math.rk
+|       |-- text.rk
+|       |-- collections.rk
+|       |-- io.rk
+|       |-- os.rk
+|       |-- process.rk
+|       |-- time.rk
+|       |-- json.rk
+|       |-- network.rk
+|       `-- <domain>/      # focused internals behind a facade
 |-- tests/
 |   |-- unit/
 |   |-- golden/

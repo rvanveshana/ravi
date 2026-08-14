@@ -194,6 +194,7 @@ fn parseControl(
         var except_count: usize = 0;
         var except_binding: ?[]const u8 = null;
         var except_match: ?ast.ExprId = null;
+        var except_type: ?[]const u8 = null;
         var finally_first: usize = 0;
         var finally_count: usize = 0;
         if (parser.word("except")) {
@@ -201,8 +202,15 @@ fn parseControl(
             if (parser.at(.number)) {
                 except_match = try parseExpressionFn(parser, module, 0);
             } else if (parser.at(.identifier)) {
-                except_binding = parser.tokens[parser.index].lexeme;
+                const name = parser.tokens[parser.index].lexeme;
                 parser.index += 1;
+                if (parser.word("as")) {
+                    parser.index += 1;
+                    if (!parser.at(.identifier)) return error.MissingName;
+                    except_type = name;
+                    except_binding = parser.tokens[parser.index].lexeme;
+                    parser.index += 1;
+                } else if (name.len != 0 and name[0] >= 'A' and name[0] <= 'Z') except_type = name else except_binding = name;
             }
             while (!parser.at(.colon) and !parser.at(.newline) and !parser.at(.eof)) parser.index += 1;
             const except_body = try parseSuite(parser, module, parseExpressionFn);
@@ -215,7 +223,7 @@ fn parseControl(
             finally_first = finally_body.first;
             finally_count = finally_body.count;
         }
-        out.items[statement_index] = .{ .span = .{ .first = start, .last = parser.index, .line = parser.tokens[start].line }, .kind = .{ .try_stmt = .{ .body_first = body.first, .body_count = body.count, .except_first = except_first, .except_count = except_count, .except_binding = except_binding, .except_match = except_match, .finally_first = finally_first, .finally_count = finally_count } } };
+        out.items[statement_index] = .{ .span = .{ .first = start, .last = parser.index, .line = parser.tokens[start].line }, .kind = .{ .try_stmt = .{ .body_first = body.first, .body_count = body.count, .except_first = except_first, .except_count = except_count, .except_binding = except_binding, .except_match = except_match, .except_type = except_type, .finally_first = finally_first, .finally_count = finally_count } } };
         return;
     }
     if (std.mem.eql(u8, keyword, "for")) {

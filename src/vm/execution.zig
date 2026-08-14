@@ -122,6 +122,14 @@ pub fn executeInternal(self: anytype, chunk: *const bytecode.Chunk, machine: ?*a
             .false_value => try state_helpers.push(self, Value.fromBool(false)),
             .none_value => try state_helpers.push(self, Value.nil()),
             .make_string => try string_construction.string(RuntimeError, self, instruction.operand, chunk.strings.items),
+            .make_exception => {
+                if (self.stack_top == 0) return error.StackUnderflow;
+                const name_value = self.stack[self.stack_top - 1];
+                const name = self.stringSlice(name_value) orelse return error.TypeGuardFailed;
+                const slot = object_storage.newException(self, name) catch return error.OutOfMemory;
+                self.stack_top -= 1;
+                try state_helpers.push(self, Value.fromHandle(.exception, slot) catch return error.InvalidInstruction);
+            },
             .make_format => try string_construction.format(RuntimeError, self, instruction.operand, chunk.formats.items),
             .make_function => {
                 if (instruction.operand < 0 or instruction.operand >= @as(i64, @intCast(chunk.functions.items.len))) return error.InvalidFunction;
@@ -229,6 +237,7 @@ pub fn executeInternal(self: anytype, chunk: *const bytecode.Chunk, machine: ?*a
             .guard_boolean => try stack_operations.guardBoolean(RuntimeError, self),
             .guard_string => try stack_operations.guardString(RuntimeError, self),
             .raise_value => try exceptions.raiseValue(RuntimeError, self, &ip, chunk.code.items.len),
+            .exception_match => try exceptions.matchType(self, chunk),
             .print => {
                 if (self.stack_top == 0) return error.StackUnderflow;
                 const value = self.stack[self.stack_top - 1];

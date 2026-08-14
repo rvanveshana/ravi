@@ -24,6 +24,13 @@ fn field(vm: anytype, dict: anytype, name: []const u8) ?@TypeOf(dict.values[0]) 
 }
 
 pub fn formatRaised(buffer: []u8, vm: anytype, value: anytype) []const u8 {
+    if (value.handleKind() == .exception) {
+        const slot = value.handleIndex() orelse return "raised value: <invalid exception object>";
+        if (slot >= vm.exception_count) return "raised value: <invalid exception object>";
+        const name = vm.exceptions[slot].name;
+        if (exception_constants.fromName(name)) |info| return std.fmt.bufPrint(buffer, "{s} ({d}): {s}", .{ info.name, info.code, info.message }) catch info.message;
+        return std.fmt.bufPrint(buffer, "raised exception: {s}", .{name}) catch name;
+    }
     if (value.handleKind() == .string) {
         const name = vm.stringSlice(value) orelse return "raised value: <invalid exception reference>";
         if (exception_constants.fromName(name)) |info| {

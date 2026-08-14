@@ -30,6 +30,38 @@ An exception value may be an integer, string, dictionary, instance, or another r
 yese {"code": 400, "message": "invalid input"}
 ```
 
+## Custom exception classes
+
+Custom exceptions are classes derived from `Exception` (or another exception
+class). The inheritance declaration, not the spelling of the name, makes the
+class catchable as an exception. Exception instances can carry normal Ravi
+fields and are preserved when bound by a handler.
+
+```ravi
+roopa PaymentDeclined guru Exception:
+    kriya init(message, order_id):
+        self.message = message
+        self.order_id = order_id
+
+kriya charge(order_id):
+    yese PaymentDeclined("card was declined", order_id)
+
+nodu:
+    charge("order-17")
+tappu PaymentDeclined aagi error:
+    mudrisu(error.message)
+```
+
+Inheritance is checked by runtime class identity and ancestry. Therefore a
+`CardDeclined guru PaymentDeclined` instance is caught by both
+`CardDeclined` and `PaymentDeclined`, but not by an unrelated exception class.
+The shorter form `tappu PaymentDeclined:` is also supported for PascalCase
+exception types when the exception value is not needed. Lowercase
+`tappu error:` remains the legacy bare-handler binding form.
+
+Use `ravi.exceptions` for canonical built-in exception references. Do not add
+application exception classes to that built-in catalog.
+
 ## Binding the exception
 
 The handler may bind the active exception payload:
@@ -72,9 +104,13 @@ exceptions inda RuntimeError, IndexError, KeyError tago
 The facade includes base names (`BaseException`, `Exception`), arithmetic,
 lookup, type, name, collection, stack, memory, instruction, debugger, and
 application errors. These names are the stable Ravi-facing API; Zig VM error
-names are implementation details. The current constructors return stable
-numeric identities internally for compatibility. Application code should keep
-constructor references and raise their returned exception references, for example `yese exception_callback()`. A built-in reference is the canonical public exception name (such as `"ZeroDivisionError"`), and native VM faults produce that same reference, so `tappu exception` receives one consistent value regardless of where the fault originated. It must not depend on numeric identities. The
+names are implementation details. The current constructors return canonical
+string references such as `"ZeroDivisionError"`. Application code should keep
+constructor references and raise their returned exception references, for
+example `yese exception_callback()`. A built-in reference is the canonical
+public exception name, and native VM faults produce that same reference, so
+`tappu exception` receives one consistent value regardless of where the fault
+originated. It must not depend on numeric diagnostic identities. The
 authoritative native code, public name, and default diagnostic message are
 defined in `src/vm/exception_constants.zig`. Unhandled native faults are
 reported as `Name (code): message`, for example
@@ -99,15 +135,34 @@ line, an actionable message, and a Ravi-level function trace when available.
 Use `--diagnostic-format json` when an editor or tool needs machine-readable
 positions.
 
+## Planned class-based model
+
+The implemented model follows the useful parts of Python's design:
+
+```ravi
+saarva varga PaymentDeclined aagi Exception:
+    kriya init(message, order_id):
+        super.init(message)
+        self.order_id = order_id
+
+nodu:
+    yese PaymentDeclined("card was declined", "order-17")
+tappu PaymentDeclined as error:
+    mudrisu(error.order_id)
+```
+
+An exception is an instance whose runtime class is marked as derived from
+`Exception`. A handler matches the class or any of its base classes; it does
+not compare display names. Native VM faults still use canonical built-in
+string references internally for compatibility, but typed handlers recognize
+their standard hierarchy. Numeric diagnostic codes remain private metadata.
+
 ## Current limitations
 
-Literal exception matching and payload binding are implemented. Python-style
-named built-in exception classes, `except SomeError as value` syntax, and
-user-defined exception classes are not implemented yet. At present, a
-programmer can create distinct structured payloads such as
-`{"name": "PaymentDeclined", "message": "card was declined"}`
-and bind them in `tappu error`; class/type matching and inheritance for
-custom exceptions remain planned. Complete VM-wide cleanup guarantees and a
-large standard exception hierarchy also remain planned. Do not assume Python
-exception classes or `finally` behavior for every future VM fault until the
-corresponding feature is marked complete in `progress.md`.
+Typed custom classes, single inheritance, typed handlers, and payload binding
+are implemented in the compiler/VM path. Bare handlers and legacy arbitrary
+raised values remain supported for compatibility. Built-in constructors in
+`lib/ravi/exceptions.rk` are still canonical reference functions rather than
+runtime class objects; converting native faults to allocated built-in
+instances is the next ABI refinement. Multiple inheritance, exception chaining,
+traceback objects, and complete cleanup guarantees remain future work.

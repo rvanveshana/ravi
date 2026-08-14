@@ -2,6 +2,8 @@
 
 This directory contains Ravi's built-in library source and the contracts for
 future native-backed libraries. The canonical package namespace is `ravi`.
+The complete taxonomy, ownership rules, and growth plan are documented in
+[`docs/user_docs/standard-library-structure.md`](../docs/user_docs/standard-library-structure.md).
 
 ## Import Rule
 
@@ -31,6 +33,23 @@ ravi.kirana     -> lib/ravi/kirana.rk
 
 The older `lib/math.rk` module remains supported for compatibility. New
 standard-library work belongs under `lib/ravi/`.
+
+## Facades and Submodules
+
+Each `lib/ravi/<domain>.rk` file is the public facade for one owned domain.
+When an implementation grows, place focused modules in the sibling directory
+`lib/ravi/<domain>/` and keep the facade import stable. For example:
+
+```text
+lib/ravi/json.rk
+lib/ravi/json/decoder.rk
+lib/ravi/json/encoder.rk
+lib/ravi/json/errors.rk
+```
+
+Do not add unrelated files directly to `lib/`, and do not create a second
+exception or utility namespace. New standard modules use `ravi.<domain>`;
+application packages must use a namespace other than `ravi`.
 
 ## Bilingual API Rule
 
@@ -75,8 +94,22 @@ lib/
     |-- core.rk              # core helpers and shared contracts
     |-- math.rk              # arithmetic and numeric helpers
     |-- exceptions.rk        # complete public exception facade
+    |-- text.rk              # text and Unicode facade
+    |-- collections.rk       # sequence and mapping facade
+    |-- io.rk                # files, paths, and streams facade
+    |-- os.rk                # environment and platform facade
+    |-- process.rk           # subprocess facade
+    |-- time.rk              # clocks and date/time facade
+    |-- random.rk            # random-source facade
     |-- json.rk              # JSON blueprint
+    |-- encoding.rk          # data-format facade
+    |-- regex.rk             # pattern-matching facade
     |-- network.rk           # networking blueprint
+    |-- crypto.rk            # cryptography facade
+    |-- async.rk             # asynchronous task facade
+    |-- sync.rk              # synchronization facade
+    |-- logging.rk           # structured logging facade
+    |-- testing.rk           # testing facade
     `-- kirana.rk            # UI blueprint: Kirana
 ```
 
