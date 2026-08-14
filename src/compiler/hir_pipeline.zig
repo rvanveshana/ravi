@@ -176,9 +176,18 @@ fn functionBodySupported(module: *const ast.Module, first: usize, count: usize, 
     const parameters = module.parameters.items[params_first .. params_first + params_count];
     var assigned_names: std.ArrayListUnmanaged([]const u8) = .empty;
     defer assigned_names.deinit(module.allocator);
-    const statement = module.statements.items[first];
     if (count > 1) {
         for (module.statements.items[first .. first + count - 1]) |assignment_statement| {
+            if (assignment_statement.kind == .control and std.mem.eql(u8, assignment_statement.kind.control.keyword, "while")) {
+                const control = assignment_statement.kind.control;
+                if (control.condition == null or control.body_count != 1 or control.body_first >= module.statements.items.len) return false;
+                if (!expressionSupportedWithLocals(module, control.condition.?, parameters, assigned_names.items)) return false;
+                const body_id = switch (module.statements.items[control.body_first].kind) { .expression => |id| id, else => return false };
+                const body_assignment = switch (module.expressions.items[@as(usize, body_id)].kind) { .assignment => |value| value, else => return false };
+                if (body_assignment.target != null or !expressionSupportedWithLocals(module, body_assignment.value, parameters, assigned_names.items)) return false;
+                if (lowering.localIndex(assigned_names.items, body_assignment.name) == null) assigned_names.append(module.allocator, body_assignment.name) catch return false;
+                continue;
+            }
             const expression_id = switch (assignment_statement.kind) {
                 .expression => |id| id,
                 else => return false,
@@ -201,9 +210,13 @@ fn functionBodySupported(module: *const ast.Module, first: usize, count: usize, 
             }
         }
     }
-    if (count > 1 and module.statements.items[first + count - 1].kind != .return_stmt) return false;
     const terminal = module.statements.items[first + count - 1];
-    return switch (statement.kind) {
+    if (terminal.kind == .try_stmt) {
+        const try_statement = terminal.kind.try_stmt;
+        if (try_statement.except_binding) |binding| if (lowering.localIndex(assigned_names.items, binding) == null) assigned_names.append(module.allocator, binding) catch return false;
+        return pipeline_support.trySupported(module, try_statement, parameters, assigned_names.items, captures);
+    }
+    return switch (terminal.kind) {
         .expression => |id| if (module.expressions.items[@as(usize, id)].kind == .assignment) blk: {
             const assignment = module.expressions.items[@as(usize, id)].kind.assignment;
             const target = assignment.target orelse break :blk false;
@@ -214,7 +227,7 @@ fn functionBodySupported(module: *const ast.Module, first: usize, count: usize, 
             break :blk expressionSupportedWithFunctions(module, member.object, parameters, captures) and expressionSupportedWithFunctions(module, assignment.value, parameters, captures);
         } else false,
         .return_stmt => |value| if (value) |expression| expressionSupportedWithFunctions(module, expression, parameters, captures) else false,
-        .control => |control| if (std.mem.eql(u8, control.keyword, "if") and control.condition != null and control.body_count == 1 and control.else_count == 1 and control.body_first < module.statements.items.len and control.else_first < module.statements.items.len) blk: {
+        .control => |control| if (std.mem.eql(u8, control.keyword, "if") and control.condition != null and control.body_count > 0 and control.else_count > 0 and control.body_first < module.statements.items.len and control.else_first < module.statements.items.len) blk: {
             const condition = control.condition.?;
             const condition_expression = module.expressions.items[@as(usize, condition)];
             const condition_is_boolean = switch (condition_expression.kind) {
@@ -222,15 +235,7 @@ fn functionBodySupported(module: *const ast.Module, first: usize, count: usize, 
                 .boolean => true,
                 else => false,
             };
-            const then_statement = module.statements.items[control.body_first].kind;
-            const else_statement = module.statements.items[control.else_first].kind;
-            break :blk condition_is_boolean and expressionSupportedWithFunctions(module, condition, parameters, captures) and switch (then_statement) {
-                .return_stmt => |value| value != null and expressionSupportedWithFunctions(module, value.?, parameters, captures),
-                else => false,
-            } and switch (else_statement) {
-                .return_stmt => |value| value != null and expressionSupportedWithFunctions(module, value.?, parameters, captures),
-                else => false,
-            };
+            break :blk condition_is_boolean and expressionSupportedWithFunctions(module, condition, parameters, captures) and branchSupported(module, control.body_first, control.body_count, parameters) and branchSupported(module, control.else_first, control.else_count, parameters);
         } else if (std.mem.eql(u8, control.keyword, "while") and control.condition != null and control.body_count == 1 and control.body_first < module.statements.items.len) blk: {
             if (count < 2 or terminal.kind != .return_stmt) break :blk false;
             const condition = control.condition.?;
@@ -249,13 +254,24 @@ fn functionBodySupported(module: *const ast.Module, first: usize, count: usize, 
                 else => false,
             };
         } else false,
-        else => switch (terminal.kind) {
-            .return_stmt => |value| if (value) |expression| switch (module.expressions.items[expression].kind) {
-                .name => |name| pipeline_helpers.parameterIndex(parameters, name) != null or lowering.localIndex(assigned_names.items, name) != null,
-                else => expressionSupportedWithLocals(module, expression, parameters, assigned_names.items),
-            } else false,
-            else => false,
-        },
+        else => false,
+    };
+}
+
+fn branchSupported(module: *const ast.Module, first: usize, count: usize, parameters: []const ast.Parameter) bool {
+    const end = std.math.add(usize, first, count) catch return false;
+    if (count == 0 or end > module.statements.items.len) return false;
+    var locals: std.ArrayListUnmanaged([]const u8) = .empty;
+    defer locals.deinit(module.allocator);
+    for (module.statements.items[first .. end - 1]) |statement| {
+        const id = switch (statement.kind) { .expression => |value| value, else => return false };
+        const assignment = switch (module.expressions.items[@as(usize, id)].kind) { .assignment => |value| value, else => return false };
+        if (assignment.target != null or !expressionSupportedWithLocals(module, assignment.value, parameters, locals.items)) return false;
+        if (lowering.localIndex(locals.items, assignment.name) == null and pipeline_helpers.parameterIndex(parameters, assignment.name) == null) locals.append(module.allocator, assignment.name) catch return false;
+    }
+    return switch (module.statements.items[end - 1].kind) {
+        .return_stmt => |value| value != null and expressionSupportedWithLocals(module, value.?, parameters, locals.items),
+        else => false,
     };
 }
 fn expressionSupportedWithFunctions(module: *const ast.Module, id: ast.ExprId, parameters: []const ast.Parameter, captures: []const []const u8) bool {

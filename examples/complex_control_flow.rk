@@ -1,0 +1,79 @@
+# Compiler stress example: nested loops, branches, and control-flow merges.
+# The calculations are intentionally cross-checked after every complex block.
+
+# A nested collection loop uses continue for the inner loop and break for the
+# inner loop only. The outer loop continues with its next group.
+weighted_total = 0
+visited_groups = 0
+prati group alli [1, 2, 3]:
+    visited_groups = visited_groups + 1
+    item = 0
+    prati value alli [1, 2, 3, 4]:
+        adre value == 1:
+            munde
+        adre value == 4:
+            nillu
+        item = item + value * group
+    weighted_total = weighted_total + item
+adre alla (visited_groups == 3):
+    yese "outer collection loop count failed"
+adre alla (weighted_total == 30):
+    yese "nested collection loop total failed"
+
+# A counted loop contains a nested while loop. The inner break must not exit
+# the outer loop, and the nested branch has both true and false paths.
+outer_total = 0
+prati outer alli shreni(1, 4):
+    inner = 0
+    vargu inner < 5:
+        inner = inner + 1
+        adre inner == 2:
+            munde
+        adre inner > 3:
+            nillu
+        adre outer == 2:
+            outer_total = outer_total + inner * 2
+        illa:
+            outer_total = outer_total + inner
+adre alla (outer_total == 16):
+    yese "nested range and while control failed"
+
+# A while loop with an inner conditional and an else branch validates merge
+# points after repeated jumps.
+state = 0
+iterations = 0
+vargu state < 6:
+    state = state + 1
+    iterations = iterations + 1
+    adre state == 2:
+        bidu
+    illa:
+        adre state == 5:
+            state = state + 1
+        illa:
+            state = state
+adre alla (state == 6):
+    yese "nested while merge failed"
+adre alla (iterations == 5):
+    yese "nested while iteration count failed"
+
+# Nested exception handling validates handler isolation and finalizer order.
+handled = 0
+finally_count = 0
+nodu:
+    nodu:
+        yese 3
+    tappu:
+        handled = handled + 10
+    kone:
+        finally_count = finally_count + 1
+tappu:
+    handled = handled + 100
+kone:
+    finally_count = finally_count + 1
+adre alla (handled == 10):
+    yese "nested exception handler failed"
+adre alla (finally_count == 2):
+    yese "nested finalizer count failed"
+
+mudrisu("complex_control_flow: PASS")

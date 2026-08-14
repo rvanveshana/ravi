@@ -3,6 +3,8 @@ const ast = @import("ravi_ast");
 const hir = @import("ravi_hir");
 const mir = @import("ravi_mir");
 const expressions = @import("ravi_hir_expr_lowering");
+const exception_lowering = @import("ravi_hir_exception_lowering");
+const local_discovery = @import("ravi_hir_local_discovery");
 const exceptionLocalName = "__ravi_exception";
 const finallyResultName = "__ravi_finally_result";
 fn parameterIndex(parameters: []const ast.Parameter, name: []const u8) ?usize {
@@ -43,6 +45,7 @@ pub fn lowerFunction(allocator: std.mem.Allocator, module: *const ast.Module, de
     }
     var local_names: std.ArrayListUnmanaged([]const u8) = .empty;
     defer local_names.deinit(allocator);
+    local_discovery.collectControlLocals(module, declaration.body_first, declaration.body_count, &local_names, parameters);
     if (declaration.body_count > 1) for (module.statements.items[declaration.body_first .. declaration.body_first + declaration.body_count - 1]) |statement| {
         if (statement.kind == .control and std.mem.eql(u8, statement.kind.control.keyword, "while")) {
             const body = module.statements.items[statement.kind.control.body_first];
@@ -84,7 +87,7 @@ pub fn lowerFunction(allocator: std.mem.Allocator, module: *const ast.Module, de
         if (expressions.localIndex(local_names.items, finallyResultName) == null) try local_names.append(allocator, finallyResultName);
         source.local_count = local_names.items.len;
     }
-    const first = module.statements.items[declaration.body_first];
+    const terminal = module.statements.items[declaration.body_first + declaration.body_count - 1];
     if (declaration.body_count > 1) for (module.statements.items[declaration.body_first .. declaration.body_first + declaration.body_count - 1]) |statement| {
         if (statement.kind == .yield_stmt) {
             const id = statement.kind.yield_stmt orelse return error.UnsupportedExpression;
@@ -110,7 +113,9 @@ pub fn lowerFunction(allocator: std.mem.Allocator, module: *const ast.Module, de
             try source.appendEffect(.{ .store_local = .{ .slot = expressions.localIndex(local_names.items, assignment.name) orelse return error.InvalidExpression, .value = value } }, module.expressions.items[id].span.line);
         }
     };
-    switch (first.kind) {
+    if (declaration.body_count > 1 and module.statements.items[declaration.body_first + declaration.body_count - 2].kind == .control and std.mem.eql(u8, module.statements.items[declaration.body_first + declaration.body_count - 2].kind.control.keyword, "while")) {
+        try lowerControl(allocator, &source, module, declaration, module.statements.items[declaration.body_first + declaration.body_count - 2].kind.control, names, local_names.items, capture_names);
+    } else switch (terminal.kind) {
         .expression => |id| {
             const assignment = switch (module.expressions.items[id].kind) {
                 .assignment => |value| value,
@@ -136,11 +141,11 @@ pub fn lowerFunction(allocator: std.mem.Allocator, module: *const ast.Module, de
             source.resumable = true;
             source.suspension_count += 1;
             const yielded = try expressions.lowerWithLocals(allocator, &source, module, id, names, local_names.items, capture_names);
-            try source.appendEffect(.{ .suspend_point = .{ .resume_line = first.span.line } }, first.span.line);
-            try source.appendEffect(.{ .return_value = yielded }, first.span.line);
+            try source.appendEffect(.{ .suspend_point = .{ .resume_line = terminal.span.line } }, terminal.span.line);
+            try source.appendEffect(.{ .return_value = yielded }, terminal.span.line);
         },
-        .raise_stmt => |value| try source.appendEffect(.{ .raise_value = if (value) |id| try expressions.lowerWithLocals(allocator, &source, module, id, names, local_names.items, capture_names) else null }, first.span.line),
-        .try_stmt => |try_stmt| try lowerTry(allocator, &source, module, try_stmt, names, local_names.items, capture_names),
+        .raise_stmt => |value| try source.appendEffect(.{ .raise_value = if (value) |id| try expressions.lowerWithLocals(allocator, &source, module, id, names, local_names.items, capture_names) else null }, terminal.span.line),
+        .try_stmt => |try_stmt| try exception_lowering.lowerTry(allocator, &source, module, try_stmt, names, local_names.items, capture_names),
         .control => |control| try lowerControl(allocator, &source, module, declaration, control, names, local_names.items, capture_names),
         else => return error.UnsupportedExpression,
     }
@@ -148,73 +153,6 @@ pub fn lowerFunction(allocator: std.mem.Allocator, module: *const ast.Module, de
     errdefer result.deinit();
     _ = try result.foldConstants();
     return result;
-}
-fn lowerTry(allocator: std.mem.Allocator, source: *hir.Function, module: *const ast.Module, statement: anytype, names: []const []const u8, locals: []const []const u8, captures: []const []const u8) !void {
-    if (statement.except_count == 0 and statement.finally_count == 1) return lowerTryFinally(allocator, source, module, statement, names, locals, captures);
-    try source.appendEffect(.{ .try_begin = @enumFromInt(1) }, module.statements.items[statement.body_first].span.line);
-    const body = module.statements.items[statement.body_first];
-    switch (body.kind) {
-        .raise_stmt => |value| try source.appendEffect(.{ .raise_value = if (value) |id| try expressions.lowerWithLocals(allocator, source, module, id, names, locals, captures) else null }, body.span.line),
-        .return_stmt => |value| {
-            const id = value orelse return error.UnsupportedExpression;
-            const lowered = try expressions.lowerWithLocals(allocator, source, module, id, names, locals, captures);
-            try source.appendEffect(.try_end, body.span.line);
-            try source.appendEffect(.{ .return_value = lowered }, body.span.line);
-        },
-        else => return error.UnsupportedExpression,
-    }
-    const handler = module.statements.items[statement.except_first];
-    const exception_slot = if (statement.except_binding) |binding| expressions.localIndex(locals, binding) orelse return error.InvalidExpression else if (statement.except_match != null) expressions.localIndex(locals, exceptionLocalName) orelse return error.InvalidExpression else null;
-    if (exception_slot) |slot| try source.appendEffect(.{ .bind_exception = slot }, handler.span.line);
-    if (statement.except_match) |match| {
-        const exception = try source.appendValue(.dynamic, .{ .load_local = exception_slot.? }, handler.span.line);
-        const expected = try expressions.lowerWithLocals(allocator, source, module, match, names, locals, captures);
-        const matched = try source.appendValue(.boolean, .{ .binary = .{ .operator = .equal, .left = exception, .right = expected } }, handler.span.line);
-        try source.appendEffect(.{ .branch = .{ .condition = matched, .then_block = @enumFromInt(2), .else_block = @enumFromInt(3) } }, handler.span.line);
-    }
-    const handler_value = switch (handler.kind) {
-        .return_stmt => |value| value orelse return error.UnsupportedExpression,
-        else => return error.UnsupportedExpression,
-    };
-    const handler_result = try expressions.lowerWithLocals(allocator, source, module, handler_value, names, locals, captures);
-    try source.appendEffect(.{ .return_value = handler_result }, handler.span.line);
-    if (statement.except_match != null) try source.appendEffect(.{ .raise_value = null }, handler.span.line);
-    const handler_count: usize = 2 + @as(usize, @intFromBool(exception_slot != null)) + @as(usize, @intFromBool(statement.except_match != null)) * 3;
-    const handler_start = source.instructions.items.len - handler_count;
-    if (statement.except_match != null) {
-        const success_start = source.instructions.items.len - 2;
-        try source.setBlocks(&.{ .{ .first_instruction = 0, .instruction_count = handler_start }, .{ .first_instruction = handler_start, .instruction_count = handler_count - 2 }, .{ .first_instruction = success_start, .instruction_count = 1 }, .{ .first_instruction = source.instructions.items.len - 1, .instruction_count = 1 } });
-    } else try source.setBlocks(&.{ .{ .first_instruction = 0, .instruction_count = handler_start }, .{ .first_instruction = handler_start, .instruction_count = handler_count } });
-}
-fn lowerTryFinally(allocator: std.mem.Allocator, source: *hir.Function, module: *const ast.Module, statement: anytype, names: []const []const u8, locals: []const []const u8, captures: []const []const u8) !void {
-    const body = module.statements.items[statement.body_first];
-    const finalizer = module.statements.items[statement.finally_first];
-    const assignment = switch (finalizer.kind) {
-        .expression => |id| switch (module.expressions.items[@as(usize, id)].kind) {
-            .assignment => |value| value,
-            else => return error.UnsupportedExpression,
-        },
-        else => return error.UnsupportedExpression,
-    };
-    const result_slot = expressions.localIndex(locals, finallyResultName) orelse return error.InvalidExpression;
-    const cleanup_slot = expressions.localIndex(locals, assignment.name) orelse return error.InvalidExpression;
-    try source.appendEffect(.{ .try_begin = @enumFromInt(1) }, body.span.line);
-    const body_value = switch (body.kind) {
-        .return_stmt => |value| value orelse return error.UnsupportedExpression,
-        else => return error.UnsupportedExpression,
-    };
-    const result = try expressions.lowerWithLocals(allocator, source, module, body_value, names, locals, captures);
-    try source.appendEffect(.{ .store_local = .{ .slot = result_slot, .value = result } }, body.span.line);
-    try source.appendEffect(.try_end, body.span.line);
-    const cleanup_value = try expressions.lowerWithLocals(allocator, source, module, assignment.value, names, locals, captures);
-    try source.appendEffect(.{ .store_local = .{ .slot = cleanup_slot, .value = cleanup_value } }, finalizer.span.line);
-    const returned = try source.appendValue(.dynamic, .{ .load_local = result_slot }, body.span.line);
-    try source.appendEffect(.{ .return_value = returned }, body.span.line);
-    const handler_cleanup = try expressions.lowerWithLocals(allocator, source, module, assignment.value, names, locals, captures);
-    try source.appendEffect(.{ .store_local = .{ .slot = cleanup_slot, .value = handler_cleanup } }, finalizer.span.line);
-    try source.appendEffect(.{ .raise_value = null }, finalizer.span.line);
-    const handler_start = source.instructions.items.len - 3;
-    try source.setBlocks(&.{ .{ .first_instruction = 0, .instruction_count = handler_start }, .{ .first_instruction = handler_start, .instruction_count = 3 } });
 }
 fn firstTryBinding(module: *const ast.Module, first: usize, count: usize) ?[]const u8 {
     if (count == 0) return null;
@@ -269,10 +207,25 @@ pub fn lowerLambda(allocator: std.mem.Allocator, module: *const ast.Module, decl
 }
 fn lowerControl(allocator: std.mem.Allocator, source: *hir.Function, module: *const ast.Module, declaration: anytype, control: anytype, names: []const []const u8, locals: []const []const u8, captures: []const []const u8) !void {
     const condition = control.condition orelse return error.UnsupportedExpression;
+    if (std.mem.eql(u8, control.keyword, "if") and control.body_count > 0 and control.else_count > 0) {
+        const then_end = std.math.add(usize, control.body_first, control.body_count) catch return error.InvalidExpression;
+        const else_end = std.math.add(usize, control.else_first, control.else_count) catch return error.InvalidExpression;
+        if (then_end > module.statements.items.len or else_end > module.statements.items.len) return error.InvalidExpression;
+        const condition_value = try expressions.lowerWithLocals(allocator, source, module, condition, names, locals, captures);
+        try source.appendEffect(.{ .branch = .{ .condition = condition_value, .then_block = @enumFromInt(1), .else_block = @enumFromInt(2) } }, module.expressions.items[condition].span.line);
+        const then_start = source.instructions.items.len;
+        try lowerBranchReturn(allocator, source, module, control.body_first, control.body_count, names, locals, captures);
+        const then_count = source.instructions.items.len - then_start;
+        const else_start = source.instructions.items.len;
+        try lowerBranchReturn(allocator, source, module, control.else_first, control.else_count, names, locals, captures);
+        const else_count = source.instructions.items.len - else_start;
+        try source.setBlocks(&.{ .{ .first_instruction = 0, .instruction_count = then_start }, .{ .first_instruction = then_start, .instruction_count = then_count }, .{ .first_instruction = else_start, .instruction_count = else_count } });
+        return;
+    }
     if (std.mem.eql(u8, control.keyword, "while")) {
         const header = source.instructions.items.len;
         const value = try expressions.lowerWithLocals(allocator, source, module, condition, names, locals, captures);
-        try source.appendEffect(.{ .branch = .{ .condition = value, .then_block = @enumFromInt(1), .else_block = @enumFromInt(3) } }, module.expressions.items[condition].span.line);
+        try source.appendEffect(.{ .branch = .{ .condition = value, .then_block = @enumFromInt(2), .else_block = @enumFromInt(3) } }, module.expressions.items[condition].span.line);
         const body_id = switch (module.statements.items[control.body_first].kind) {
             .expression => |id| id,
             else => return error.UnsupportedExpression,
@@ -293,7 +246,7 @@ fn lowerControl(allocator: std.mem.Allocator, source: *hir.Function, module: *co
             else => return error.UnsupportedExpression,
         };
         try source.appendEffect(.{ .return_value = try expressions.lowerWithLocals(allocator, source, module, return_id, names, locals, captures) }, module.expressions.items[return_id].span.line);
-        try source.setBlocks(&.{ .{ .first_instruction = 0, .instruction_count = header }, .{ .first_instruction = header, .instruction_count = 3 }, .{ .first_instruction = source.instructions.items.len - 1, .instruction_count = 1 }, .{ .first_instruction = source.instructions.items.len - 1, .instruction_count = 1 } });
+        try source.setBlocks(&.{ .{ .first_instruction = 0, .instruction_count = header }, .{ .first_instruction = header, .instruction_count = 1 }, .{ .first_instruction = header + 1, .instruction_count = 3 }, .{ .first_instruction = source.instructions.items.len - 1, .instruction_count = 1 } });
         return;
     }
     const condition_value = try expressions.lowerWithLocals(allocator, source, module, condition, names, locals, captures);
@@ -309,6 +262,35 @@ fn lowerControl(allocator: std.mem.Allocator, source: *hir.Function, module: *co
     try source.appendEffect(.{ .return_value = try expressions.lowerWithLocals(allocator, source, module, then_id, names, locals, captures) }, module.expressions.items[then_id].span.line);
     try source.appendEffect(.{ .return_value = try expressions.lowerWithLocals(allocator, source, module, else_id, names, locals, captures) }, module.expressions.items[else_id].span.line);
     try source.setBlocks(&.{ .{ .first_instruction = 0, .instruction_count = 1 }, .{ .first_instruction = 1, .instruction_count = 1 }, .{ .first_instruction = 2, .instruction_count = 1 } });
+}
+
+fn lowerBranchReturn(allocator: std.mem.Allocator, source: *hir.Function, module: *const ast.Module, first: usize, count: usize, names: []const []const u8, locals: []const []const u8, captures: []const []const u8) !void {
+    if (count == 0) return error.UnsupportedExpression;
+    const end = std.math.add(usize, first, count) catch return error.InvalidExpression;
+    if (end > module.statements.items.len) return error.InvalidExpression;
+    for (module.statements.items[first .. end - 1]) |statement| {
+        const id = switch (statement.kind) {
+            .expression => |value| value,
+            else => return error.UnsupportedExpression,
+        };
+        const assignment = switch (module.expressions.items[@as(usize, id)].kind) {
+            .assignment => |value| value,
+            else => return error.UnsupportedExpression,
+        };
+        if (assignment.target != null) return error.UnsupportedExpression;
+        const value = try expressions.lowerWithLocals(allocator, source, module, assignment.value, names, locals, captures);
+        if (expressions.localIndex(captures, assignment.name)) |slot| {
+            try source.appendEffect(.{ .store_capture = .{ .slot = slot, .value = value } }, statement.span.line);
+        } else {
+            try source.appendEffect(.{ .store_local = .{ .slot = expressions.localIndex(locals, assignment.name) orelse return error.InvalidExpression, .value = value } }, statement.span.line);
+        }
+    }
+    const terminal = module.statements.items[end - 1];
+    const value = switch (terminal.kind) {
+        .return_stmt => |id| id orelse return error.UnsupportedExpression,
+        else => return error.UnsupportedExpression,
+    };
+    try source.appendEffect(.{ .return_value = try expressions.lowerWithLocals(allocator, source, module, value, names, locals, captures) }, terminal.span.line);
 }
 pub const localIndex = expressions.localIndex;
 pub const collectCaptures = expressions.collectCaptures;

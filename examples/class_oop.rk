@@ -1,15 +1,68 @@
-# Class construction, instance properties, and method calls.
-# Inheritance and visibility contracts are not complete yet.
+# Deep inheritance and nested object composition.
+# Every concrete class declares huttu when it accepts constructor arguments.
 
-roopa Person:
-    saarva kriya huttu(name: string):
-        tanna.name = name
+roopa Entity:
+    saarva kriya huttu(id: int):
+        tanna.id = id
 
-    saarva kriya speak():
-        kodu tanna.name
+    saarva kriya category():
+        kodu "entity"
 
-p = Person("Ravi language")
-adre alla (p.speak() == "Ravi language"):
-    yese "constructor property assignment and method read failed"
+roopa Account guru Entity:
+    saarva kriya huttu(id: int, balance: int):
+        tanna.id = id
+        tanna.balance = balance
+
+    saarva kriya category():
+        kodu "account"
+
+roopa PremiumAccount guru Account:
+    saarva kriya huttu(id: int, balance: int, points: int):
+        tanna.id = id
+        tanna.balance = balance
+        tanna.points = points
+
+    saarva kriya category():
+        kodu "premium"
+
+roopa EnterpriseAccount guru PremiumAccount:
+    saarva kriya huttu(id: int, balance: int, points: int, region: string):
+        tanna.id = id
+        tanna.balance = balance
+        tanna.points = points
+        tanna.region = region
+
+    saarva kriya category():
+        kodu "enterprise"
+
+    saarva kriya score():
+        kodu tanna.balance + tanna.points
+
+roopa Invoice:
+    saarva kriya huttu(number: string, account):
+        tanna.number = number
+        tanna.account = account
+
+    saarva kriya account_category():
+        kodu tanna.account.category()
+
+    saarva kriya account_score():
+        kodu tanna.account.score()
+
+account = EnterpriseAccount(101, 900, 75, "south")
+invoice = Invoice("INV-2026-001", account)
+
+# Verify inherited fields, deepest override, and nested calls through an
+# object graph used by a realistic billing workflow.
+adre alla (account.id == 101):
+    yese "inherited identity field failed"
+adre alla (account.category() == "enterprise"):
+    yese "deepest method override failed"
+adre alla (account.score() == 975):
+    yese "enterprise account calculation failed"
+adre alla (invoice.account_category() == "enterprise"):
+    yese "nested account dispatch failed"
+adre alla (invoice.account_score() == 975):
+    yese "nested account calculation failed"
 
 mudrisu("class_oop: PASS")

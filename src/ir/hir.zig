@@ -1,6 +1,5 @@
 const std = @import("std");
-pub const ValueId = enum(u32) { _ };
-pub const BlockId = enum(u32) { _ };
+pub const ValueId = enum(u32) { _ }; pub const BlockId = enum(u32) { _ };
 pub const Type = enum { none, boolean, integer, float, string, dynamic };
 pub fn fromName(name: []const u8) !Type {
     if (std.mem.eql(u8, name, "none")) return .none;

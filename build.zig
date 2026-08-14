@@ -31,11 +31,13 @@ pub fn build(b: *std.Build) void {
     const debug_module = b.createModule(.{ .root_source_file = b.path("src/debug/debug.zig"), .target = target, .optimize = optimize });
     debug_module.addImport("ravi_bytecode", bytecode_module);
 
+    const scheduler_module = b.createModule(.{ .root_source_file = b.path("src/concurrency/scheduler.zig"), .target = target, .optimize = optimize });
     const vm_module = b.createModule(.{
         .root_source_file = b.path("src/vm/vm.zig"),
         .target = target,
         .optimize = optimize,
     });
+    vm_module.addImport("ravi_scheduler", scheduler_module);
     vm_module.addImport("ravi_async_state", async_state_module);
     vm_module.addImport("ravi_vm_collections", vm_collections_module);
     vm_module.addImport("ravi_vm_value", nan_value_module);
@@ -74,7 +76,6 @@ pub fn build(b: *std.Build) void {
     const optimizer_module = b.createModule(.{ .root_source_file = b.path("src/optimizer/optimizer.zig"), .target = target, .optimize = optimize });
     optimizer_module.addImport("ravi_bytecode", bytecode_module);
 
-    const scheduler_module = b.createModule(.{ .root_source_file = b.path("src/concurrency/scheduler.zig"), .target = target, .optimize = optimize });
     const syntax_module = b.createModule(.{ .root_source_file = b.path("src/syntax/syntax.zig"), .target = target, .optimize = optimize });
     syntax_module.addImport("ravi_lexer", lexer_module);
     const source_module = b.createModule(.{ .root_source_file = b.path("src/source/source.zig"), .target = target, .optimize = optimize });
@@ -116,6 +117,8 @@ pub fn build(b: *std.Build) void {
     hir_pipeline_support_module.addImport("ravi_ast", ast_module);
     hir_pipeline_support_module.addImport("ravi_hir_pipeline_helpers", hir_pipeline_helpers_module);
     const hir_lowering_module = b.createModule(.{ .root_source_file = b.path("src/compiler/hir_lowering.zig"), .target = target, .optimize = optimize });
+    const hir_exception_lowering_module = b.createModule(.{ .root_source_file = b.path("src/compiler/hir_exception_lowering.zig"), .target = target, .optimize = optimize });
+    const hir_local_discovery_module = b.createModule(.{ .root_source_file = b.path("src/compiler/hir_local_discovery.zig"), .target = target, .optimize = optimize });
     const hir_expr_lowering_module = b.createModule(.{ .root_source_file = b.path("src/compiler/hir_expr_lowering.zig"), .target = target, .optimize = optimize });
     const hir_call_lowering_module = b.createModule(.{ .root_source_file = b.path("src/compiler/hir_call_lowering.zig"), .target = target, .optimize = optimize });
     hir_expr_lowering_module.addImport("ravi_ast", ast_module);
@@ -127,6 +130,12 @@ pub fn build(b: *std.Build) void {
     hir_lowering_module.addImport("ravi_hir", hir_module);
     hir_lowering_module.addImport("ravi_mir", mir_module);
     hir_lowering_module.addImport("ravi_hir_expr_lowering", hir_expr_lowering_module);
+    hir_lowering_module.addImport("ravi_hir_exception_lowering", hir_exception_lowering_module);
+    hir_lowering_module.addImport("ravi_hir_local_discovery", hir_local_discovery_module);
+    hir_exception_lowering_module.addImport("ravi_ast", ast_module);
+    hir_exception_lowering_module.addImport("ravi_hir", hir_module);
+    hir_exception_lowering_module.addImport("ravi_hir_expr_lowering", hir_expr_lowering_module);
+    hir_local_discovery_module.addImport("ravi_ast", ast_module);
     hir_pipeline_support_module.addImport("ravi_hir_lowering", hir_lowering_module);
     hir_pipeline_module.addImport("ravi_compiler", compiler_module);
     hir_pipeline_module.addImport("ravi_ast", ast_module);

@@ -3,7 +3,7 @@ const bytecode = @import("ravi_bytecode");
 const ast = @import("ravi_ast");
 const helpers = @import("helpers.zig");
 const builtins = @import("builtins.zig");
-
+const lambda_lowering = @import("ast_lambda_lowering.zig");
 pub fn expression(comptime Error: type, self: anytype, chunk: *bytecode.Chunk, module: *const ast.Module, expression_id: ast.ExprId, names: *std.ArrayListUnmanaged([]const u8)) Error!void {
     if (@as(usize, expression_id) >= module.expressions.items.len) return error.InvalidExpression;
     const expression_value = module.expressions.items[expression_id];
@@ -58,6 +58,21 @@ pub fn expression(comptime Error: type, self: anytype, chunk: *bytecode.Chunk, m
             } else if (helpers.findCapture(self.ast_state.active_captures, name)) |capture| {
                 try chunk.emit(.{ .op = .load_capture, .operand = @intCast(capture) });
             } else return error.InvalidName;
+        },
+        .spawn => |operand| {
+            if (@as(usize, operand) >= module.expressions.items.len) return error.InvalidExpression;
+            const call = switch (module.expressions.items[operand].kind) {
+                .call => |value| value,
+                else => return error.InvalidExpression,
+            };
+            if (call.keyword_count != 0 or call.first_arg > module.call_args.items.len or call.arg_count > module.call_args.items.len - call.first_arg) return error.InvalidExpression;
+            try expression(Error, self, chunk, module, call.callee, names);
+            for (module.call_args.items[call.first_arg .. call.first_arg + call.arg_count]) |argument| try expression(Error, self, chunk, module, argument, names);
+            try chunk.emit(.{ .op = .spawn, .operand = @intCast(call.arg_count) });
+        },
+        .wait => |operand| {
+            try expression(Error, self, chunk, module, operand, names);
+            try chunk.emit(.{ .op = .wait });
         },
         .member => |member| {
             try expression(Error, self, chunk, module, member.object, names);
@@ -147,6 +162,12 @@ pub fn expression(comptime Error: type, self: anytype, chunk: *bytecode.Chunk, m
                     if (call.arg_count != 1) return error.UnsupportedOperator;
                     try expression(Error, self, chunk, module, module.call_args.items[call.first_arg], names);
                     try chunk.emit(.{ .op = .type_query });
+                    return;
+                }
+                if (builtins.isSleep(self.language, name)) {
+                    if (call.arg_count != 1) return error.UnsupportedOperator;
+                    try expression(Error, self, chunk, module, module.call_args.items[call.first_arg], names);
+                    try chunk.emit(.{ .op = .sleep });
                     return;
                 }
                 if (std.mem.eql(u8, name, "add") or std.mem.eql(u8, name, "sub") or std.mem.eql(u8, name, "mul") or std.mem.eql(u8, name, "div") or std.mem.eql(u8, name, "mod")) {
@@ -263,19 +284,7 @@ pub fn expression(comptime Error: type, self: anytype, chunk: *bytecode.Chunk, m
             try chunk.emit(.{ .op = .call_value, .operand = @intCast(call.arg_count) });
         },
         .lambda => |lambda| {
-            for (self.ast_state.lambdas, 0..) |info, lambda_index| if (info.expression == expression_id) {
-                if (info.params_first != lambda.params_first or info.params_count != lambda.params_count or info.body != lambda.body) return error.InvalidExpression;
-                for (info.captures[0..info.capture_count]) |capture| {
-                    if (helpers.findLocal(names.items, capture)) |slot| {
-                        try chunk.emit(.{ .op = .load_local, .operand = @intCast(slot) });
-                    } else if (helpers.findCapture(self.ast_state.active_captures, capture)) |capture_slot| {
-                        try chunk.emit(.{ .op = .load_capture_ref, .operand = @intCast(capture_slot) });
-                    } else return error.InvalidName;
-                }
-                if (info.capture_count == 0) try chunk.emit(.{ .op = .make_function, .operand = @intCast(self.ast_state.function_count + lambda_index) }) else try chunk.emit(.{ .op = .make_closure, .operand = @intCast(self.ast_state.function_count + lambda_index) });
-                return;
-            };
-            return error.InvalidFunction;
+            try lambda_lowering.expression(Error, self, chunk, module, expression_id, names, lambda);
         },
     }
 }

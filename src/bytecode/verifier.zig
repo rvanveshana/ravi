@@ -26,7 +26,11 @@ pub fn verify(chunk: anytype) VerifyError!void {
                 depth -= @as(isize, @intCast(argument_count));
                 depth += 1;
             },
-            .get_property, .guard_integer, .guard_float, .guard_boolean, .guard_string, .box_dynamic, .unbox_integer => {},
+            .get_property, .guard_integer, .guard_float, .guard_boolean, .guard_string, .box_dynamic, .unbox_integer, .sleep, .wait => {},
+            .spawn => {
+                if (instruction.operand < 0 or depth < instruction.operand + 1) return error.StackUnderflow;
+                depth -= instruction.operand;
+            },
             .suspend_point => if (instruction.operand < 0) return error.InvalidInstruction,
             .make_closure => {
                 if (instruction.operand < 0 or instruction.operand >= @as(i64, @intCast(chunk.functions.items.len))) return error.InvalidInstruction;
@@ -223,7 +227,12 @@ fn stackAfter(chunk: anytype, instruction: anytype, depth: isize) VerifyError!is
             if (instruction.operand < 0) return error.InvalidLocal;
             delta = 1;
         },
-        .store_local, .store_capture, .get_property, .length, .iterable, .type_query, .string_lower, .string_upper, .string_strip, .pop_collection, .dict_keys, .dict_values, .dict_items, .negate, .not, .guard_integer, .guard_float, .guard_boolean, .guard_string, .box_dynamic, .unbox_integer => required = 1,
+        .store_local, .store_capture, .get_property, .length, .iterable, .type_query, .string_lower, .string_upper, .string_strip, .pop_collection, .dict_keys, .dict_values, .dict_items, .negate, .not, .guard_integer, .guard_float, .guard_boolean, .guard_string, .box_dynamic, .unbox_integer, .sleep, .wait => required = 1,
+        .spawn => {
+            if (instruction.operand < 0) return error.InvalidInstruction;
+            required = @intCast(instruction.operand + 1);
+            delta = 1 - required;
+        },
         .try_begin, .try_end, .jump, .halt, .return_value, .suspend_point, .range_step => {},
         .make_closure => {
             if (instruction.operand < 0 or instruction.operand >= @as(i64, @intCast(chunk.functions.items.len))) return error.InvalidInstruction;

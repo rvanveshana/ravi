@@ -69,12 +69,13 @@ pub fn functionBodySupported(module: *const ast.Module, first: usize, count: usi
     };
 }
 
-fn trySupported(module: *const ast.Module, statement: anytype, parameters: []const ast.Parameter, locals: []const []const u8, captures: []const []const u8) bool {
-    if (statement.body_count != 1 or statement.except_count > 1 or statement.finally_count > 1) return false;
-    const body = module.statements.items[statement.body_first].kind;
+pub fn trySupported(module: *const ast.Module, statement: anytype, parameters: []const ast.Parameter, locals: []const []const u8, captures: []const []const u8) bool {
+    if (statement.body_count == 0 or statement.except_count > 1 or statement.finally_count > 1) return false;
+    const body = module.statements.items[statement.body_first + statement.body_count - 1].kind;
     if (statement.except_count == 0 and statement.finally_count == 1) return finallySupported(module, statement, parameters, locals, captures);
-    if (statement.except_count != 1 or statement.finally_count != 0) return false;
-    const handler = module.statements.items[statement.except_first].kind;
+    if (statement.except_count != 1 or statement.finally_count != 0 or statement.except_count == 0) return false;
+    if (!assignmentRangeSupported(module, statement.body_first, statement.body_count -| 1, parameters, locals, captures) or !assignmentRangeSupported(module, statement.except_first, statement.except_count -| 1, parameters, locals, captures)) return false;
+    const handler = module.statements.items[statement.except_first + statement.except_count - 1].kind;
     const body_supported = switch (body) {
         .raise_stmt => |value| if (value) |id| expressionSupportedWithFunctions(module, id, parameters, captures) else true,
         .return_stmt => |value| value != null and expressionSupportedWithFunctions(module, value.?, parameters, captures),
@@ -84,6 +85,17 @@ fn trySupported(module: *const ast.Module, statement: anytype, parameters: []con
         .return_stmt => |value| value != null and expressionSupportedWithLocals(module, value.?, parameters, locals),
         else => false,
     };
+}
+
+fn assignmentRangeSupported(module: *const ast.Module, first: usize, count: usize, parameters: []const ast.Parameter, locals: []const []const u8, captures: []const []const u8) bool {
+    const end = std.math.add(usize, first, count) catch return false;
+    if (end > module.statements.items.len) return false;
+    for (module.statements.items[first..end]) |statement| {
+        const id = switch (statement.kind) { .expression => |value| value, else => return false };
+        const assignment = switch (module.expressions.items[@as(usize, id)].kind) { .assignment => |value| value, else => return false };
+        if (assignment.target != null or !expressionSupportedWithLocals(module, assignment.value, parameters, locals) and !expressionSupportedWithFunctions(module, assignment.value, parameters, captures)) return false;
+    }
+    return true;
 }
 
 fn finallySupported(module: *const ast.Module, statement: anytype, parameters: []const ast.Parameter, locals: []const []const u8, captures: []const []const u8) bool {

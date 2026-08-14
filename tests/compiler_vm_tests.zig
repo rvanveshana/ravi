@@ -152,6 +152,19 @@ test "parsed AST lowers profile print builtins" {
     try std.testing.expectEqual(@as(i64, 0), try runAst(source, .kn));
 }
 
+test "parsed AST sleep blocks without changing sequential results" {
+    try std.testing.expectEqual(@as(i64, 42), try runAst("malagu(1)\n42\n", .kn));
+    try std.testing.expectEqual(@as(i64, 42), try runAst("sleep(1)\n42\n", .en));
+    try std.testing.expectError(error.TypeGuardFailed, runAst("malagu(-1)\n42\n", .kn));
+}
+
+test "spawn and wait execute a function in isolated VM state" {
+    const kannada_source = "kriya add(a, b):\n    kodu a + b\ntask = horabidu add(2, 3)\nkaayu task\n";
+    try std.testing.expectEqual(@as(i64, 5), try runAst(kannada_source, .kn));
+    const english_source = "function add(a, b):\n    return a + b\ntask = spawn add(2, 3)\nwait task\n";
+    try std.testing.expectEqual(@as(i64, 5), try runAst(english_source, .en));
+}
+
 test "parsed AST lambdas capture outer locals" {
     const source = "value = 7\nread = function() => value\nread()\n";
     var scan = try lexer.Lexer.init(std.testing.allocator, source);
@@ -1061,6 +1074,33 @@ test "runtime method dispatch falls back to inherited method" {
 test "runtime method dispatch can explicitly call a parent with guru" {
     const source = "roopa Parent:\n    kriya speak():\n        kodu 7\nroopa Child guru Parent:\n    kriya speak():\n        kodu guru.speak() + 1\nchild = Child()\nchild.speak()\n";
     try std.testing.expectEqual(@as(i64, 8), try run(source, .kn));
+}
+
+test "multi-level inheritance and nested object composition execute" {
+    const source =
+        "roopa Entity:\n" ++
+        "    kriya category():\n" ++
+        "        kodu 1\n" ++
+        "roopa Account guru Entity:\n" ++
+        "    kriya category():\n" ++
+        "        kodu 2\n" ++
+        "roopa Premium guru Account:\n" ++
+        "    kriya category():\n" ++
+        "        kodu 3\n" ++
+        "roopa Enterprise guru Premium:\n" ++
+        "    kriya huttu(value: int):\n" ++
+        "        tanna.value = value\n" ++
+        "    kriya category():\n" ++
+        "        kodu 4\n" ++
+        "roopa Invoice:\n" ++
+        "    kriya huttu(account):\n" ++
+        "        tanna.account = account\n" ++
+        "    kriya category():\n" ++
+        "        kodu tanna.account.category()\n" ++
+        "account = Enterprise(975)\n" ++
+        "invoice = Invoice(account)\n" ++
+        "invoice.category()\n";
+    try std.testing.expectEqual(@as(i64, 4), try run(source, .kn));
 }
 
 test "private methods cannot be called from external code" {

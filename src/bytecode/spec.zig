@@ -32,6 +32,8 @@ pub fn effect(op: OpCode) Effect {
         .range_step => .{ .minimum_stack = 0, .stack_delta = 0 },
         .dup => .{ .minimum_stack = 1, .stack_delta = 1 },
         .guard_integer, .guard_float, .guard_boolean, .guard_string, .box_dynamic, .unbox_integer, .negate, .not => .{ .minimum_stack = 1, .stack_delta = 0 },
+        .sleep => .{ .minimum_stack = 1, .stack_delta = 0 },
+        .spawn, .wait => .{ .minimum_stack = 1, .stack_delta = 0 },
         .print, .pop => .{ .minimum_stack = 1, .stack_delta = -1 },
         .add, .subtract, .multiply, .divide, .modulo, .equal, .not_equal, .less, .less_equal, .greater, .greater_equal, .logic_and, .logic_or => .{ .minimum_stack = 2, .stack_delta = -1 },
         .jump_if_false => .{ .minimum_stack = 1, .stack_delta = -1 },

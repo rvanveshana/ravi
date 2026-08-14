@@ -9,11 +9,11 @@ until it executes and is covered by a test or an example contract.
   currently supported subset. Unsupported AST shapes still use the isolated
   compatibility adapter in `src/compiler/hir_compatibility.zig`; removal of
   that adapter is a completion gate, not a completed task.
-- All 30 files under `examples/` are self-verifying contracts (they assert
+- All 31 files under `examples/` are self-verifying contracts (they assert
   real results with `adre ... : yese "message"` and end with a `PASS`
   marker), not just printed values a human has to eyeball.
 - `zig build test --summary all` passes all 37 test targets, `zig build
-  --summary all` passes, and `.\test.ps1` passes all 30 examples. These are
+  --summary all` passes, and `.\test.ps1` passes all 31 examples. These are
   the standing acceptance bars for any change. The examples passing does not
   prove that every example is currently lowered by HIR/MIR because the
   compatibility adapter remains active.

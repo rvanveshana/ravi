@@ -107,8 +107,8 @@ pub const Loader = struct {
         // Build a concrete public interface from top-level declarations. The
         // resolver owns stable symbol names; the loader only supplies the
         // source-level declarations that are safe to import.
-        for (syntax.statements.items) |statement| switch (statement.kind) {
-            .function => |function| try self.graph.exportSymbol(id, function.name, resolverVisibility(function.visibility)),
+        for (syntax.statements.items, 0..) |statement, statement_index| switch (statement.kind) {
+            .function => |function| if (!isClassMethod(&syntax, statement_index)) try self.graph.exportSymbol(id, function.name, resolverVisibility(function.visibility)),
             .class_decl => |class_decl| try self.graph.exportSymbol(id, class_decl.name, resolverVisibility(class_decl.visibility)),
             else => {},
         };
@@ -130,6 +130,14 @@ pub const Loader = struct {
             self.allocator.free(dependency_path);
         };
         return id;
+    }
+
+    fn isClassMethod(module_ast: *const ast.Module, statement_index: usize) bool {
+        for (module_ast.statements.items) |statement| switch (statement.kind) {
+            .class_decl => |class_decl| if (statement_index >= class_decl.body_first and statement_index < class_decl.body_first + class_decl.body_count) return true,
+            else => {},
+        };
+        return false;
     }
 
     fn resolverVisibility(visibility: ast.Visibility) resolver.Visibility {

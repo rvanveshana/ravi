@@ -21,6 +21,8 @@ pub const Expr = struct {
         boolean: bool,
         none,
         name: []const u8,
+        spawn: ExprId,
+        wait: ExprId,
         member: struct { object: ExprId, name: []const u8 },
         unary: struct { op: UnaryOp, operand: ExprId },
         binary: struct { op: BinaryOp, left: ExprId, right: ExprId },

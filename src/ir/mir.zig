@@ -1,10 +1,8 @@
 const std = @import("std");
 const hir = @import("ravi_hir");
 const verifier = @import("ravi_mir_verify");
-pub const ValueId = enum(u32) { _ };
-pub const BlockId = enum(u32) { _ };
-pub const Type = hir.Type;
-pub const Unary = hir.Unary;
+pub const ValueId = enum(u32) { _ }; pub const BlockId = enum(u32) { _ };
+pub const Type = hir.Type; pub const Unary = hir.Unary;
 pub const Instruction = struct {
     result: ?ValueId = null,
     result_type: Type = .none,
@@ -52,8 +50,7 @@ pub const Instruction = struct {
         raise_value: ?ValueId,
     };
 };
-pub const Block = struct { first_instruction: usize, instruction_count: usize };
-pub const PhiInput = struct { block: BlockId, value: ValueId };
+pub const Block = struct { first_instruction: usize, instruction_count: usize }; pub const PhiInput = struct { block: BlockId, value: ValueId };
 pub const Function = struct {
     allocator: std.mem.Allocator,
     name: []const u8 = "<function>",
@@ -69,9 +66,7 @@ pub const Function = struct {
     defaults: [64]?i64 = @splat(null),
     local_count: usize = 0,
     capture_count: usize = 0,
-    pub fn init(allocator: std.mem.Allocator) Function {
-        return .{ .allocator = allocator };
-    }
+    pub fn init(allocator: std.mem.Allocator) Function { return .{ .allocator = allocator }; }
     pub fn deinit(self: *Function) void {
         for (self.instructions.items) |instruction| switch (instruction.operation) {
             .call => |call| self.allocator.free(call.arguments),
@@ -284,9 +279,7 @@ pub const Function = struct {
         return changed;
     }
 };
-fn mapValue(value: hir.ValueId) ValueId {
-    return @enumFromInt(@intFromEnum(value));
-}
+fn mapValue(value: hir.ValueId) ValueId { return @enumFromInt(@intFromEnum(value)); }
 fn mapArguments(allocator: std.mem.Allocator, arguments: []const hir.ValueId) ![]ValueId {
     const mapped = try allocator.alloc(ValueId, arguments.len);
     for (arguments, 0..) |argument, index| mapped[index] = mapValue(argument);

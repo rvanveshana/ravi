@@ -47,5 +47,6 @@ test "backend owns byte artifacts and lowers verified MIR natively" {
     try function.blocks.append(std.testing.allocator, .{ .first_instruction = 0, .instruction_count = 2 });
     var native_artifact = try backend.lowerMir(&function);
     defer native_artifact.deinit();
-    try std.testing.expect(std.mem.startsWith(u8, native_artifact.bytes, "RAVI-NATIVE-MIR\n"));
+    try std.testing.expectEqual(@as(usize, 11), native_artifact.bytes.len);
+    try std.testing.expectEqual(@as(u8, 0xc3), native_artifact.bytes[10]);
 }

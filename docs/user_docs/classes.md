@@ -45,6 +45,22 @@ Methods may use the same parameters, defaults, keyword arguments, closures,
 and return statements as ordinary functions. See [Function](type-function.md)
 for the callable model.
 
-Ravi supports instances, properties, methods, constructors, visibility metadata, and method dispatch. Inheritance, override contracts, and complete visibility analysis continue to mature.
+Ravi supports instances, properties, methods, constructors, visibility metadata, method dispatch, and single inheritance. A derived class is declared with `guru` in the default profile.
+
+For a concrete class that accepts constructor arguments, declare its own
+`huttu` method. Constructor arguments are not automatically forwarded through
+the inheritance chain. Inherited methods are available on derived instances,
+and an override replaces the inherited implementation for normal dispatch.
+
+Nested object graphs are supported because fields may hold other instances:
+
+```ravi
+roopa Invoice:
+    kriya huttu(account):
+        tanna.account = account
+
+    kriya account_category():
+        kodu tanna.account.category()
+```
 
 Use the canonical examples in `examples/class_oop.rk` for the currently verified object model.

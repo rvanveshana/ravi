@@ -36,8 +36,9 @@ pub const Analyzer = struct {
             .class_decl => |class_decl| try self.declare(root, class_decl.name, types.fromName("kriya"), .internal),
             else => {},
         };
-        for (module.statements.items) |statement| switch (statement.kind) {
+        for (module.statements.items, 0..) |statement, statement_index| switch (statement.kind) {
             .function => |function| {
+                if (isClassMethod(module, statement_index)) continue;
                 try self.declare(root, function.name, types.fromName(function.return_type orelse "dinamika"), .internal);
                 const child = try self.pushScope(root);
                 const end = function.params_first + function.params_count;
@@ -70,6 +71,14 @@ pub const Analyzer = struct {
             },
             else => {},
         };
+    }
+
+    fn isClassMethod(module: *const ast.Module, statement_index: usize) bool {
+        for (module.statements.items) |statement| switch (statement.kind) {
+            .class_decl => |class_decl| if (statement_index >= class_decl.body_first and statement_index < class_decl.body_first + class_decl.body_count) return true,
+            else => {},
+        };
+        return false;
     }
 
     fn validateTypedArray(self: *Analyzer, module: *const ast.Module, expression_id: ast.ExprId, element_name: []const u8) SemanticError!void {
@@ -134,7 +143,6 @@ pub const Analyzer = struct {
             if (index >= tokens.len or tokens[index].kind != .identifier) continue;
             const name = tokens[index].lexeme;
             self.last_token = tokens[index];
-            for (self.declarations.items) |existing| if (std.mem.eql(u8, existing, name)) return error.DuplicateDeclaration;
             try self.declarations.append(self.allocator, name);
             while (index < tokens.len and tokens[index].kind != .newline) : (index += 1) {
                 if (tokens[index].kind != .colon) continue;

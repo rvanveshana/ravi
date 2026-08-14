@@ -1,5 +1,5 @@
-# Function calls currently execute sequentially. Scheduler and async lowering
-# are runtime foundations, not language-level async syntax yet.
+# Ordinary calls are synchronous. Explicit spawn creates a task and wait joins
+# it without changing the normal direct-call path.
 
 kriya compute(id: int):
     kodu id * 10
@@ -17,6 +17,26 @@ adre alla (res3 == 30):
     yese "third sequential call failed"
 adre alla (res1 + res2 + res3 == 60):
     yese "combining sequential call results failed"
+
+# Synchronous sleep suspends the current OS thread without busy-waiting and
+# preserves normal sequential ordering.
+malagu(1)
+after_sleep = compute(4)
+adre alla (after_sleep == 40):
+    yese "sleep did not preserve sequential execution"
+
+# Explicit concurrency uses task handles. Each task owns its VM stack and
+# frames, while wait provides deterministic result synchronization.
+task1 = horabidu compute(5)
+task2 = horabidu compute(6)
+value1 = kaayu task1
+value2 = kaayu task2
+adre alla (value1 == 50):
+    yese "first spawned task returned the wrong result"
+adre alla (value2 == 60):
+    yese "second spawned task returned the wrong result"
+adre alla (value1 + value2 == 110):
+    yese "spawned task results combined incorrectly"
 
 mudrisu("async_concurrency: PASS")
 

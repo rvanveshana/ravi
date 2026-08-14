@@ -104,6 +104,12 @@ fn parsePrefix(
 ) ParseError!ast.ExprId {
     const token = parser.tokens[parser.index];
     const start = parser.index;
+    if (parser.word("spawn") or parser.word("wait")) {
+        const is_spawn = parser.word("spawn");
+        parser.index += 1;
+        const operand = try parseExpression(parser, module, 0, parseFormattedExpressionFn);
+        return appendExpr(module, .{ .span = .{ .first = start, .last = parser.index, .line = token.line }, .kind = if (is_spawn) .{ .spawn = operand } else .{ .wait = operand } });
+    }
     if (parser.word("function")) return parseLambda(parser, module, start, parseFormattedExpressionFn);
     if (parser.at(.operator) and (std.mem.eql(u8, token.lexeme, "-") or std.mem.eql(u8, token.lexeme, "+"))) {
         parser.index += 1;

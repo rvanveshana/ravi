@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const bytecode = @import("ravi_bytecode");
 const collections = @import("ravi_vm_collections");
 const RuntimeError = @import("errors.zig").RuntimeError;
@@ -22,13 +23,25 @@ const stack_operations = @import("stack_operations.zig");
 const arithmetic_operations = @import("arithmetic_operations.zig");
 const control_flow = @import("control_flow.zig");
 const async_state = @import("ravi_async_state");
-
+fn sleepMilliseconds(milliseconds: u64) RuntimeError!void {
+    if (milliseconds == 0) return;
+    if (comptime builtin.os.tag == .windows) {
+        const ticks = std.math.mul(u64, milliseconds, 10_000) catch return error.IntegerOutOfRange;
+        const interval: std.os.windows.LARGE_INTEGER = -@as(std.os.windows.LARGE_INTEGER, @intCast(ticks));
+        _ = std.os.windows.ntdll.NtDelayExecution(.FALSE, &interval);
+    } else {
+        var remaining = std.posix.timespec{
+            .sec = @intCast(milliseconds / std.time.ms_per_s),
+            .nsec = @intCast((milliseconds % std.time.ms_per_s) * std.time.ns_per_ms),
+        };
+        while (std.posix.nanosleep(&remaining, &remaining) != 0) {}
+    }
+}
 const integer = value_runtime.integer;
 const makeHandle = value_runtime.makeHandle;
 const dictSlot = value_runtime.dictSlot;
 
 pub const ResumableResult = union(enum) { suspended: Value, completed: Value };
-
 pub fn execute(self: anytype, chunk: *const bytecode.Chunk) RuntimeError!Value {
     return switch (try executeInternal(self, chunk, null, 0, null, true)) {
         .completed => |value| value,
@@ -40,7 +53,7 @@ pub fn executeResumable(self: anytype, chunk: *const bytecode.Chunk, machine: *a
     return executeInternal(self, chunk, machine, next_ip.*, next_ip, reset);
 }
 
-fn executeInternal(self: anytype, chunk: *const bytecode.Chunk, machine: ?*async_state.Machine, ip_start: usize, next_ip: ?*usize, reset: bool) RuntimeError!ResumableResult {
+pub fn executeInternal(self: anytype, chunk: *const bytecode.Chunk, machine: ?*async_state.Machine, ip_start: usize, next_ip: ?*usize, reset: bool) RuntimeError!ResumableResult {
     chunk.verify() catch return error.InvalidInstruction;
     if (reset) {
         state_helpers.clearFrames(self);
@@ -62,7 +75,6 @@ fn executeInternal(self: anytype, chunk: *const bytecode.Chunk, machine: ?*async
         self.fault_ip = 0;
     }
     var ip: usize = ip_start;
-
     // Root reconstruction is comparatively expensive. Traced allocation
     // paths perform their own safepoint before allocating, so normal
     // execution only needs periodic polling. Debug sessions retain
@@ -141,6 +153,30 @@ fn executeInternal(self: anytype, chunk: *const bytecode.Chunk, machine: ?*async
                 try state_helpers.push(self, try makeHandle(.closure, slot));
             },
             .box_dynamic, .unbox_integer, .guard_integer => {},
+            .sleep => {
+                if (self.stack_top == 0) return error.StackUnderflow;
+                const duration = self.stack[self.stack_top - 1];
+                if (!duration.isInt() or duration.asInt() < 0) return error.TypeGuardFailed;
+                const milliseconds: u64 = @intCast(duration.asInt());
+                try sleepMilliseconds(milliseconds);
+                self.stack[self.stack_top - 1] = Value.nil();
+            },
+            .spawn => {
+                if (instruction.operand < 0) return error.InvalidInstruction;
+                const arity: usize = @intCast(instruction.operand);
+                if (self.stack_top < arity + 1) return error.StackUnderflow;
+                const callee = self.stack[self.stack_top - arity - 1];
+                if (callee.handleKind() != .function) return error.InvalidFunction;
+                const function_index = callee.handleIndex() orelse return error.InvalidFunction;
+                const future = try self.spawnTask(chunk, function_index, self.stack[self.stack_top - arity .. self.stack_top]);
+                self.stack_top -= arity + 1;
+                try state_helpers.push(self, future);
+            },
+            .wait => {
+                if (self.stack_top == 0) return error.StackUnderflow;
+                const result = try self.waitTask(self.stack[self.stack_top - 1]);
+                self.stack[self.stack_top - 1] = result;
+            },
             .make_array, .make_tuple, .make_set => {
                 try construction.collection(RuntimeError, self, instruction.operand, instruction.op == .make_tuple, instruction.op == .make_set);
             },

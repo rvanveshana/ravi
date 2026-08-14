@@ -25,6 +25,8 @@ pub const keywords = [_]Keyword{
     .{ .spelling = "munde", .canonical = "continue" },
     .{ .spelling = "bidu", .canonical = "pass" },
     .{ .spelling = "kriya", .canonical = "function" },
+    .{ .spelling = "horabidu", .canonical = "spawn" },
+    .{ .spelling = "kaayu", .canonical = "wait" },
     .{ .spelling = "kodu", .canonical = "return" },
     .{ .spelling = "taru", .canonical = "yield" },
     .{ .spelling = "nodu", .canonical = "try" },
@@ -52,17 +54,18 @@ pub const keywords = [_]Keyword{
 };
 
 pub const english_keywords = [_]Keyword{
-    .{ .spelling = "if", .canonical = "if" },             .{ .spelling = "elif", .canonical = "elif" },           .{ .spelling = "else", .canonical = "else" },
-    .{ .spelling = "while", .canonical = "while" },       .{ .spelling = "for", .canonical = "for" },             .{ .spelling = "break", .canonical = "break" },
-    .{ .spelling = "continue", .canonical = "continue" }, .{ .spelling = "pass", .canonical = "pass" },           .{ .spelling = "function", .canonical = "function" },
-    .{ .spelling = "return", .canonical = "return" },     .{ .spelling = "yield", .canonical = "yield" },         .{ .spelling = "try", .canonical = "try" },
-    .{ .spelling = "except", .canonical = "except" },     .{ .spelling = "finally", .canonical = "finally" },     .{ .spelling = "raise", .canonical = "raise" },
-    .{ .spelling = "import", .canonical = "import" },     .{ .spelling = "from", .canonical = "from" },           .{ .spelling = "with", .canonical = "with" },
-    .{ .spelling = "as", .canonical = "as" },             .{ .spelling = "true", .canonical = "true" },           .{ .spelling = "false", .canonical = "false" },
-    .{ .spelling = "none", .canonical = "none" },         .{ .spelling = "and", .canonical = "and" },             .{ .spelling = "or", .canonical = "or" },
-    .{ .spelling = "not", .canonical = "not" },           .{ .spelling = "in", .canonical = "in" },               .{ .spelling = "is", .canonical = "is" },
-    .{ .spelling = "class", .canonical = "class" },       .{ .spelling = "global", .canonical = "global" },       .{ .spelling = "public", .canonical = "public" },
-    .{ .spelling = "private", .canonical = "private" },   .{ .spelling = "protected", .canonical = "protected" }, .{ .spelling = "internal", .canonical = "internal" },
+    .{ .spelling = "if", .canonical = "if" },               .{ .spelling = "elif", .canonical = "elif" },         .{ .spelling = "else", .canonical = "else" },
+    .{ .spelling = "while", .canonical = "while" },         .{ .spelling = "for", .canonical = "for" },           .{ .spelling = "break", .canonical = "break" },
+    .{ .spelling = "continue", .canonical = "continue" },   .{ .spelling = "pass", .canonical = "pass" },         .{ .spelling = "function", .canonical = "function" },
+    .{ .spelling = "spawn", .canonical = "spawn" },         .{ .spelling = "wait", .canonical = "wait" },         .{ .spelling = "return", .canonical = "return" },
+    .{ .spelling = "yield", .canonical = "yield" },         .{ .spelling = "try", .canonical = "try" },           .{ .spelling = "except", .canonical = "except" },
+    .{ .spelling = "finally", .canonical = "finally" },     .{ .spelling = "raise", .canonical = "raise" },       .{ .spelling = "import", .canonical = "import" },
+    .{ .spelling = "from", .canonical = "from" },           .{ .spelling = "with", .canonical = "with" },         .{ .spelling = "as", .canonical = "as" },
+    .{ .spelling = "true", .canonical = "true" },           .{ .spelling = "false", .canonical = "false" },       .{ .spelling = "none", .canonical = "none" },
+    .{ .spelling = "and", .canonical = "and" },             .{ .spelling = "or", .canonical = "or" },             .{ .spelling = "not", .canonical = "not" },
+    .{ .spelling = "in", .canonical = "in" },               .{ .spelling = "is", .canonical = "is" },             .{ .spelling = "class", .canonical = "class" },
+    .{ .spelling = "global", .canonical = "global" },       .{ .spelling = "public", .canonical = "public" },     .{ .spelling = "private", .canonical = "private" },
+    .{ .spelling = "protected", .canonical = "protected" }, .{ .spelling = "internal", .canonical = "internal" },
 };
 
 pub fn keywordCanonical(spelling: []const u8) ?[]const u8 {
