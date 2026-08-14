@@ -151,21 +151,33 @@ pub const Loader = struct {
     fn resolvePath(self: *Loader, importer: []const u8, module_name: []const u8) ![]u8 {
         const separator = std.mem.lastIndexOfAny(u8, importer, "/\\");
         const directory = if (separator) |index| importer[0 .. index + 1] else "";
-        const candidate = try std.fmt.allocPrint(self.allocator, "{s}{s}.rk", .{ directory, module_name });
-        if (self.provider(self.provider_context, self.allocator, candidate)) |source| {
-            self.allocator.free(source);
-            return candidate;
-        } else |_| {
+        const relative_name = try modulePath(self.allocator, module_name);
+        defer self.allocator.free(relative_name);
+        const candidate = try std.fmt.allocPrint(self.allocator, "{s}{s}.rk", .{ directory, relative_name });
+        if (std.mem.eql(u8, candidate, importer)) {
             self.allocator.free(candidate);
-            for (self.search_paths.items) |root| {
-                const package_candidate = try std.fmt.allocPrint(self.allocator, "{s}{s}.rk", .{ root, module_name });
-                if (self.provider(self.provider_context, self.allocator, package_candidate)) |source| {
-                    self.allocator.free(source);
-                    return package_candidate;
-                } else |_| self.allocator.free(package_candidate);
-            }
-            return self.allocator.dupe(u8, module_name);
+        } else {
+            if (self.provider(self.provider_context, self.allocator, candidate)) |source| {
+                self.allocator.free(source);
+                return candidate;
+            } else |_| self.allocator.free(candidate);
         }
+        for (self.search_paths.items) |root| {
+            const package_candidate = try std.fmt.allocPrint(self.allocator, "{s}{s}.rk", .{ root, relative_name });
+            if (self.provider(self.provider_context, self.allocator, package_candidate)) |source| {
+                self.allocator.free(source);
+                return package_candidate;
+            } else |_| self.allocator.free(package_candidate);
+        }
+        return self.allocator.dupe(u8, module_name);
+    }
+
+    fn modulePath(allocator: std.mem.Allocator, module_name: []const u8) ![]u8 {
+        const path = try allocator.dupe(u8, module_name);
+        for (path) |*character| {
+            if (character.* == '.') character.* = std.fs.path.sep;
+        }
+        return path;
     }
 };
 

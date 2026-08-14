@@ -1,0 +1,158 @@
+# ravi.exceptions
+# Public exception facade. Kannada/Kanglish names are the canonical
+# implementations; English names are stable references to those operations.
+# Exception names use PascalCase in both profiles, like MoolaDosha and
+# BaseException. The returned string is the shared exception reference used
+# by Ravi code and by native runtime faults. Numeric identities are private
+# diagnostic metadata.
+
+kriya MoolaDosha():
+    kodu "BaseException"
+kriya BaseException():
+    kodu MoolaDosha()
+
+kriya Dosha():
+    kodu "Exception"
+kriya Exception():
+    kodu Dosha()
+
+kriya ChalaneyaDosha():
+    kodu "RuntimeError"
+kriya RuntimeError():
+    kodu ChalaneyaDosha()
+
+kriya GanitaDosha():
+    kodu "ArithmeticError"
+kriya ArithmeticError():
+    kodu GanitaDosha()
+
+kriya ShunyaBhagaDosha():
+    kodu "ZeroDivisionError"
+kriya ZeroDivisionError():
+    kodu ShunyaBhagaDosha()
+
+kriya ParimanaDosha():
+    kodu "OverflowError"
+kriya OverflowError():
+    kodu ParimanaDosha()
+
+kriya HudukuDosha():
+    kodu "LookupError"
+kriya LookupError():
+    kodu HudukuDosha()
+
+kriya SuchiDosha():
+    kodu "IndexError"
+kriya IndexError():
+    kodu SuchiDosha()
+
+kriya KeyDosha():
+    kodu "KeyError"
+kriya KeyError():
+    kodu KeyDosha()
+
+kriya HesaruDosha():
+    kodu "NameError"
+kriya NameError():
+    kodu HesaruDosha()
+
+kriya BandhavilladaSathaliyaDosha():
+    kodu "UnboundLocalError"
+kriya UnboundLocalError():
+    kodu BandhavilladaSathaliyaDosha()
+
+kriya GunaDosha():
+    kodu "AttributeError"
+kriya AttributeError():
+    kodu GunaDosha()
+
+kriya AmanyaKriyaDosha():
+    kodu "InvalidFunctionError"
+kriya InvalidFunctionError():
+    kodu AmanyaKriyaDosha()
+
+kriya AmanyaNirdeshaDosha():
+    kodu "InvalidInstructionError"
+kriya InvalidInstructionError():
+    kodu AmanyaNirdeshaDosha()
+
+kriya StackDosha():
+    kodu "StackError"
+kriya StackError():
+    kodu StackDosha()
+
+kriya StackKelaginaDosha():
+    kodu "StackUnderflowError"
+kriya StackUnderflowError():
+    kodu StackKelaginaDosha()
+
+kriya StackMelinaDosha():
+    kodu "StackOverflowError"
+kriya StackOverflowError():
+    kodu StackMelinaDosha()
+
+kriya KareyaStackMelinaDosha():
+    kodu "CallStackOverflowError"
+kriya CallStackOverflowError():
+    kodu KareyaStackMelinaDosha()
+
+kriya AmanyaSthaliyaDosha():
+    kodu "InvalidLocalError"
+kriya InvalidLocalError():
+    kodu AmanyaSthaliyaDosha()
+
+kriya AmanyaJumpsDosha():
+    kodu "InvalidJumpError"
+kriya InvalidJumpError():
+    kodu AmanyaJumpsDosha()
+
+kriya SangrahaDosha():
+    kodu "CollectionError"
+kriya CollectionError():
+    kodu SangrahaDosha()
+
+kriya SangrahaThumbidaDosha():
+    kodu "CollectionFullError"
+kriya CollectionFullError():
+    kodu SangrahaThumbidaDosha()
+
+kriya StringHecchuDoddaDosha():
+    kodu "StringTooLongError"
+kriya StringTooLongError():
+    kodu StringHecchuDoddaDosha()
+
+kriya MemoryDosha():
+    kodu "MemoryError"
+kriya MemoryError():
+    kodu MemoryDosha()
+
+kriya MemorySakuIllaDosha():
+    kodu "OutOfMemoryError"
+kriya OutOfMemoryError():
+    kodu MemorySakuIllaDosha()
+
+kriya DebugNillisidaDosha():
+    kodu "DebuggerPausedError"
+kriya DebuggerPausedError():
+    kodu DebugNillisidaDosha()
+
+kriya YeseDosha():
+    kodu "RaisedExceptionError"
+kriya RaisedExceptionError():
+    kodu YeseDosha()
+
+# Common application-facing names use the same public exception contract.
+kriya MulyamanaDosha():
+    kodu "ValueError"
+kriya ValueError():
+    kodu MulyamanaDosha()
+
+kriya PrakaraDosha():
+    kodu "TypeError"
+kriya TypeError():
+    kodu PrakaraDosha()
+
+kriya ParikshaneDosha():
+    kodu "ValidationError"
+kriya ValidationError():
+    kodu ParikshaneDosha()

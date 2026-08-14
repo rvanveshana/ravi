@@ -149,6 +149,9 @@ pub fn lowerFunction(allocator: std.mem.Allocator, module: *const ast.Module, de
         .control => |control| try lowerControl(allocator, &source, module, declaration, control, names, local_names.items, capture_names),
         else => return error.UnsupportedExpression,
     }
+    if (source.instructions.items.len != 0 and source.blocks.items.len == 0) {
+        try source.setBlocks(&.{.{ .first_instruction = 0, .instruction_count = source.instructions.items.len }});
+    }
     var result = try mir.Function.lower(allocator, &source);
     errdefer result.deinit();
     _ = try result.foldConstants();

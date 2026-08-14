@@ -1,0 +1,28 @@
+# ravi.kirana
+# Kirana is Ravi's planned UI library. This file is a blueprint, not a
+# working windowing toolkit. Native rendering and event-loop contracts come
+# later without changing these public names.
+
+kriya app(title):
+    bidu
+
+kriya aaptha(title):
+    kodu app(title)
+
+kriya window(title, width, height):
+    bidu
+
+kriya kitaki(title, width, height):
+    kodu window(title, width, height)
+
+kriya button(label):
+    bidu
+
+kriya gundhi(label):
+    kodu button(label)
+
+kriya run():
+    bidu
+
+kriya nadesu():
+    kodu run()

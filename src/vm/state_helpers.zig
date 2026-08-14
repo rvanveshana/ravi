@@ -21,8 +21,13 @@ pub fn ensureCallCapacity(self: anytype) !void {
 }
 
 pub fn handleFault(self: anytype, ip: *usize) bool {
+    return handleFaultWithError(self, ip, error.RaisedException);
+}
+
+pub fn handleFaultWithError(self: anytype, ip: *usize, err: anyerror) bool {
     if (!self.handler_active) return false;
-    self.last_exception = @import("ravi_vm_value").Value.fromInt(1);
+    const name = errors.publicExceptionName(err) orelse return false;
+    self.last_exception = internString(self, name) catch return false;
     self.handler_active = false;
     self.stack_top = self.handler_stack_top;
     push(self, self.last_exception) catch return false;

@@ -63,8 +63,51 @@ kone:
 
 ## Runtime failures
 
-The VM reports faults such as division by zero, invalid indexes, missing keys, failed type guards, and invalid calls as structured Ravi runtime diagnostics. An active handler can recover from supported VM faults. Unhandled faults include a Ravi-level function trace.
+The single public exception facade is available from the standard library:
+
+```ravi
+exceptions inda RuntimeError, IndexError, KeyError tago
+```
+
+The facade includes base names (`BaseException`, `Exception`), arithmetic,
+lookup, type, name, collection, stack, memory, instruction, debugger, and
+application errors. These names are the stable Ravi-facing API; Zig VM error
+names are implementation details. The current constructors return stable
+numeric identities internally for compatibility. Application code should keep
+constructor references and raise their returned exception references, for example `yese exception_callback()`. A built-in reference is the canonical public exception name (such as `"ZeroDivisionError"`), and native VM faults produce that same reference, so `tappu exception` receives one consistent value regardless of where the fault originated. It must not depend on numeric identities. The
+authoritative native code, public name, and default diagnostic message are
+defined in `src/vm/exception_constants.zig`. Unhandled native faults are
+reported as `Name (code): message`, for example
+`ZeroDivisionError (511): division by zero`; the code is diagnostic metadata,
+not the value application code should raise.
+
+The VM reports these built-in runtime faults as structured Ravi diagnostics:
+
+| Runtime fault | Meaning |
+| --- | --- |
+| `DivisionByZero` | An integer or floating-point division used zero as its divisor. |
+| `InvalidIndex` | A collection index was outside the valid range. |
+| `MissingKey` | A dictionary lookup requested a key that is not present. |
+| `TypeGuardFailed` | An operation received a value of the wrong type. |
+| `IntegerOutOfRange` | An integer exceeded Ravi's supported representation. |
+| `InvalidFunction` | A call target was not callable or its call metadata was invalid. |
+| `InvalidInstruction` | The VM rejected malformed or unsupported bytecode. |
+| `RaisedException` | A raised value escaped without a matching handler. |
+
+Unhandled faults include the source file, line, column, a highlighted source
+line, an actionable message, and a Ravi-level function trace when available.
+Use `--diagnostic-format json` when an editor or tool needs machine-readable
+positions.
 
 ## Current limitations
 
-Literal exception matching and payload binding are implemented. Exception class/type matching, complete VM-wide cleanup guarantees, and a large standard exception hierarchy remain planned. Do not assume Python exception classes or `finally` behavior for every future VM fault until the corresponding feature is marked complete in `progress.md`.
+Literal exception matching and payload binding are implemented. Python-style
+named built-in exception classes, `except SomeError as value` syntax, and
+user-defined exception classes are not implemented yet. At present, a
+programmer can create distinct structured payloads such as
+`{"name": "PaymentDeclined", "message": "card was declined"}`
+and bind them in `tappu error`; class/type matching and inheritance for
+custom exceptions remain planned. Complete VM-wide cleanup guarantees and a
+large standard exception hierarchy also remain planned. Do not assume Python
+exception classes or `finally` behavior for every future VM fault until the
+corresponding feature is marked complete in `progress.md`.

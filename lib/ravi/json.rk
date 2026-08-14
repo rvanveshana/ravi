@@ -1,0 +1,15 @@
+# ravi.json
+# Blueprint only. Native JSON parsing/encoding is not implemented yet.
+# Keep this facade stable while decoder/encoder/errors become submodules.
+
+kriya parse(text):
+    bidu
+
+kriya parsu(text):
+    kodu parse(text)
+
+kriya encode(value):
+    bidu
+
+kriya rupisu(value):
+    kodu encode(value)

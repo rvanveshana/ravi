@@ -71,6 +71,7 @@ pub const Module = struct {
     call_args: std.ArrayListUnmanaged(ExprId) = .empty,
     call_keywords: std.ArrayListUnmanaged([]const u8) = .empty,
     import_names: std.ArrayListUnmanaged([]const u8) = .empty,
+    import_modules: std.ArrayListUnmanaged([]u8) = .empty,
     decorators: std.ArrayListUnmanaged(Decorator) = .empty,
     docstring: ?[]const u8 = null,
     diagnostics: std.ArrayListUnmanaged(ParseDiagnostic) = .empty,
@@ -83,6 +84,8 @@ pub const Module = struct {
         self.call_args.deinit(self.allocator);
         self.call_keywords.deinit(self.allocator);
         self.import_names.deinit(self.allocator);
+        for (self.import_modules.items) |name| self.allocator.free(name);
+        self.import_modules.deinit(self.allocator);
         self.decorators.deinit(self.allocator);
         self.diagnostics.deinit(self.allocator);
     }

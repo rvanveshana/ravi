@@ -1,0 +1,29 @@
+# ravi.math
+# English names and Kanglish aliases share the same source implementation.
+
+kriya add(left, right):
+    kodu left + right
+
+kriya serisu(left, right):
+    kodu add(left, right)
+
+kriya subtract(left, right):
+    kodu left - right
+
+kriya kadime(left, right):
+    kodu subtract(left, right)
+
+kriya multiply(left, right):
+    kodu left * right
+
+kriya gunisu(left, right):
+    kodu multiply(left, right)
+
+kriya divide(left, right):
+    kodu left / right
+
+kriya bhagisu(left, right):
+    kodu divide(left, right)
+
+kriya answer():
+    kodu 41

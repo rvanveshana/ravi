@@ -98,6 +98,7 @@ pub fn executeInternal(self: anytype, chunk: *const bytecode.Chunk, machine: ?*a
         self.fault_ip = ip;
         if (self.trace_count > 0) self.trace[self.trace_count - 1].instruction = ip;
         const instruction = chunk.code.items[ip];
+        const instruction_result: RuntimeError!void = blk: {
         switch (instruction.op) {
             .halt => {
                 const value = if (self.stack_top == 0) Value.nil() else self.stack[self.stack_top - 1];
@@ -273,6 +274,9 @@ pub fn executeInternal(self: anytype, chunk: *const bytecode.Chunk, machine: ?*a
                 }
             },
         }
+        break :blk {};
+        };
+        instruction_result catch |err| if (!state_helpers.handleFaultWithError(self, &ip, err)) return err;
     }
 
     const value = if (self.stack_top == 0) Value.nil() else self.stack[self.stack_top - 1];
@@ -292,9 +296,9 @@ const CallKind = enum { call, call_method, call_super, call_value };
 fn doCall(self: anytype, kind: CallKind, chunk: *const bytecode.Chunk, operand: i64, ip: *usize) RuntimeError!void {
     try state_helpers.ensureCallCapacity(self);
     switch (kind) {
-        .call => call_runtime.call(self, chunk, operand, ip) catch |err| if (!state_helpers.handleFault(self, ip)) return err,
-        .call_method => call_runtime.callMethod(self, chunk, operand, ip) catch |err| if (!state_helpers.handleFault(self, ip)) return err,
-        .call_super => call_runtime.callSuper(self, chunk, operand, ip) catch |err| if (!state_helpers.handleFault(self, ip)) return err,
-        .call_value => call_runtime.callValue(self, chunk, operand, ip) catch |err| if (!state_helpers.handleFault(self, ip)) return err,
+        .call => call_runtime.call(self, chunk, operand, ip) catch |err| if (!state_helpers.handleFaultWithError(self, ip, err)) return err,
+        .call_method => call_runtime.callMethod(self, chunk, operand, ip) catch |err| if (!state_helpers.handleFaultWithError(self, ip, err)) return err,
+        .call_super => call_runtime.callSuper(self, chunk, operand, ip) catch |err| if (!state_helpers.handleFaultWithError(self, ip, err)) return err,
+        .call_value => call_runtime.callValue(self, chunk, operand, ip) catch |err| if (!state_helpers.handleFaultWithError(self, ip, err)) return err,
     }
 }

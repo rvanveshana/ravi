@@ -78,8 +78,29 @@ fn parseClass(
 }
 
 fn parseImport(parser: anytype, module: *ast.Module, out: *std.ArrayListUnmanaged(ast.Stmt), start: usize) ParseError!void {
-    const module_name = parser.tokens[parser.index].lexeme;
+    if (!parser.at(.identifier)) return error.InvalidImportOrder;
+    const module_start = parser.index;
     parser.index += 1;
+    while (parser.at(.dot)) {
+        parser.index += 1;
+        if (!parser.at(.identifier)) return error.InvalidImportOrder;
+        parser.index += 1;
+    }
+    const module_name = try parser.allocator.dupe(u8, parser.tokens[module_start].lexeme);
+    defer parser.allocator.free(module_name);
+    var module_path = std.ArrayListUnmanaged(u8).empty;
+    defer module_path.deinit(parser.allocator);
+    try module_path.appendSlice(parser.allocator, parser.tokens[module_start].lexeme);
+    var module_token = module_start + 1;
+    while (module_token < parser.index) : (module_token += 1) {
+        if (parser.tokens[module_token].kind == .identifier) {
+            try module_path.append(parser.allocator, '.');
+            try module_path.appendSlice(parser.allocator, parser.tokens[module_token].lexeme);
+        }
+    }
+    const owned_module = try module_path.toOwnedSlice(parser.allocator);
+    try module.import_modules.append(parser.allocator, owned_module);
+    const stored_module = module.import_modules.items[module.import_modules.items.len - 1];
     if (!parser.word("from")) return error.InvalidImportOrder;
     parser.index += 1;
     const first = module.import_names.items.len;
@@ -91,7 +112,7 @@ fn parseImport(parser: anytype, module: *ast.Module, out: *std.ArrayListUnmanage
     if (module.import_names.items.len == first or !parser.word("import")) return error.InvalidImportOrder;
     parser.index += 1;
     if (parser.at(.newline)) parser.index += 1;
-    try out.append(parser.allocator, .{ .span = .{ .first = start, .last = parser.index, .line = parser.tokens[start].line }, .kind = .{ .import = .{ .module = module_name, .names_first = first, .names_count = module.import_names.items.len - first } } });
+    try out.append(parser.allocator, .{ .span = .{ .first = start, .last = parser.index, .line = parser.tokens[start].line }, .kind = .{ .import = .{ .module = stored_module, .names_first = first, .names_count = module.import_names.items.len - first } } });
 }
 
 fn parseFunction(
@@ -252,5 +273,10 @@ fn isControl(parser: anytype) bool {
 }
 
 fn isImportStart(parser: anytype) bool {
-    return parser.at(.identifier) and parser.index + 1 < parser.tokens.len and config.keywordCanonicalFor(parser.language, parser.tokens[parser.index + 1].lexeme) != null and std.mem.eql(u8, config.keywordCanonicalFor(parser.language, parser.tokens[parser.index + 1].lexeme).?, "from");
+    if (!parser.at(.identifier)) return false;
+    var index = parser.index + 1;
+    while (index + 1 < parser.tokens.len and parser.tokens[index].kind == .dot and parser.tokens[index + 1].kind == .identifier) index += 2;
+    if (index >= parser.tokens.len) return false;
+    const canonical = config.keywordCanonicalFor(parser.language, parser.tokens[index].lexeme) orelse return false;
+    return std.mem.eql(u8, canonical, "from");
 }

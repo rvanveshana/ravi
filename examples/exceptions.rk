@@ -1,37 +1,49 @@
-# Explicit exception flow: nodu (try), tappu (except), kone (finally).
-# `kone` always runs, whether or not an exception was raised.
-result = 0
-finally_ran = alla true
-nodu:
-    yese 7
-tappu:
-    result = 9
-kone:
-    finally_ran = true
-adre alla (result == 9):
-    yese "except handler did not run"
-adre alla finally_ran:
-    yese "finally block did not run after except"
+# Exception callback conformance example.
+# Each callback raises one public exception value. The inner handler catches
+# that value; the outer handler catches unexpected failures in the test.
+ravi.exceptions inda BaseException, Exception, RuntimeError, ArithmeticError, ZeroDivisionError, OverflowError, LookupError, IndexError, KeyError, NameError, UnboundLocalError, AttributeError, InvalidFunctionError, InvalidInstructionError, StackError, StackUnderflowError, StackOverflowError, CallStackOverflowError, InvalidLocalError, InvalidJumpError, CollectionError, CollectionFullError, StringTooLongError, MemoryError, OutOfMemoryError, DebuggerPausedError, RaisedExceptionError, ValueError, TypeError, ValidationError tago
 
-# A nested try/except: the inner handler catches its own exception, so the
-# outer handler never fires, but the outer `kone` still runs.
-inner_result = 0
-outer_result = 0
-outer_finally_ran = alla true
+# Exception constructors are first-class function values. Keep the imported
+# constructors themselves in the callback list and invoke each one later.
+exception_callbacks = [BaseException, Exception, RuntimeError, ArithmeticError, ZeroDivisionError, OverflowError, LookupError, IndexError, KeyError, NameError, UnboundLocalError, AttributeError, InvalidFunctionError, InvalidInstructionError, StackError, StackUnderflowError, StackOverflowError, CallStackOverflowError, InvalidLocalError, InvalidJumpError, CollectionError, CollectionFullError, StringTooLongError, MemoryError, OutOfMemoryError, DebuggerPausedError, RaisedExceptionError, ValueError, TypeError, ValidationError]
+
+callback_count = 0
+unexpected_exception = false
 nodu:
-    nodu:
-        yese 42
-    tappu:
-        inner_result = 100
+    prati exception_callback alli exception_callbacks:
+        nodu:
+            yese exception_callback()
+        tappu exception:
+            callback_count = callback_count + 1
+            bidu
 tappu:
-    outer_result = 1
-kone:
-    outer_finally_ran = true
-adre alla (inner_result == 100):
-    yese "inner except handler failed"
-adre alla (outer_result == 0):
-    yese "outer except handler should not have run"
-adre alla outer_finally_ran:
-    yese "outer finally block did not run"
+    unexpected_exception = true
+    bidu
+
+adre alla (callback_count == 30):
+    yese "not every exception callback was handled"
+adre unexpected_exception:
+    yese "an exception escaped the callback handler"
+
+# Custom exceptions use their own name and message instead of a built-in code.
+custom_exception = {"name": "PaymentDeclined", "message": "card was declined"}
+custom_message = ""
+nodu:
+    yese custom_exception
+tappu exception:
+    custom_message = exception["message"]
+    bidu
+adre alla (custom_message == "card was declined"):
+    yese "custom exception message was not preserved"
+
+# A real VM fault also enters the exception handler path.
+division_caught = false
+nodu:
+    5 / 0
+tappu exception:
+    division_caught = true
+    bidu
+adre alla division_caught:
+    yese "real division-by-zero exception was not caught"
 
 mudrisu("exceptions: PASS")

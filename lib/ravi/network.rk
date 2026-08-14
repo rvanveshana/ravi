@@ -1,0 +1,21 @@
+# ravi.network
+# Blueprint only. Socket, DNS, HTTP, TLS, and cancellation are not
+# implemented yet. These names define the future public boundary.
+
+kriya connect(address):
+    bidu
+
+kriya samparkisu(address):
+    kodu connect(address)
+
+kriya request(method, url):
+    bidu
+
+kriya vinanti(method, url):
+    kodu request(method, url)
+
+kriya listen(address):
+    bidu
+
+kriya kelisu(address):
+    kodu listen(address)

@@ -147,6 +147,11 @@ test "parsed AST lambdas produce callable function values" {
     try std.testing.expectEqual(@as(i64, 10), try vm.run(&chunk));
 }
 
+test "multiple callback function bodies verify from independent stack depths" {
+    const source = "kriya first():\n    yese 1\nkriya second():\n    yese 2\ncallbacks = [first, second]\ncallbacks[0]()\n";
+    try std.testing.expectError(error.RaisedException, runAst(source, .kn));
+}
+
 test "parsed AST lowers profile print builtins" {
     const source = "mudrisu(2 + 3)\n";
     try std.testing.expectEqual(@as(i64, 0), try runAst(source, .kn));
@@ -331,6 +336,11 @@ test "parsed AST explicit raise payloads recover through except" {
     var vm = try vm_mod.Vm.init(std.testing.allocator);
     defer vm.deinit();
     try std.testing.expectEqual(@as(i64, 9), try vm.run(&chunk));
+}
+
+test "native faults use the same exception reference as Ravi constructors" {
+    const source = "caught = false\nnodu:\n    5 / 0\ntappu exception:\n    caught = (exception == \"ZeroDivisionError\")\nvalue = 1 if caught else 0\nvalue\n";
+    try std.testing.expectEqual(@as(i64, 1), try runAst(source, .kn));
 }
 
 test "parsed AST for loops iterate arrays" {

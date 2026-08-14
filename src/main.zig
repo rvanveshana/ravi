@@ -5,8 +5,10 @@ const Parser = @import("ravi_parser").Parser;
 const Analyzer = @import("semantic/analyzer.zig").Analyzer;
 const gc = @import("ravi_gc");
 const hir_pipeline = @import("ravi_hir_pipeline");
+const hir_compatibility = @import("ravi_hir_compatibility");
 const bytecode = @import("ravi_bytecode");
 const Vm = @import("ravi_vm").Vm;
+const exception_diagnostics = @import("vm/exception_diagnostics.zig");
 const Backend = @import("ravi_backend").Backend;
 const Optimizer = @import("ravi_optimizer").Optimizer;
 const debug_mod = @import("ravi_debug");
@@ -14,12 +16,11 @@ const Debugger = debug_mod.Debugger;
 const Scheduler = @import("ravi_scheduler").Scheduler;
 const SyntaxTree = @import("ravi_syntax").SyntaxTree;
 const SourceManager = @import("ravi_source").Manager;
-const diagnostics = @import("ravi_diagnostics");
+const cli_diagnostics = @import("diagnostics/cli.zig");
 const formatter = @import("ravi_formatter");
 const ModuleLoader = @import("ravi_loader").Loader;
 const config = @import("ravi_config");
 const version = "0.1.0-dev";
-const DiagnosticFormat = enum { human, compact, json };
 const sample =
     "math inda add tago\n" ++
     "kriya calculate(a: int, b: int):\n" ++
@@ -49,7 +50,7 @@ pub fn main(init: std.process.Init) !void {
     var mode: []const u8 = "check";
     var path: ?[]const u8 = null;
     var language_override: ?config.SourceLanguage = null;
-    var diagnostic_format: DiagnosticFormat = .human;
+    var diagnostic_format: cli_diagnostics.DiagnosticFormat = .human;
     if (std.mem.eql(u8, first_arg, "check") or std.mem.eql(u8, first_arg, "run") or std.mem.eql(u8, first_arg, "trace") or std.mem.eql(u8, first_arg, "tokens") or std.mem.eql(u8, first_arg, "bytecode") or std.mem.eql(u8, first_arg, "fmt") or std.mem.eql(u8, first_arg, "fmt-check")) {
         mode = first_arg;
     } else if (std.mem.eql(u8, first_arg, "--lang")) {
@@ -80,7 +81,7 @@ pub fn main(init: std.process.Init) !void {
                 std.debug.print("missing value after --diagnostic-format\n", .{});
                 std.process.exit(2);
             };
-            diagnostic_format = std.meta.stringToEnum(DiagnosticFormat, name) orelse {
+            diagnostic_format = std.meta.stringToEnum(cli_diagnostics.DiagnosticFormat, name) orelse {
                 std.debug.print("unknown diagnostic format: {s}\n", .{name});
                 std.process.exit(2);
             };
@@ -111,7 +112,7 @@ pub fn main(init: std.process.Init) !void {
     var lexer = try Lexer.initWithLanguage(collector.allocator(), source, language);
     defer lexer.deinit();
     const tokens = lexer.tokenize() catch |err| {
-        printDiagnostic(collector.allocator(), diagnostic_format, managed_source.name, source, "RAVI-LEX-001", @errorName(err), .{ .start_offset = lexer.error_offset, .end_offset = @min(lexer.error_offset + 1, source.len), .line = lexer.error_line, .column = lexer.error_column });
+        cli_diagnostics.print(collector.allocator(), diagnostic_format, managed_source.name, source, "RAVI-LEX-001", @errorName(err), .{ .start_offset = lexer.error_offset, .end_offset = @min(lexer.error_offset + 1, source.len), .line = lexer.error_line, .column = lexer.error_column });
         std.process.exit(1);
     };
     if (std.mem.eql(u8, mode, "tokens")) {
@@ -121,25 +122,25 @@ pub fn main(init: std.process.Init) !void {
     var parser = Parser.initWithLanguage(collector.allocator(), tokens, language);
     var module = parser.parseRecovering() catch |err| {
         const error_token = tokens[@min(parser.index, tokens.len - 1)];
-        printDiagnostic(collector.allocator(), diagnostic_format, managed_source.name, source, "RAVI-PARSE-001", @errorName(err), tokenLocation(error_token));
+        cli_diagnostics.print(collector.allocator(), diagnostic_format, managed_source.name, source, "RAVI-PARSE-001", @errorName(err), cli_diagnostics.tokenLocation(error_token));
         std.process.exit(1);
     };
     defer module.deinit();
     if (module.diagnostics.items.len != 0) {
         for (module.diagnostics.items) |diagnostic| {
             const token = if (diagnostic.span.first < tokens.len) tokens[diagnostic.span.first] else tokens[tokens.len - 1];
-            printDiagnostic(collector.allocator(), diagnostic_format, managed_source.name, source, "RAVI-PARSE-002", diagnostic.message, tokenLocation(token));
+            cli_diagnostics.print(collector.allocator(), diagnostic_format, managed_source.name, source, "RAVI-PARSE-002", diagnostic.message, cli_diagnostics.tokenLocation(token));
         }
         std.process.exit(1);
     }
     var analyzer = Analyzer.init(collector.allocator());
     defer analyzer.deinit();
     analyzer.analyzeWithLanguage(tokens, language) catch |err| {
-        printDiagnostic(collector.allocator(), diagnostic_format, managed_source.name, source, "RAVI-SEM-001", @errorName(err), tokenLocation(analyzer.last_token orelse tokens[0]));
+        cli_diagnostics.print(collector.allocator(), diagnostic_format, managed_source.name, source, "RAVI-SEM-001", @errorName(err), cli_diagnostics.tokenLocation(analyzer.last_token orelse tokens[0]));
         std.process.exit(1);
     };
     analyzer.analyzeModule(&module) catch |err| {
-        printDiagnostic(collector.allocator(), diagnostic_format, managed_source.name, source, "RAVI-SEM-002", @errorName(err), tokenLocation(tokens[0]));
+        cli_diagnostics.print(collector.allocator(), diagnostic_format, managed_source.name, source, "RAVI-SEM-002", @errorName(err), cli_diagnostics.tokenLocation(tokens[0]));
         std.process.exit(1);
     };
     if (std.mem.eql(u8, mode, "run") or std.mem.eql(u8, mode, "trace") or std.mem.eql(u8, mode, "bytecode")) {
@@ -153,7 +154,8 @@ pub fn main(init: std.process.Init) !void {
         };
         var chunk: bytecode.Chunk = undefined;
         chunk = hir_pipeline.lower(collector.allocator(), &module) catch |err| {
-            printDiagnostic(collector.allocator(), diagnostic_format, managed_source.name, source, "RAVI-HIR-001", @errorName(err), .{ .start_offset = 0, .end_offset = source.len, .line = 1, .column = 1 });
+            const location = cli_diagnostics.moduleErrorLocation(&module, source);
+            cli_diagnostics.print(collector.allocator(), diagnostic_format, managed_source.name, source, "RAVI-HIR-001", cli_diagnostics.compilerErrorMessage(err), location);
             std.process.exit(1);
         };
         defer chunk.deinit();
@@ -171,7 +173,9 @@ pub fn main(init: std.process.Init) !void {
         defer vm.deinit();
         const result = vm.run(&chunk) catch |err| {
             const location: @import("ravi_bytecode").SourceLocation = if (vm.fault_ip < chunk.source_map.items.len) chunk.source_map.items[vm.fault_ip] else .{ .start_offset = 0, .end_offset = 0, .line = 1, .column = 1 };
-            printDiagnostic(collector.allocator(), diagnostic_format, managed_source.name, source, "RAVI-RUNTIME-001", @errorName(err), location);
+            var exception_message_buffer: [256]u8 = undefined;
+            cli_diagnostics.print(collector.allocator(), diagnostic_format, managed_source.name, source, "RAVI-RUNTIME-001", exception_diagnostics.formatMessage(&exception_message_buffer, err), location);
+            if (err == error.RaisedException) exception_diagnostics.printRaised(vm, vm.last_exception);
             var frame_index = vm.trace_count;
             while (frame_index > 0) {
                 frame_index -= 1;
@@ -192,7 +196,6 @@ pub fn main(init: std.process.Init) !void {
     var syntax = try SyntaxTree.fromTokens(collector.allocator(), source, tokens);
     defer syntax.deinit();
 }
-
 fn runWithImports(allocator: std.mem.Allocator, io: std.Io, root_path: []const u8) !void {
     const Context = struct { io: std.Io };
     var context = Context{ .io = io };
@@ -228,14 +231,13 @@ fn runWithImports(allocator: std.mem.Allocator, io: std.Io, root_path: []const u
     defer analyzer.deinit();
     try analyzer.analyzeWithLanguage(tokens, root_language);
     try analyzer.analyzeModule(&module);
-    var chunk = try hir_pipeline.lower(allocator, &module);
+    var chunk = try hir_compatibility.lower(allocator, &module);
     defer chunk.deinit();
     _ = Optimizer.optimize(&chunk);
     var vm = try Vm.init(allocator);
     defer vm.deinit();
     _ = try vm.run(&chunk);
 }
-
 fn printHelp() void {
     std.debug.print(
         \\Ravi programming language
@@ -258,32 +260,4 @@ fn printHelp() void {
         \\  -V, --version Show the compiler version
         \\
     , .{});
-}
-
-fn tokenLocation(token: @import("ravi_lexer").Token) @import("ravi_bytecode").SourceLocation {
-    return .{ .start_offset = token.start_offset, .end_offset = token.end_offset, .line = token.line, .column = token.column };
-}
-
-fn printDiagnostic(allocator: std.mem.Allocator, format: DiagnosticFormat, source_name: []const u8, source: []const u8, code: []const u8, message: []const u8, location: @import("ravi_bytecode").SourceLocation) void {
-    const diagnostic = diagnostics.Diagnostic{
-        .code = code,
-        .severity = .err,
-        .message = message,
-        .primary = .{
-            .start_offset = location.start_offset,
-            .end_offset = location.end_offset,
-            .line = if (location.line == 0) 1 else location.line,
-            .column = if (location.column == 0) 1 else location.column,
-        },
-    };
-    const rendered = switch (format) {
-        .human => diagnostics.renderHuman(allocator, source_name, source, diagnostic),
-        .compact => diagnostics.renderCompact(allocator, source_name, diagnostic),
-        .json => diagnostics.renderJson(allocator, source_name, diagnostic),
-    } catch {
-        std.debug.print("{s}[{s}]: {s}\n", .{ diagnostics.severityName(.err), code, message });
-        return;
-    };
-    defer allocator.free(rendered);
-    std.debug.print("{s}", .{rendered});
 }

@@ -169,6 +169,7 @@ ravi/
 - [Architecture](docs/architecture.md)
 - [Development Plan](docs/development-plan.md)
 - [Verified Progress](progress.md)
+- [Standard Library Architecture](lib/README.md)
 
 ## Development Notes
 

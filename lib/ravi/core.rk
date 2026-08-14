@@ -1,0 +1,14 @@
+# ravi.core
+# Shared standard-library contracts. Keep this module profile-independent.
+
+kriya identity(value):
+    kodu value
+
+kriya gurutisu(value):
+    kodu identity(value)
+
+kriya is_none(value):
+    kodu value ide none
+
+kriya illa_moulya(value):
+    kodu is_none(value)

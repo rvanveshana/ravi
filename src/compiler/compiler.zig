@@ -234,11 +234,19 @@ pub const Compiler = struct {
                         const slot = try helpers.localSlot(names, self.allocator, binding);
                         try chunk.emit(.{ .op = .store_local, .operand = @intCast(slot) });
                     }
-                    if (try_stmt.except_binding != null or try_stmt.except_match != null) try chunk.emit(.{ .op = .pop });
-                    if (try_stmt.except_count != 0) try self.compileAstStatements(chunk, module, try_stmt.except_first, try_stmt.except_count, names, true, loops, break_targets) else try chunk.emit(.{ .op = .raise_value });
+                    if (try_stmt.except_count != 0) {
+                        if (try_stmt.except_binding != null or try_stmt.except_match != null) {
+                            try chunk.emit(.{ .op = .pop });
+                        } else {
+                            try chunk.emit(.{ .op = .pop });
+                        }
+                        try self.compileAstStatements(chunk, module, try_stmt.except_first, try_stmt.except_count, names, true, loops, break_targets);
+                    } else {
+                        try chunk.emit(.{ .op = .raise_value });
+                    }
                     if (try_stmt.finally_count != 0) try self.compileAstStatements(chunk, module, try_stmt.finally_first, try_stmt.finally_count, names, true, loops, break_targets);
                     if (no_match) |match_jump| {
-                        chunk.code.items[match_jump].operand = @intCast(chunk.code.items.len);
+                        chunk.code.items[match_jump].operand = @intCast(chunk.code.items.len + 1);
                         try chunk.emit(.{ .op = .raise_value });
                     }
                     chunk.code.items[skip_handler].operand = @intCast(chunk.code.items.len);

@@ -46,3 +46,12 @@ A standard module should:
 4. work from both Kannada/Kanglish and English callers;
 5. avoid hidden global state;
 6. have unit, integration, negative, and resource-limit tests.
+
+## Naming standard
+
+English names are the stable public references. Kannada/Kanglish names are
+the canonical implementations, and English names delegate to them. Exception
+and type names use PascalCase in both profiles: `BaseException` maps to
+`MoolaDosha`, `ZeroDivisionError` maps to `ShunyaBhagaDosha`, and
+`ValidationError` maps to `ParikshaneDosha`. The underscore form
+`moola_dosha` is not part of the standard API.

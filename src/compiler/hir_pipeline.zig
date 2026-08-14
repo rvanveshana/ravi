@@ -21,6 +21,7 @@ pub fn supports(module: *const ast.Module) bool {
     ast_helpers.collectFunctionCaptures(module.allocator, module, function_statements.items, &function_captures) catch return false;
     var function_index: usize = 0;
     for (module.statements.items) |statement| switch (statement.kind) {
+        .import => return false,
         .function => |function| {
             if (function.body_first > module.statements.items.len or function.body_count > module.statements.items.len - function.body_first) return false;
             if (function.params_first > module.parameters.items.len or function.params_count > module.parameters.items.len - function.params_first) return false;
@@ -151,6 +152,7 @@ pub fn lower(allocator: std.mem.Allocator, module: *const ast.Module) !bytecode.
     const expression_id = final_expression orelse return error.UnsupportedExpression;
     const result = try lowering.lowerExpressionWithLocals(allocator, &main_source, module, expression_id, &.{}, top_level_locals.items, &.{});
     try main_source.appendEffect(.{ .return_value = result }, module.expressions.items[@as(usize, expression_id)].span.line);
+        if (main_source.blocks.items.len == 0) try main_source.setBlocks(&.{.{ .first_instruction = 0, .instruction_count = main_source.instructions.items.len }});
     var main = try mir.Function.lower(allocator, &main_source);
     defer main.deinit();
     var classes: std.ArrayListUnmanaged(bytecode.ClassInfo) = .empty;

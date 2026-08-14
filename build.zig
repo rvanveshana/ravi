@@ -186,6 +186,7 @@ pub fn build(b: *std.Build) void {
     root_module.addImport("ravi_gc", gc_module);
     root_module.addImport("ravi_lexer", lexer_module);
     root_module.addImport("ravi_hir_pipeline", hir_pipeline_module);
+    root_module.addImport("ravi_hir_compatibility", hir_compatibility_module);
     root_module.addImport("ravi_backend", backend_module);
     root_module.addImport("ravi_optimizer", optimizer_module);
     root_module.addImport("ravi_debug", debug_module);
