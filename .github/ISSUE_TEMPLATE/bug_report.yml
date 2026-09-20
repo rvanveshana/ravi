@@ -1,0 +1,63 @@
+name: Bug report
+description: Report reproducible incorrect behavior in Ravi Kannada
+title: "[Bug]: "
+labels: [bug, triage]
+body:
+  - type: markdown
+    attributes:
+      value: Thanks for helping improve Ravi Kannada. Please provide a minimal reproduction.
+  - type: textarea
+    id: summary
+    attributes:
+      label: What happened?
+      description: Describe the actual behavior and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: Include the smallest .rk program and the exact command you ran.
+      render: ravi
+    validations:
+      required: true
+  - type: dropdown
+    id: profile
+    attributes:
+      label: Source profile
+      options:
+        - Kannada/Kanglish (default)
+        - English
+        - Both
+        - Not applicable
+    validations:
+      required: true
+  - type: input
+    id: revision
+    attributes:
+      label: Ravi Kannada revision
+      description: Commit hash, branch, or release identifier.
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: Operating system, architecture, and Zig version.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant output
+      description: Paste diagnostics, stack traces, or other relevant output.
+      render: shell
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Submission checks
+      options:
+        - label: I searched existing issues for this problem.
+          required: true
+        - label: This report does not disclose a security vulnerability.
+          required: true

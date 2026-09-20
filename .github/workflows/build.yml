@@ -1,0 +1,36 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: ${{ matrix.os }} / ${{ matrix.optimize }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        optimize: [Debug, ReleaseSafe, ReleaseFast]
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Install Zig
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.17.0-dev.1415+64dfaa568
+      - name: Build Ravi Kannada
+        run: zig build -Doptimize=${{ matrix.optimize }} --summary all
+      - name: Verify executable examples
+        shell: pwsh
+        run: ./tools/test_examples.ps1

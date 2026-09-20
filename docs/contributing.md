@@ -1,5 +1,9 @@
 # Contributing
 
+Community expectations, issue guidance, and the pull-request process are summarized
+in the repository-level [contribution guide](../CONTRIBUTING.md). All participation
+must follow the [Code of Conduct](../CODE_OF_CONDUCT.md).
+
 Read [Architecture](architecture.md) and [Implementation status](implementation-status.md)
 before changing language behavior. Use the pinned toolchain in
 [Installation](user_docs/installation.md).

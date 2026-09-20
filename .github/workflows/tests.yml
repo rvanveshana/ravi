@@ -1,0 +1,56 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: Formatting and repository checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Install Zig
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.17.0-dev.1415+64dfaa568
+      - name: Check formatting
+        run: zig fmt --check build.zig build config src tests
+      - name: Check generated feature matrix
+        shell: pwsh
+        run: |
+          ./tools/generate_feature_matrix.ps1
+          git diff --exit-code -- docs/feature-matrix.md
+      - name: Enforce source size budget
+        shell: pwsh
+        run: ./tools/check_src_sizes.ps1
+      - name: Check whitespace errors
+        run: git diff --check
+
+  tests:
+    name: ${{ matrix.os }} / ${{ matrix.optimize }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        optimize: [Debug, ReleaseSafe]
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Install Zig
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.17.0-dev.1415+64dfaa568
+      - name: Run unit and integration tests
+        run: zig build test -Doptimize=${{ matrix.optimize }} --summary all -j2
