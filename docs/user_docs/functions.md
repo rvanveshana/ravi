@@ -1,33 +1,40 @@
 # Functions
 
-Declare functions with `kriya` in the default profile or `function` in English.
+Define a function with `kriya` (`function` in English) and return with `kodu`
+(`return`). Parameters use parentheses. Function bodies are indented.
 
 ```ravi
-kriya greet(name = "friend"):
-    kodu "Hello " + name
+kriya multiply(value: int, factor: int = 2):
+    kodu value * factor
 
-mudrisu(greet())
-mudrisu(greet("Asha"))
+mudrisu(multiply(3))
+mudrisu(multiply(3, 4))
+mudrisu(multiply(value = 3, factor = 5))
 ```
 
-Functions support positional arguments, keyword arguments, defaults, recursion, lambdas, closures, nested declarations, and explicit `kodu`/`return`.
+This prints `6`, `12`, and `15`. Trailing parameters may have defaults. Calls can
+supply positional arguments or named arguments using `name = value`. Avoid
+mixing advanced binding patterns until the argument-binding contract is complete.
 
-## Lambda
+## Function values
 
-```ravi
-square = function value => value * value
+Functions can be assigned to variables and called through those variables.
+Expression functions use `=>`:
+
+```text
+double = kriya(value: int) => value * 2
+mudrisu(double(6))
 ```
 
-## Variadic calls
+The intended result is `12`, but this expression-function call currently fails in
+the CLI with `NoEntryBlock`. Treat it as experimental syntax.
+Nested functions and closures have implementation support;
+closure lifetime and capture semantics remain part of the conformance work.
 
-```ravi
-kriya total(first, *values):
-    sum = first
-    prati value alli values:
-        sum = sum + value
-    kodu sum
+A function with no explicit returned value produces `none`. Built-in printing also
+returns `none`; its result is not the value printed. See [typing](typing.md) for
+annotations and [classes](classes.md) for implicit method receivers.
 
-mudrisu(total(1, 2, 3))
-```
-
-The current AST and legacy compiler paths support tuple packing for `*values` and dictionary packing for `**options`.
+Variadic parameters and decorator syntax exist in the implementation but do not
+yet form a complete public argument-binding or decoration protocol. Generators
+are also incomplete. See [planned features](planned-features.md).

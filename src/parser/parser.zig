@@ -22,7 +22,7 @@ pub const Parser = struct {
     }
 
     pub fn parse(self: *Parser) ParseError!ast.Module {
-        var module = ast.Module{ .allocator = self.allocator };
+        var module = ast.Module{ .allocator = self.allocator, .language = self.language };
         errdefer module.deinit();
         while (!self.at(.eof)) {
             while (self.at(.newline) or self.at(.comment)) self.index += 1;
@@ -43,7 +43,7 @@ pub const Parser = struct {
     }
 
     pub fn parseRecovering(self: *Parser) !ast.Module {
-        var module = ast.Module{ .allocator = self.allocator };
+        var module = ast.Module{ .allocator = self.allocator, .language = self.language };
         errdefer module.deinit();
         while (!self.at(.eof)) {
             self.skipTrivia();

@@ -22,6 +22,7 @@ pub fn newArray(self: anytype) errors.RuntimeError!usize {
     const slot = self.array_count;
     const array = self.collector.createManaged(heap.ManagedArray, heap.destroyArray) catch return error.OutOfMemory;
     array.* = collections.Array.init(self.allocator);
+    errdefer self.collector.discardUnpublished(@ptrCast(array));
     self.collector.addRoot(@ptrCast(array)) catch return error.OutOfMemory;
     self.gc_roots.append(self.allocator, @ptrCast(array)) catch return error.OutOfMemory;
     self.arrays[slot] = array;
@@ -34,6 +35,7 @@ pub fn newDict(self: anytype) errors.RuntimeError!usize {
     const slot = self.dict_count;
     const dict = self.collector.createManaged(heap.ManagedDict, heap.destroyDict) catch return error.OutOfMemory;
     dict.* = collections.Dict.init(self.allocator);
+    errdefer self.collector.discardUnpublished(@ptrCast(dict));
     self.collector.addRoot(@ptrCast(dict)) catch return error.OutOfMemory;
     self.gc_roots.append(self.allocator, @ptrCast(dict)) catch return error.OutOfMemory;
     self.dicts[slot] = dict;
@@ -45,6 +47,8 @@ pub fn newClosure(self: anytype, function_index: usize, capture_count: usize) er
     try ensure(self.allocator, *heap.ManagedClosure, &self.closures, self.closure_count + 1);
     const slot = self.closure_count;
     const closure = self.collector.createManaged(heap.ManagedClosure, heap.destroyClosure) catch return error.OutOfMemory;
+    closure.* = .{};
+    errdefer self.collector.discardUnpublished(@ptrCast(closure));
     closure.* = frames.Closure.init(self.allocator, function_index, capture_count) catch return error.OutOfMemory;
     self.collector.addRoot(@ptrCast(closure)) catch return error.OutOfMemory;
     self.gc_roots.append(self.allocator, @ptrCast(closure)) catch return error.OutOfMemory;
@@ -58,6 +62,7 @@ pub fn newCell(self: anytype, value: @import("ravi_vm_value").Value) errors.Runt
     const slot = self.cell_count;
     const cell = self.collector.createManaged(heap.ManagedCell, heap.destroyCell) catch return error.OutOfMemory;
     cell.* = .{ .value = value };
+    errdefer self.collector.discardUnpublished(@ptrCast(cell));
     self.collector.addRoot(@ptrCast(cell)) catch return error.OutOfMemory;
     self.gc_roots.append(self.allocator, @ptrCast(cell)) catch return error.OutOfMemory;
     self.cells[slot] = cell;
@@ -70,6 +75,7 @@ pub fn newInstance(self: anytype, class_index: usize) errors.RuntimeError!usize 
     const slot = self.instance_count;
     const instance = self.collector.createManaged(heap.ManagedInstance, heap.destroyInstance) catch return error.OutOfMemory;
     instance.* = .{ .class_index = class_index, .fields = collections.Dict.init(self.allocator) };
+    errdefer self.collector.discardUnpublished(@ptrCast(instance));
     self.collector.addRoot(@ptrCast(instance)) catch return error.OutOfMemory;
     self.gc_roots.append(self.allocator, @ptrCast(instance)) catch return error.OutOfMemory;
     self.instances[slot] = instance;
@@ -81,8 +87,9 @@ pub fn newException(self: anytype, name: []const u8) errors.RuntimeError!usize {
     try ensure(self.allocator, *heap.ManagedException, &self.exceptions, self.exception_count + 1);
     const slot = self.exception_count;
     const exception = self.collector.createManaged(heap.ManagedException, heap.destroyException) catch return error.OutOfMemory;
-    exception.* = .{ .name = self.allocator.dupe(u8, name) catch return error.OutOfMemory };
-    errdefer self.allocator.free(exception.name);
+    exception.* = .{ .name = &.{} };
+    errdefer self.collector.discardUnpublished(@ptrCast(exception));
+    exception.name = self.allocator.dupe(u8, name) catch return error.OutOfMemory;
     self.collector.addRoot(@ptrCast(exception)) catch return error.OutOfMemory;
     self.gc_roots.append(self.allocator, @ptrCast(exception)) catch return error.OutOfMemory;
     self.exceptions[slot] = exception;
@@ -181,7 +188,7 @@ fn objectPointer(self: anytype, value: Value) ?*anyopaque {
         .closure => if (index < self.closure_count and self.collector.isManaged(@ptrCast(self.closures[index]))) @ptrCast(self.closures[index]) else null,
         .cell => if (index < self.cell_count and self.collector.isManaged(@ptrCast(self.cells[index]))) @ptrCast(self.cells[index]) else null,
         .instance => if (index < self.instance_count and self.collector.isManaged(@ptrCast(self.instances[index]))) @ptrCast(self.instances[index]) else null,
-            .exception => if (index < self.exception_count and self.collector.isManaged(@ptrCast(self.exceptions[index]))) @ptrCast(self.exceptions[index]) else null,
+        .exception => if (index < self.exception_count and self.collector.isManaged(@ptrCast(self.exceptions[index]))) @ptrCast(self.exceptions[index]) else null,
         else => null,
     };
 }

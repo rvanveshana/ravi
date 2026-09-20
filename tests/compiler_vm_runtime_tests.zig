@@ -12,7 +12,13 @@ const run = helpers.run;
 const runAst = helpers.runAst;
 
 test "English print uses the shared print operation" {
-    try std.testing.expectEqual(@as(i64, 3), try helpers.run("print(3)\n", .en));
+    // Output is an effect; print returns none in both source profiles.
+    try std.testing.expectEqual(@as(i64, 0), try helpers.run("print(3)\n", .en));
+    var english = try helpers.compileSource("print(3)\n", .en);
+    defer english.deinit();
+    var kannada = try helpers.compileSource("mudrisu(3)\n", .kn);
+    defer kannada.deinit();
+    try std.testing.expectEqualDeep(english.code.items, kannada.code.items);
 }
 
 test "vidha/type reports runtime value categories" {
@@ -38,7 +44,7 @@ test "nested named functions capture enclosing parameters" {
 }
 
 test "nested closures share captured cells" {
-    try std.testing.expectEqual(@as(i64, 8), try helpers.run("kriya outer(value: int):\n    kriya first(extra: int):\n        kodu value + extra\n    kriya second(extra: int):\n        kodu value + extra\n    kodu first(1) + second(2)\n\nouter(5)\n", .kn));
+    try std.testing.expectEqual(@as(i64, 13), try helpers.run("kriya outer(value: int):\n    kriya first(extra: int):\n        kodu value + extra\n    kriya second(extra: int):\n        kodu value + extra\n    kodu first(1) + second(2)\n\nouter(5)\n", .kn));
 }
 
 test "captured closure assignment updates its shared cell" {
@@ -46,8 +52,8 @@ test "captured closure assignment updates its shared cell" {
 }
 
 test "runtime division faults enter tappu handlers" {
-    try std.testing.expectEqual(@as(i64, 1), try helpers.run("nodu:\n    5 / 0\ntappu:\n    1\n", .kn));
-    try std.testing.expectEqual(@as(i64, 7), try helpers.run("kriya fail(value: int):\n    kodu value / 0\n\nnodu:\n    fail(1)\ntappu:\n    7\n", .kn));
+    try std.testing.expectEqual(@as(i64, 1), try helpers.run("result = 0\nnodu:\n    5 / 0\ntappu:\n    result = 1\nresult\n", .kn));
+    try std.testing.expectEqual(@as(i64, 7), try helpers.run("kriya fail(value: int):\n    kodu value / 0\n\nresult = 0\nnodu:\n    fail(1)\ntappu:\n    result = 7\nresult\n", .kn));
 }
 
 test "runtime failures retain active Ravi frames and source locations" {
@@ -73,7 +79,7 @@ test "yese raises a runtime exception value" {
 }
 
 test "nodu tappu and kone execute explicit raise recovery" {
-    try std.testing.expectEqual(@as(i64, 9), try helpers.run("nodu:\n    yese 7\ntappu:\n    9\n", .kn));
+    try std.testing.expectEqual(@as(i64, 9), try helpers.run("result = 0\nnodu:\n    yese 7\ntappu:\n    result = 9\nresult\n", .kn));
 }
 
 test "strings support split, join, replace, and find" {

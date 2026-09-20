@@ -4,7 +4,7 @@ const state_helpers = @import("state_helpers.zig");
 const execution = @import("execution.zig");
 
 pub fn executeFunction(self: anytype, chunk: *const bytecode.Chunk, function_index: usize, args: []const Value) !Value {
-    chunk.verify() catch return error.InvalidInstruction;
+    chunk.verify() catch |err| return if (err == error.OutOfMemory) error.OutOfMemory else error.InvalidInstruction;
     if (function_index >= chunk.functions.items.len) return error.InvalidFunction;
     const function = chunk.functions.items[function_index];
     if (args.len > function.arity) return error.InvalidFunction;

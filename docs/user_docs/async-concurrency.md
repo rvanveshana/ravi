@@ -1,37 +1,41 @@
-# Async and Concurrency
+# Tasks and concurrency
 
-Ravi's runtime contains scheduler foundations, futures, channels, cancellation state, and resumable metadata. The intended language model is Go-like: functions remain ordinary synchronous functions, while a call can be launched as a schedulable task. Ravi does not need an `async` function modifier or mandatory `await` syntax.
-
-## Language spellings
-
-The language should distinguish sequential execution from concurrent execution at the call site. The exact keyword is still open, but the shape should be equivalent to:
+Ordinary function calls execute sequentially. Explicit `horabidu` (`spawn` in
+English) starts a task, and `kaayu` (`wait`) waits for its result.
 
 ```ravi
-kriya fetch_value():
-    kodu request()
+kriya square(value: int):
+    kodu value * value
 
-task = horabidu fetch_value()
-value = kaayu task
+task = horabidu square(6)
+mudrisu(kaayu task)
 ```
 
-In the default Kannada profile, `horabidu` starts a task, `kaayu` waits for its result, and `malagu(milliseconds)` blocks the current thread without busy-waiting. In the English profile, the equivalent spellings are `spawn`, `wait`, and `sleep(milliseconds)`. These are language spellings for the same runtime operations.
+The expected output is `36`. The current spawn form accepts a direct function call.
+Pass scalar arguments and return scalar results: integers, floats, booleans, or
+`none`. VM-local handles, including strings, collections, instances, and closures,
+cannot be transferred between workers; unsupported transfers fail.
 
-`horabidu`/`spawn` is the concurrency boundary; the function itself is not a different kind of function. A normal call executes immediately. A spawned call returns a task or future, and `kaayu`/`wait` is the explicit synchronization point when the result is needed. Channel send/receive operations provide the preferred communication path between tasks.
+## Current execution model
 
-The current syntax uses `spawn` and `wait` keywords. `spawn` currently accepts a direct function call and returns a future handle; `wait` joins that handle. Task results are currently restricted to scalar values because child VM objects are not yet transferred between heaps.
+Tasks use a bounded queue and OS worker threads. Waiting and
+`malagu(milliseconds)` (`sleep` in English) block the current thread. Sleep does
+not busy-wait, but it does not suspend a resumable language task either.
+Task failures propagate runtime error identities. Accepted scheduler work is
+drained during shutdown.
 
-## Runtime concepts
+Channels, cancellation state, and future primitives exist internally. They are
+not yet a complete public structured-concurrency API. Nested blocking waits can
+exhaust available workers; avoid designs that require a blocked worker to execute
+its own dependent task.
 
-- **Task:** a schedulable invocation of an ordinary function.
-- **Future:** a handle for a spawned result that may complete later; waiting on it propagates its result or failure.
-- **Channel:** a bounded communication queue with explicit closed state.
-- **Cancellation:** a propagated request that lets tasks stop cooperatively.
-- **Scheduler:** an executor that drains runnable work with bounded resources. It may use worker threads, but task scheduling must not change ordinary function semantics.
+## Intended execution model
 
-## Design requirements
+The target is synchronous-looking calls that can suspend in the backend during
+I/O. Ordinary calls will still complete before the next statement; independent
+work will require an explicit concurrency boundary. Structured task scopes,
+cancellation cleanup, safe object transfer, and nonblocking waits remain planned.
 
-The completed feature must specify spawn ownership, ordering, fairness, channel close behavior, timeout behavior, exception propagation, cancellation cleanup, interaction with generators, and whether shared mutable state requires synchronization. It must also define whether task creation is eager, how many workers are used by default, and what happens when a task is abandoned without being waited on.
-
-## Current status
-
-The scheduler and async-state modules are tested runtime foundations. The current `examples/async_concurrency.rk` demonstrates ordinary sequential calls, blocking synchronous sleep, and executable `spawn`/`wait` tasks. Structured cancellation, channel syntax, resumable waiting, and non-scalar result transfer remain follow-up work.
+See [language design](../language-design.md) for that contract. Parallel workers
+alone do not establish that a program is faster than Python; no comparative
+performance result is currently published.

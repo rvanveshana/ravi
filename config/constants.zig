@@ -1,7 +1,7 @@
 //! Central language configuration.  Front-end and runtime code should import
 //! this module instead of embedding spelling or resource limits locally.
 
-pub const language_name = "Ravi";
+pub const language_name = "Ravi Kannada";
 pub const source_extension = ".rk";
 pub const SourceLanguage = enum { kn, en };
 pub const LanguageHeaderError = error{InvalidLanguageHeader};

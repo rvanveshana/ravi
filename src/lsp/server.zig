@@ -257,13 +257,13 @@ test "LSP state applies versioned overlays and compiler diagnostics" {
     var server = Server.init(std.testing.allocator);
     defer server.deinit();
     try server.open("file:///main.rk", "kriya main():\n    kodu 1\n", 1);
-    var messages = try server.diagnostics("file:///main.rk", std.testing.allocator);
+    const messages = try server.diagnostics("file:///main.rk", std.testing.allocator);
     defer std.testing.allocator.free(messages);
     try std.testing.expectEqual(@as(usize, 0), messages.len);
     try server.change("file:///main.rk", "function main():\n", 2);
-    messages = try server.diagnostics("file:///main.rk", std.testing.allocator);
-    defer std.testing.allocator.free(messages);
-    try std.testing.expectEqual(@as(usize, 1), messages.len);
+    const changed_messages = try server.diagnostics("file:///main.rk", std.testing.allocator);
+    defer std.testing.allocator.free(changed_messages);
+    try std.testing.expectEqual(@as(usize, 1), changed_messages.len);
     try std.testing.expectError(error.StaleDocumentVersion, server.change("file:///main.rk", "", 2));
 }
 

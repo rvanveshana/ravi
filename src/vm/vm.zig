@@ -1,5 +1,4 @@
 const std = @import("std");
-const builtin = @import("builtin");
 const bytecode = @import("ravi_bytecode");
 const debug = @import("ravi_debug");
 const gc = @import("ravi_gc");
@@ -14,7 +13,6 @@ const heap = @import("heap.zig");
 const Value = @import("ravi_vm_value").Value;
 const value_runtime = @import("value_runtime.zig");
 const execution = @import("execution.zig");
-const task_execution = @import("task_execution.zig");
 const async_state = @import("ravi_async_state");
 const scheduler = @import("ravi_scheduler");
 pub const RuntimeValue = Value;
@@ -25,57 +23,14 @@ pub const RuntimeType = errors.TypeId;
 pub const ResumableResult = execution.ResumableResult;
 const Frame = frames.Frame;
 
-fn parkBriefly() void {
-    if (comptime builtin.os.tag == .windows) {
-        const interval: std.os.windows.LARGE_INTEGER = -10_000;
-        _ = std.os.windows.ntdll.NtDelayExecution(.FALSE, &interval);
-    } else {
-        var remaining = std.posix.timespec{ .sec = 0, .nsec = 1_000_000 };
-        while (std.posix.nanosleep(&remaining, &remaining) != 0) {}
-    }
-}
-
-const TaskFuture = struct {
-    done: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
-    failed: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
-    value: Value = Value.nil(),
-
-    fn complete(self: *TaskFuture, result: RuntimeError!Value) void {
-        if (result) |value| self.value = value else |_| self.failed.store(true, .release);
-        self.done.store(true, .release);
-    }
-
-    fn await(self: *TaskFuture) RuntimeError!Value {
-        while (!self.done.load(.acquire)) parkBriefly();
-        if (self.failed.load(.acquire)) return error.InvalidInstruction;
-        return self.value;
-    }
-};
-
-const TaskContext = struct {
-    allocator: std.mem.Allocator,
-    chunk: *const bytecode.Chunk,
-    function_index: usize,
-    args: []Value,
-    future: *TaskFuture,
-
-    fn run(context: ?*anyopaque) void {
-        const task: *TaskContext = @ptrCast(@alignCast(context.?));
-        var child = Vm.init(task.allocator) catch {
-            task.future.complete(error.OutOfMemory);
-            task.allocator.free(task.args);
-            task.allocator.destroy(task);
-            return;
-        };
-        defer child.deinit();
-        const result = task_execution.executeFunction(&child, task.chunk, task.function_index, task.args);
-        task.future.complete(if (result) |value| if (value.isHandle()) error.InvalidInstruction else value else |err| err);
-        task.allocator.free(task.args);
-        task.allocator.destroy(task);
-    }
-};
+const tasks = @import("tasks.zig");
+const TaskFuture = tasks.Future;
 
 pub const TraceFrame = trace_runtime.Frame;
+test {
+    _ = @import("task_tests.zig");
+    _ = @import("allocation_tests.zig");
+}
 pub const Vm = struct {
     allocator: std.mem.Allocator,
     stack: []Value,
@@ -113,6 +68,7 @@ pub const Vm = struct {
     resumable_ip: usize = 0,
     resumable_started: bool = false,
     task_scheduler: ?*scheduler.Scheduler = null,
+    worker_count: usize = 0,
     futures: std.ArrayListUnmanaged(*TaskFuture) = .empty,
     pub fn init(allocator: std.mem.Allocator) !Vm {
         return initWithCollectorOptions(allocator, .{});
@@ -138,7 +94,7 @@ pub const Vm = struct {
         return value_runtime.toLegacy(try self.execute(chunk));
     }
     pub fn runValue(self: *Vm, chunk: *const bytecode.Chunk) RuntimeError!Value {
-        chunk.verify() catch return error.InvalidInstruction;
+        chunk.verify() catch |err| return if (err == error.OutOfMemory) error.OutOfMemory else error.InvalidInstruction;
         if (self.debugger == null and dispatch.FastDispatcher.supports(chunk.code.items)) {
             var fast_stack: [256]Value = undefined;
             return switch (dispatch.FastDispatcher.dispatchLoop(chunk.code.items, &fast_stack)) {
@@ -218,26 +174,10 @@ pub const Vm = struct {
         return self.collector.statistics();
     }
     pub fn spawnTask(self: *Vm, chunk: *const bytecode.Chunk, function_index: usize, args: []const Value) RuntimeError!Value {
-        if (function_index >= chunk.functions.items.len) return error.InvalidFunction;
-        if (self.task_scheduler == null) self.task_scheduler = scheduler.Scheduler.init(self.allocator, 2) catch return error.OutOfMemory;
-        const future = self.allocator.create(TaskFuture) catch return error.OutOfMemory;
-        errdefer self.allocator.destroy(future);
-        future.* = .{};
-        const owned_args = self.allocator.dupe(Value, args) catch return error.OutOfMemory;
-        errdefer self.allocator.free(owned_args);
-        const context = self.allocator.create(TaskContext) catch return error.OutOfMemory;
-        errdefer self.allocator.destroy(context);
-        context.* = .{ .allocator = self.allocator, .chunk = chunk, .function_index = function_index, .args = owned_args, .future = future };
-        self.futures.append(self.allocator, future) catch return error.OutOfMemory;
-        errdefer _ = self.futures.pop();
-        self.task_scheduler.?.spawnTask(TaskContext.run, context) catch return error.OutOfMemory;
-        return Value.fromHandle(.future, self.futures.items.len - 1) catch return error.OutOfMemory;
+        return tasks.spawn(self, chunk, function_index, args);
     }
     pub fn waitTask(self: *Vm, handle: Value) RuntimeError!Value {
-        if (handle.handleKind() != .future) return error.TypeGuardFailed;
-        const index = handle.handleIndex() orelse return error.InvalidInstruction;
-        if (index >= self.futures.items.len) return error.InvalidInstruction;
-        return self.futures.items[index].await();
+        return tasks.wait(self, handle);
     }
     fn execute(self: *Vm, chunk: *const bytecode.Chunk) RuntimeError!Value {
         return execution.execute(self, chunk);

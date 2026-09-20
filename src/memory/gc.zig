@@ -110,6 +110,20 @@ pub const Collector = struct {
         try self.roots.append(self.arena.child_allocator, root);
     }
 
+    /// Roll back an initialized object which has not been published to user code.
+    /// The caller must not retain handles or child references to this object.
+    pub fn discardUnpublished(self: *Collector, object: *anyopaque) void {
+        self.removeRoot(object);
+        for (self.managed.items, 0..) |allocation, index| {
+            if (allocation.object != object) continue;
+            allocation.destroy(self.backing, object);
+            self.bytes_allocated -= allocation.size;
+            self.live_allocations -= 1;
+            _ = self.managed.swapRemove(index);
+            return;
+        }
+    }
+
     pub fn removeRoot(self: *Collector, root: *anyopaque) void {
         for (self.roots.items, 0..) |item, index| {
             if (item == root) {

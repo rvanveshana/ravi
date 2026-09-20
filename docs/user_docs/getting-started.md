@@ -1,37 +1,59 @@
-# Getting Started
+# Getting started
 
-Create `hello.rk`:
+Build the executable as described in [Installation](installation.md). This tutorial
+uses the default Kannada/Kanglish source profile.
+
+## Create a program
+
+Save the following as `hello.rk` in the repository root:
 
 ```ravi
-mudrisu("Namaskara, Ravi!")
+kriya square(value: int):
+    kodu value * value
+
+result = square(6)
+mudrisu(result)
 ```
+
+`kriya` declares a function, `kodu` returns a value, and `mudrisu` prints a value.
+The four spaces before `kodu` place it inside the function body. `: int` annotates
+the parameter; [Typing](typing.md) explains the current limits of type checking.
 
 Run it:
 
 ```powershell
-ravi run hello.rk
+./zig-out/bin/ravi.exe run hello.rk
 ```
 
-A small typed function:
+Expected output:
 
-```ravi
-kriya square(value: int):
-    return value * value
-
-mudrisu(square(6))
+```text
+36
 ```
 
-Ravi uses four-space indentation. A colon introduces a suite, and the indented lines below it form the suite.
+## Use English vocabulary
 
-## English profile
-
-The same program can use English keywords:
+Save this complete program as `hello_en.rk`:
 
 ```ravi
+# ravi: language=en
 function square(value: int):
     return value * value
 
 print(square(6))
 ```
 
-Use `.rk` for both application files and importable library files.
+Run it with the same command shape. The first-line header selects English for the
+file. Alternatively, `--lang en` explicitly selects the profile for a CLI invocation.
+Do not mix `function` with `kodu`, or `kriya` with `return`, in the same program.
+
+## Check before running
+
+```powershell
+./zig-out/bin/ravi.exe check hello.rk
+```
+
+`check` performs the currently implemented syntax and semantic checks. It does not
+execute the program and is not a complete static correctness guarantee.
+
+Next: [Syntax](syntax.md), [Control flow](control-flow.md), and [Functions](functions.md).

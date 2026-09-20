@@ -23,7 +23,7 @@ pub fn add(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builti
     helper_module.addImport("ravi_lexer", core_modules.lexer);
     helper_module.addImport("ravi_parser", language_modules.parser);
     helper_module.addImport("ravi_vm", runtime_modules.vm);
-    const compiler_vm_roots = [_][]const u8{ "compiler_vm_core_tests.zig", "compiler_vm_language_tests.zig", "compiler_vm_values_tests.zig", "compiler_vm_collections_tests.zig", "compiler_vm_runtime_tests.zig" };
+    const compiler_vm_roots = [_][]const u8{ "compiler_vm_core_tests.zig", "compiler_vm_language_tests.zig", "compiler_vm_control_flow_tests.zig", "compiler_vm_values_tests.zig", "compiler_vm_collections_tests.zig", "compiler_vm_runtime_tests.zig" };
     const compiler_vm = b.allocator.alloc(*std.Build.Step, compiler_vm_roots.len) catch @panic("out of memory allocating compiler VM test steps");
     for (compiler_vm_roots, 0..) |root, index| {
         const module = b.createModule(.{ .root_source_file = b.path(b.fmt("tests/{s}", .{root})), .target = target, .optimize = optimize });
@@ -35,7 +35,7 @@ pub fn add(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builti
         module.addImport("ravi_parser", language_modules.parser);
         module.addImport("ravi_vm", runtime_modules.vm);
         module.addImport("compiler_vm_test_helpers", helper_module);
-        compiler_vm[index] = &b.addTest(.{ .root_module = module }).step;
+        compiler_vm[index] = &b.addRunArtifact(b.addTest(.{ .root_module = module })).step;
     }
 
     const semantic_tests_module = b.createModule(.{ .root_source_file = b.path("tests/semantic_tests.zig"), .target = target, .optimize = optimize });
@@ -84,41 +84,42 @@ pub fn add(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builti
     mir_tests_module.addImport("ravi_mir", compiler_modules.mir);
 
     return .{
-        .lexer = &lexer.step,
-        .parser = &parser.step,
+        .lexer = &b.addRunArtifact(lexer).step,
+        .parser = &b.addRunArtifact(parser).step,
         .compiler_vm = compiler_vm,
-        .semantic = &semantic.step,
-        .semantic_symbols = &semantic_symbols.step,
-        .value = &value.step,
-        .collection = &collection.step,
-        .string_runtime = &string_runtime.step,
-        .backend = &b.addTest(.{ .root_module = compiler_modules.backend }).step,
-        .optimizer = &b.addTest(.{ .root_module = compiler_modules.optimizer }).step,
-        .debug = &b.addTest(.{ .root_module = core_modules.debug }).step,
-        .dap = &b.addTest(.{ .root_module = language_modules.dap }).step,
-        .scheduler = &b.addTest(.{ .root_module = core_modules.scheduler }).step,
-        .async_state = &b.addTest(.{ .root_module = core_modules.async_state }).step,
-        .gc = &b.addTest(.{ .root_module = core_modules.gc }).step,
-        .nan_value = &b.addTest(.{ .root_module = core_modules.vm_value }).step,
-        .dispatch = &b.addTest(.{ .root_module = core_modules.dispatch }).step,
-        .bytecode = &b.addTest(.{ .root_module = bytecode_module }).step,
-        .opcode_spec = &b.addTest(.{ .root_module = core_modules.opcode_spec }).step,
-        .source = &b.addTest(.{ .root_module = core_modules.source }).step,
-        .diagnostics = &b.addTest(.{ .root_module = core_modules.diagnostics }).step,
-        .formatter = &b.addTest(.{ .root_module = language_modules.formatter }).step,
-        .resolver = &b.addTest(.{ .root_module = language_modules.resolver }).step,
-        .loader = &b.addTest(.{ .root_module = language_modules.loader }).step,
-        .module_artifact = &b.addTest(.{ .root_module = language_modules.artifact }).step,
-        .module_cache = &b.addTest(.{ .root_module = language_modules.cache }).step,
-        .hir = &b.addTest(.{ .root_module = compiler_modules.hir }).step,
-        .mir = &b.addTest(.{ .root_module = compiler_modules.mir }).step,
-        .mir_split = &b.addTest(.{ .root_module = mir_tests_module }).step,
-        .mir_bytecode = &b.addTest(.{ .root_module = compiler_modules.mir_bytecode }).step,
-        .hir_pipeline = &b.addTest(.{ .root_module = compiler_modules.hir_pipeline }).step,
-        .lsp = &b.addTest(.{ .root_module = language_modules.lsp }).step,
-        .lsp_protocol = &b.addTest(.{ .root_module = language_modules.lsp_protocol }).step,
-        .jsonrpc = &b.addTest(.{ .root_module = language_modules.jsonrpc }).step,
-        .phase0 = &b.addTest(.{ .root_module = phase0_module }).step,
-        .phase1 = &b.addTest(.{ .root_module = phase1_module }).step,
+        .semantic = &b.addRunArtifact(semantic).step,
+        .semantic_symbols = &b.addRunArtifact(semantic_symbols).step,
+        .value = &b.addRunArtifact(value).step,
+        .vm = &b.addRunArtifact(b.addTest(.{ .root_module = runtime_modules.vm })).step,
+        .collection = &b.addRunArtifact(collection).step,
+        .string_runtime = &b.addRunArtifact(string_runtime).step,
+        .backend = &b.addRunArtifact(b.addTest(.{ .root_module = compiler_modules.backend })).step,
+        .optimizer = &b.addRunArtifact(b.addTest(.{ .root_module = compiler_modules.optimizer })).step,
+        .debug = &b.addRunArtifact(b.addTest(.{ .root_module = core_modules.debug })).step,
+        .dap = &b.addRunArtifact(b.addTest(.{ .root_module = language_modules.dap })).step,
+        .scheduler = &b.addRunArtifact(b.addTest(.{ .root_module = core_modules.scheduler })).step,
+        .async_state = &b.addRunArtifact(b.addTest(.{ .root_module = core_modules.async_state })).step,
+        .gc = &b.addRunArtifact(b.addTest(.{ .root_module = core_modules.gc })).step,
+        .nan_value = &b.addRunArtifact(b.addTest(.{ .root_module = core_modules.vm_value })).step,
+        .dispatch = &b.addRunArtifact(b.addTest(.{ .root_module = core_modules.dispatch })).step,
+        .bytecode = &b.addRunArtifact(b.addTest(.{ .root_module = bytecode_module })).step,
+        .opcode_spec = &b.addRunArtifact(b.addTest(.{ .root_module = core_modules.opcode_spec })).step,
+        .source = &b.addRunArtifact(b.addTest(.{ .root_module = core_modules.source })).step,
+        .diagnostics = &b.addRunArtifact(b.addTest(.{ .root_module = core_modules.diagnostics })).step,
+        .formatter = &b.addRunArtifact(b.addTest(.{ .root_module = language_modules.formatter })).step,
+        .resolver = &b.addRunArtifact(b.addTest(.{ .root_module = language_modules.resolver })).step,
+        .loader = &b.addRunArtifact(b.addTest(.{ .root_module = language_modules.loader })).step,
+        .module_artifact = &b.addRunArtifact(b.addTest(.{ .root_module = language_modules.artifact })).step,
+        .module_cache = &b.addRunArtifact(b.addTest(.{ .root_module = language_modules.cache })).step,
+        .hir = &b.addRunArtifact(b.addTest(.{ .root_module = compiler_modules.hir })).step,
+        .mir = &b.addRunArtifact(b.addTest(.{ .root_module = compiler_modules.mir })).step,
+        .mir_split = &b.addRunArtifact(b.addTest(.{ .root_module = mir_tests_module })).step,
+        .mir_bytecode = &b.addRunArtifact(b.addTest(.{ .root_module = compiler_modules.mir_bytecode })).step,
+        .hir_pipeline = &b.addRunArtifact(b.addTest(.{ .root_module = compiler_modules.hir_pipeline })).step,
+        .lsp = &b.addRunArtifact(b.addTest(.{ .root_module = language_modules.lsp })).step,
+        .lsp_protocol = &b.addRunArtifact(b.addTest(.{ .root_module = language_modules.lsp_protocol })).step,
+        .jsonrpc = &b.addRunArtifact(b.addTest(.{ .root_module = language_modules.jsonrpc })).step,
+        .phase0 = &b.addRunArtifact(b.addTest(.{ .root_module = phase0_module })).step,
+        .phase1 = &b.addRunArtifact(b.addTest(.{ .root_module = phase1_module })).step,
     };
 }

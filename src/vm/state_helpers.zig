@@ -48,11 +48,15 @@ pub fn internString(self: anytype, text: []const u8) errors.RuntimeError!@import
     // made otherwise valid programs fail arbitrarily at 1,000 interned
     // strings. `Value.fromHandle` still enforces the representable handle
     // range, and allocation failures propagate as OutOfMemory.
+    try self.strings.ensureUnusedCapacity(self.allocator, 1);
+    try self.gc_roots.ensureUnusedCapacity(self.allocator, 1);
     const owned = try self.allocator.dupe(u8, text);
-    errdefer self.allocator.free(owned);
-    const managed = self.collector.createManaged(heap.ManagedString, heap.destroyString) catch return error.OutOfMemory;
+    const managed = self.collector.createManaged(heap.ManagedString, heap.destroyString) catch {
+        self.allocator.free(owned);
+        return error.OutOfMemory;
+    };
     managed.* = .{ .bytes = owned };
-    errdefer self.collector.removeRoot(@ptrCast(managed));
+    errdefer self.collector.discardUnpublished(@ptrCast(managed));
     self.collector.addRoot(@ptrCast(managed)) catch return error.OutOfMemory;
     self.gc_roots.append(self.allocator, @ptrCast(managed)) catch return error.OutOfMemory;
     const slot = self.strings.items.len;

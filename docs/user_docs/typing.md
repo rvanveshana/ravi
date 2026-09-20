@@ -1,35 +1,28 @@
-# Typing
+# Type annotations
 
-Ravi supports both dynamic programming and optional annotations.
-
-## Dynamic values
-
-```ravi
-value = 10
-value = "ten"
-```
-
-## Annotations
+Ravi Kannada currently combines runtime values with partial static analysis. The
+target design is inferred static typing with explicit dynamic boundaries, but
+omitted annotations do not yet provide that complete static guarantee.
 
 ```ravi
-kriya add(left: int, right: int):
-    return left + right
+count: int = 3
+kriya square(value: int):
+    kodu value * value
 
-name: string = "Ravi"
+mudrisu(square(count))
 ```
 
-Annotations document intent and allow compiler/runtime guards where supported. They do not require every program to be fully statically typed.
+This prints `9`. Common annotation spellings include `int`, `float`, `bool`, and
+`str`. Typed arrays use `int[]`, for example `values: int[] = [1, 2]`. Explicit
+dynamic annotations use `dinamika` in the default profile and `dynamic` in English.
 
-See [Data Types](data-types.md) for the complete built-in type catalog and the
-individual type pages for literals, operators, methods, and examples.
+Annotations participate in checking, but coverage differs between compiler paths.
+A successful `ravi check` does not certify runtime behavior. Collection aliasing,
+mutation checks, generic constraints, and complete return-type inference remain
+unfinished. Do not assume Python type-hint syntax or its standard typing module.
 
-## Variadic parameters
+The [data type reference](data-types.md) describes actual numeric representations.
+An `int` annotation does not widen the runtime's signed 48-bit integer range.
 
-```ravi
-kriya combine(first: int, *values, **options):
-    return first + values[0] + options["bonus"]
-```
-
-`*values` receives extra positional arguments as a tuple. `**options` receives extra keyword arguments as a dictionary.
-
-Unions, nullable flow narrowing, automatic conversions, and complete static semantic checking are active development areas.
+See the [language design](../language-design.md) for the intended static/dynamic
+boundary and the [implementation status](../implementation-status.md) for limits.

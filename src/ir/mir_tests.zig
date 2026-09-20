@@ -9,6 +9,7 @@ test "HIR lowers to verified MIR with stable source lines" {
     const right = try source.appendValue(.integer, .{ .constant_integer = 22 }, 1);
     const sum = try source.appendValue(.integer, .{ .binary = .{ .operator = .add, .left = left, .right = right } }, 1);
     try source.appendEffect(.{ .return_value = sum }, 1);
+    try source.setBlocks(&.{.{ .first_instruction = 0, .instruction_count = source.instructions.items.len }});
     var function = try mir.Function.lower(std.testing.allocator, &source);
     defer function.deinit();
     try std.testing.expectEqual(@as(usize, 1), function.blocks.items.len);
@@ -22,7 +23,9 @@ test "constant folding preserves trapping division" {
     defer source.deinit();
     const numerator = try source.appendValue(.integer, .{ .constant_integer = 1 }, 1);
     const zero = try source.appendValue(.integer, .{ .constant_integer = 0 }, 1);
-    _ = try source.appendValue(.integer, .{ .binary = .{ .operator = .divide, .left = numerator, .right = zero } }, 1);
+    const result = try source.appendValue(.integer, .{ .binary = .{ .operator = .divide, .left = numerator, .right = zero } }, 1);
+    try source.appendEffect(.{ .return_value = result }, 1);
+    try source.setBlocks(&.{.{ .first_instruction = 0, .instruction_count = source.instructions.items.len }});
     var function = try mir.Function.lower(std.testing.allocator, &source);
     defer function.deinit();
     try std.testing.expectEqual(@as(usize, 0), try function.foldConstants());
@@ -34,7 +37,9 @@ test "constant folding handles modulo and preserves zero divisor" {
     defer source.deinit();
     const left = try source.appendValue(.integer, .{ .constant_integer = 17 }, 1);
     const right = try source.appendValue(.integer, .{ .constant_integer = 5 }, 1);
-    _ = try source.appendValue(.integer, .{ .binary = .{ .operator = .modulo, .left = left, .right = right } }, 1);
+    const result = try source.appendValue(.integer, .{ .binary = .{ .operator = .modulo, .left = left, .right = right } }, 1);
+    try source.appendEffect(.{ .return_value = result }, 1);
+    try source.setBlocks(&.{.{ .first_instruction = 0, .instruction_count = source.instructions.items.len }});
     var function = try mir.Function.lower(std.testing.allocator, &source);
     defer function.deinit();
     try std.testing.expectEqual(@as(usize, 1), try function.foldConstants());
@@ -47,6 +52,8 @@ test "MIR preserves resumable machine metadata" {
     source.resumable = true;
     source.suspension_count = 1;
     try source.appendEffect(.{ .suspend_point = .{ .resume_line = 8 } }, 8);
+    try source.appendEffect(.{ .return_value = null }, 8);
+    try source.setBlocks(&.{.{ .first_instruction = 0, .instruction_count = source.instructions.items.len }});
     var lowered = try mir.Function.lower(std.testing.allocator, &source);
     defer lowered.deinit();
     try std.testing.expect(lowered.resumable);

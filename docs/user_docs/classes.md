@@ -1,66 +1,49 @@
-# Classes and Instances
+# Classes and visibility
 
-Classes define a reusable shape and behavior. Calling a class creates an
-instance, which stores fields and can call methods declared by the class.
+The object model is experimental. It provides class declarations, constructors,
+instance fields, methods, inheritance, and visibility metadata. Enforcement and
+behavior across compiler paths are not yet complete.
 
-```ravi
-class Counter:
-    kriya init(start: int):
-        self.value = start
+```text
+roopa Counter:
+    saarva kriya huttu(start: int):
+        tanna.value = start
 
-    kriya increment(self):
-        self.value = self.value + 1
+    saarva kriya increment():
+        tanna.value = tanna.value + 1
+
+    saarva kriya current():
+        kodu tanna.value
 
 counter = Counter(0)
 counter.increment()
-mudrisu(counter.value)
+mudrisu(counter.current())
 ```
 
-## Class parts
+This illustrates the intended counter behavior, but the current CLI rejects this
+example with `InvalidName`. It is not a runnable getting-started example.
+Methods have an implicit receiver: use `tanna`
+(`self` in English) inside the body, without declaring a receiver parameter.
+The constructor is `huttu` (`init` in English).
 
-- `roopa` is the default-profile keyword for `class`; English source uses
-    `class`.
-- `init` is the conventional constructor name. The constructor initializes
-    fields on the new instance.
-- `self.value` is an instance field. Fields can be read and assigned through
-    member access.
-- A method is a function declared inside a class. Call it with
-    `instance.method(arguments)`.
+## Inheritance
 
-## Method example
+A class can name a base in its declaration, for example `roopa Child(Parent):`.
+The compiler contains method override and base lookup support, including `guru`
+references. Constructor chaining and dynamic method lookup are still undergoing
+conformance work. Do not assume automatic base-constructor invocation or Python's
+multiple-inheritance rules.
 
-```ravi
-roopa Greeter:
-        kriya init(prefix):
-                self.prefix = prefix
+## Visibility
 
-        kriya greet(name):
-                kodu self.prefix + name
+| Default | English | Intended access |
+| --- | --- | --- |
+| `saarva` | `public` | External callers |
+| `swanta` | `private` | Declaring class |
+| `vansha` | `protected` | Class and derived classes |
+| `olage` | `internal` | Defining module |
 
-greeter = Greeter("Namaskara ")
-mudrisu(greeter.greet("Ravi"))
-```
-
-Methods may use the same parameters, defaults, keyword arguments, closures,
-and return statements as ordinary functions. See [Function](type-function.md)
-for the callable model.
-
-Ravi supports instances, properties, methods, constructors, visibility metadata, method dispatch, and single inheritance. A derived class is declared with `guru` in the default profile.
-
-For a concrete class that accepts constructor arguments, declare its own
-`huttu` method. Constructor arguments are not automatically forwarded through
-the inheritance chain. Inherited methods are available on derived instances,
-and an override replaces the inherited implementation for normal dispatch.
-
-Nested object graphs are supported because fields may hold other instances:
-
-```ravi
-roopa Invoice:
-    kriya huttu(account):
-        tanna.account = account
-
-    kriya account_category():
-        kodu tanna.account.category()
-```
-
-Use the canonical examples in `examples/class_oop.rk` for the currently verified object model.
+Visibility checks are incomplete, especially through dynamic access and module
+boundaries. They are not a sandbox or a protection mechanism for secrets. Complete
+object protocols, visibility enforcement, and equality/hashing are tracked in the
+[development plan](../development-plan.md).

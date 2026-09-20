@@ -20,7 +20,7 @@ pub const Backend = struct {
     }
     pub fn lower(self: *Backend, input: []const u8) BackendError!Artifact {
         if (input.len == 0) return error.EmptyInput;
-        if (!supportsTarget(self.target)) return error.UnsupportedTarget;
+        if (self.target != .bytecode) return error.UnsupportedTarget;
         const bytes = try self.allocator.dupe(u8, input);
         return .{ .target = self.target, .bytes = bytes, .allocator = self.allocator };
     }

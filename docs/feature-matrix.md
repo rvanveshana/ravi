@@ -1,6 +1,8 @@
-# Ravi Feature Matrix
+# Ravi Kannada feature matrix
 
 Generated from `config/feature-matrix.json` by `tools/generate_feature_matrix.ps1`.
+
+These maintainer-entered stage flags are historical tracking data, not automated test results or release readiness. See [Implementation status](implementation-status.md) for current evidence and limitations.
 
 | Feature | designed | parsed | analyzed | lowered | executed | tested |
 | --- | --- | --- | --- | --- | --- | --- |

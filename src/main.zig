@@ -188,7 +188,7 @@ pub fn main(init: std.process.Init) !void {
         if (!vm.pub_printed) std.debug.print("{d}\n", .{result});
         return;
     }
-    std.debug.print("valid Ravi module: {d} syntax nodes\n", .{module.statements.items.len});
+    std.debug.print("valid Ravi Kannada module: {d} syntax nodes\n", .{module.statements.items.len});
     _ = TokenKind;
     _ = Backend;
     _ = Debugger;
@@ -240,7 +240,7 @@ fn runWithImports(allocator: std.mem.Allocator, io: std.Io, root_path: []const u
 }
 fn printHelp() void {
     std.debug.print(
-        \\Ravi programming language
+        \\Ravi Kannada programming language
         \\
         \\Usage: ravi <command> [--lang kn|en] <file.rk>
         \\

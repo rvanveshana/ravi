@@ -1,57 +1,47 @@
-# Ravi runtime value ABI
+# Runtime value ABI
 
-Ravi's selected runtime slot is the 64-bit NaN-boxed `src/vm/value.zig.Value`.
-This contract applies to the interpreter, optimized dispatcher, native ABI,
-debugger values, collection keys, and FFI adapters.
+This is an internal implementation reference. It is not a stable public FFI or
+native-library contract. See [Architecture](architecture.md) for integration limits.
 
 ## Representation
 
-- Ordinary IEEE-754 values, infinities, and a canonical quiet NaN represent
-  floating-point values.
-- Tagged quiet-NaN payloads represent `none`, booleans, signed 48-bit integers,
-  object pointers, and typed object handles.
-- Integers are restricted to `[-2^47, 2^47-1]`. Checked construction reports
-  `IntegerOutOfRange`; execution must never silently truncate.
-- Object pointers use the low canonical 48 address bits and restore sign
-  extension when decoded. Unsupported pointer models must select a portable
-  tagged-union build rather than weakening this assumption.
-- Typed handles dedicate eight payload bits to `ObjectKind` and forty bits to
-  an index. Different object kinds cannot alias even when indexes match.
+`src/vm/value.zig` defines the shared 64-bit NaN-boxed `Value` representation.
+Ordinary floating-point values and tagged payloads distinguish numbers, booleans,
+`none`, pointers, and typed handles.
+
+| Value | Current representation |
+| --- | --- |
+| Float | IEEE-754 binary64; NaNs canonicalized by construction |
+| Integer | Signed 48-bit payload, from `-2^47` through `2^47 - 1` |
+| Boolean and none | Dedicated tags |
+| Object handle | Eight-bit object kind and forty-bit table index |
+| Raw pointer | Encoded using low canonical address bits; portability constrained |
+
+Checked constructors reject unrepresentable integers/handles. A portable alternate
+representation is not currently implemented. Do not assume all pointer models or
+native targets are supported because the host compiler is Zig.
 
 ## Equality and hashing
 
-- Values of different non-numeric tags are unequal. Integer and floating-point
-  values use numeric equality at the runtime boundary, so `3` and `3.0`
-  compare equal when both are finite and exactly represent the same number.
-- Floating equality follows IEEE-754: NaN is unequal to itself and signed zero
-  compares equal. Hashing normalizes signed zero so equal values hash equally.
-- Integral floating-point values in the representable 48-bit range hash like
-  their integer counterpart, preserving the equality/hash contract.
-- Object identity is pointer or typed-handle identity until an object's type
-  supplies structural equality and hashing.
+`Value.eql` and `Value.hash` define primitive numeric/tag behavior. Numeric integer
+and float values can compare equal, signed zero is normalized for hashing, and
+NaN does not compare equal to itself. Heap-object equality may involve VM operations
+beyond raw handle equality. Full structural hashing and user-defined equality
+protocols are unfinished.
 
-## Handles and ownership
+## Ownership
 
-- Handles contain an object kind and a table index. A handle is valid only while
-  its table entry points to a live collector-managed allocation.
-- The VM rebuilds precise roots from live stack values, frame locals, captures,
-  and the active exception before collection. Table capacity is not a root.
-- Swept entries are rejected by live-allocation checks; stale handles produce a
-  runtime error instead of dereferencing reclaimed memory.
-- The initial collector is non-moving. Future moving collectors must either
-  update pointer slots or preserve the public handle contract.
+Handles are local to their owning VM tables and valid only while the referenced
+allocation is live. Table capacity is not proof of liveness. Worker arguments and
+results reject object handles until a transfer protocol exists; copying the raw
+64-bit value does not transfer the object.
 
-## FFI and collection safety
+The non-moving collector tracks managed allocations, roots, and destructors. VM
+root discovery covers active stacks, frame locals/captures, and exceptions, with
+further lifetime auditing required for the completed runtime. Constructors roll
+back initialized, unpublished objects on failure. Temporary roots and fallible
+publication are part of the ownership contract.
 
-FFI boundaries pass the raw 64-bit slot together with the ABI version. Foreign
-code must use checked constructors and predicates rather than manufacturing
-tag bits. Collection hashing must dispatch through `Value.hash` and object
-type descriptors. Foreign code must not retain a handle after its owning VM or
-collector is destroyed.
-
-## Compatibility policy
-
-`src/vm/value.zig` is the sole runtime value representation. The former
-union-based `src/runtime/value.zig` compatibility module has been removed from
-the source tree and build graph; new runtime, collection, debugger, and FFI
-code must use the NaN-boxed `Value` ABI.
+Do not expose raw handles or pointers as an application API. A future FFI must
+specify versioning, checked construction, root retention, borrowing/transfer,
+errors, and suspension explicitly.

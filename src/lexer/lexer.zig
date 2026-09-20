@@ -100,14 +100,6 @@ pub const Lexer = struct {
                 try self.emitAt(.comment, comment_start, self.index - comment_start, self.line, comment_column, self.line, self.column);
                 continue;
             }
-            if (std.ascii.isAlphabetic(c) or c == '_') {
-                try self.scanIdentifier();
-                continue;
-            }
-            if (std.ascii.isDigit(c)) {
-                try self.scanNumber();
-                continue;
-            }
             if ((c == 'r' or c == 'R' or c == 'f' or c == 'F') and self.index + 1 < self.source.len and (self.source[self.index + 1] == '\'' or self.source[self.index + 1] == '"')) {
                 self.index += 1;
                 self.column += 1;
@@ -116,6 +108,14 @@ pub const Lexer = struct {
                 token.start_offset -= 1;
                 token.column -= 1;
                 token.lexeme = self.source[token.start_offset..token.end_offset];
+                continue;
+            }
+            if (std.ascii.isAlphabetic(c) or c == '_') {
+                try self.scanIdentifier();
+                continue;
+            }
+            if (std.ascii.isDigit(c)) {
+                try self.scanNumber();
                 continue;
             }
             if (c == '\'' or c == '"') {

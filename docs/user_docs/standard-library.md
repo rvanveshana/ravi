@@ -1,25 +1,47 @@
-# Standard Library
+# Standard library
 
-See [Standard Library Reference](standard-library-reference.md) for the
-current module API, planned library groups, and library design rules. See
-[Standard Library Structure](standard-library-structure.md) for namespace
-ownership, facade layout, and the growth plan for many libraries.
+The current standard library is small and experimental. Built-in operations are
+provided by the compiler/VM; source modules live under `lib/ravi`. A source file's
+presence does not mean its advertised API works end to end.
 
-Ravi source modules live in `lib/ravi/` and are ordinary `.rk` files. This
-keeps the standard library readable and makes the same module mechanism
-available to application authors.
+## Built-in functions
 
-The canonical current module is:
+| Default / English | Arguments | Behavior |
+| --- | --- | --- |
+| `mudrisu` / `print` | Value | Print a value; return `none` |
+| `vidha` / `type` | Value | Return an internal numeric value-category identifier |
+| `malagu` / `sleep` | Milliseconds | Block the current thread |
+| `shreni` / `range` | Stop; start and stop; or start, stop, step | Integer range used by supported loops; stop is exclusive |
 
-- `lib/ravi/math.rk`: reusable arithmetic helpers and math-oriented functions.
+`type` does not return a Python-style public type object. Avoid depending on its
+numeric identifiers. Range steps must be nonzero. General iterator protocols are
+still incomplete.
 
-Import a symbol with:
+For methods, use the [string reference](strings.md) and
+[collection reference](collections.md). For task operations, see
+[concurrency](async-concurrency.md).
 
-```ravi
-ravi.math inda add tago
-mudrisu(add(4, 5))
-```
+## Source modules
 
-The legacy `lib/math.rk` path remains supported for compatibility. Library APIs
-should remain small, documented, and profile-compatible. A facade may itself
-import focused implementation modules from its domain directory.
+| Module | Current contents | Readiness |
+| --- | --- | --- |
+| `ravi.core` | `identity`/`gurutisu`, `is_none`/`illa_moulya` | Small source helpers; module integration is experimental |
+| `ravi.math` | `add`/`serisu`, `subtract`/`kadime`, `multiply`/`gunisu`, `divide`/`bhagisu` | Arithmetic wrappers, not a general mathematics library |
+| `ravi.exceptions` | Named exception facades | Incomplete public exception hierarchy and catch protocol |
+| `ravi.json` | API blueprint | JSON encoding/decoding is not delivered |
+| `ravi.network` | API blueprint | Networking is not delivered |
+| `ravi.kirana` | UI blueprint | UI runtime is not delivered |
+
+The `answer()` helper in `ravi.math` is a fixture that returns `41`, not a standard
+mathematical API. There is no separate `lib/math.rk` compatibility module.
+
+The source modules use the default profile. Their English helper names are ordinary
+identifiers; they do not make their source independently compilable in the English
+profile. Read [module limitations](modules.md) before importing them.
+
+## Planned library coverage
+
+Files and streams, paths, bytes, complete Unicode operations, JSON, time, logging,
+processes, networking, TLS, and testing APIs require implementation. The
+[development plan](../development-plan.md) defines their delivery order and
+acceptance criteria. No Python standard-library compatibility is promised.

@@ -104,6 +104,7 @@ pub const Chunk = struct {
         try self.code.append(self.allocator, instruction);
         errdefer _ = self.code.pop();
         try self.source_map.append(self.allocator, self.current_location);
+        errdefer _ = self.source_map.pop();
         try self.root_map.append(self.allocator, .{});
     }
 

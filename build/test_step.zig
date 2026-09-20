@@ -7,6 +7,7 @@ pub const TestArtifacts = struct {
     semantic: *std.Build.Step,
     semantic_symbols: *std.Build.Step,
     value: *std.Build.Step,
+    vm: *std.Build.Step,
     collection: *std.Build.Step,
     string_runtime: *std.Build.Step,
     backend: *std.Build.Step,
@@ -40,41 +41,16 @@ pub const TestArtifacts = struct {
 };
 
 pub fn addTestStep(b: *std.Build, artifacts: TestArtifacts) void {
-    const test_step = b.step("test", "Run runtime unit tests");
-    test_step.dependOn(artifacts.lexer);
-    test_step.dependOn(artifacts.parser);
-    for (artifacts.compiler_vm) |compiler_vm_test| test_step.dependOn(compiler_vm_test);
-    test_step.dependOn(artifacts.semantic);
-    test_step.dependOn(artifacts.semantic_symbols);
-    test_step.dependOn(artifacts.value);
-    test_step.dependOn(artifacts.collection);
-    test_step.dependOn(artifacts.string_runtime);
-    test_step.dependOn(artifacts.backend);
-    test_step.dependOn(artifacts.optimizer);
-    test_step.dependOn(artifacts.debug);
-    test_step.dependOn(artifacts.dap);
-    test_step.dependOn(artifacts.scheduler);
-    test_step.dependOn(artifacts.async_state);
-    test_step.dependOn(artifacts.gc);
-    test_step.dependOn(artifacts.nan_value);
-    test_step.dependOn(artifacts.dispatch);
-    test_step.dependOn(artifacts.bytecode);
-    test_step.dependOn(artifacts.opcode_spec);
-    test_step.dependOn(artifacts.source);
-    test_step.dependOn(artifacts.diagnostics);
-    test_step.dependOn(artifacts.formatter);
-    test_step.dependOn(artifacts.resolver);
-    test_step.dependOn(artifacts.loader);
-    test_step.dependOn(artifacts.module_artifact);
-    test_step.dependOn(artifacts.module_cache);
-    test_step.dependOn(artifacts.hir);
-    test_step.dependOn(artifacts.mir);
-    test_step.dependOn(artifacts.mir_split);
-    test_step.dependOn(artifacts.mir_bytecode);
-    test_step.dependOn(artifacts.hir_pipeline);
-    test_step.dependOn(artifacts.lsp);
-    test_step.dependOn(artifacts.lsp_protocol);
-    test_step.dependOn(artifacts.jsonrpc);
-    test_step.dependOn(artifacts.phase0);
-    test_step.dependOn(artifacts.phase1);
+    const all = b.step("test", "Run all language and runtime tests");
+    inline for (comptime std.meta.fieldNames(TestArtifacts)) |name| {
+        const group = b.step(b.fmt("test-{s}", .{name}), b.fmt("Run {s} tests", .{name}));
+        const artifact = @field(artifacts, name);
+        if (comptime @TypeOf(artifact) == []const *std.Build.Step) {
+            for (artifact, 0..) |step, index| {
+                group.dependOn(step);
+                b.step(b.fmt("test-{s}-{d}", .{ name, index }), "Run one compiler/VM test group").dependOn(step);
+            }
+        } else group.dependOn(artifact);
+        all.dependOn(group);
+    }
 }

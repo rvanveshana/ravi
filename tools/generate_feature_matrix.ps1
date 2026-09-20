@@ -10,9 +10,11 @@ $outputFile = Join-Path $root $OutputPath
 $features = Get-Content -Raw -LiteralPath $inputFile | ConvertFrom-Json
 $stages = @("designed", "parsed", "analyzed", "lowered", "executed", "tested")
 $lines = [System.Collections.Generic.List[string]]::new()
-$lines.Add("# Ravi Feature Matrix")
+$lines.Add("# Ravi Kannada feature matrix")
 $lines.Add("")
 $lines.Add("Generated from ``$InputPath`` by ``tools/generate_feature_matrix.ps1``.")
+$lines.Add("")
+$lines.Add("These maintainer-entered stage flags are historical tracking data, not automated test results or release readiness. See [Implementation status](implementation-status.md) for current evidence and limitations.")
 $lines.Add("")
 $lines.Add(("| Feature | " + (($stages | ForEach-Object { $_ }) -join " | ") + " |"))
 $lines.Add(("| --- | " + (($stages | ForEach-Object { "---" }) -join " | ") + " |"))

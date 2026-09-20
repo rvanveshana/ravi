@@ -47,6 +47,7 @@ pub fn add(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builti
     const lexer = b.createModule(.{ .root_source_file = b.path("src/lexer/lexer.zig"), .target = target, .optimize = optimize });
     lexer.addImport("ravi_config", config);
     const ast = b.createModule(.{ .root_source_file = b.path("src/ast/ast.zig"), .target = target, .optimize = optimize });
+    ast.addImport("ravi_config", config);
     const ast_helpers = b.createModule(.{ .root_source_file = b.path("src/compiler/ast_helpers.zig"), .target = target, .optimize = optimize });
     ast_helpers.addImport("ravi_ast", ast);
     const types = b.createModule(.{ .root_source_file = b.path("src/types/type.zig"), .target = target, .optimize = optimize });

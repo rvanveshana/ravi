@@ -55,7 +55,7 @@ pub fn topLevel(comptime Error: type, self: anytype, chunk: *bytecode.Chunk, mod
                 if (try_stmt.finally_count != 0) index = @max(index, try_stmt.finally_first + try_stmt.finally_count);
             },
             else => {
-                try self.compileAstStatements(chunk, module, index, 1, names, true, loops, break_targets);
+                try self.compileAstStatements(chunk, module, index, 1, names, index + 1 != module.statements.items.len, loops, break_targets);
                 index += 1;
             },
         }

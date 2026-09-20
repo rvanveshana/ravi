@@ -119,6 +119,6 @@ test "symbol graph assigns stable ids and resolves lexical shadowing" {
     try std.testing.expectEqual(@as(usize, 1), graph.scopes.items[@intFromEnum(child)].captures.items.len);
     try std.testing.expectEqual(outer, graph.lookup(outer).?.id);
     try std.testing.expectError(error.InvalidCapture, graph.capture(child, inner));
-    try std.testing.expectEqual(outer, try graph.reference(child, "value"));
+    try std.testing.expectEqual(inner, try graph.reference(child, "value"));
     try std.testing.expectEqual(@as(usize, 1), graph.references.items.len);
 }

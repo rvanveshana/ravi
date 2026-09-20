@@ -1,26 +1,22 @@
-param([int]$MaxLines = 300)
+param([ValidateRange(1, 10000)][int]$MaxLines = 300)
 
-$temporaryBudgets = @{
-    "src/compiler/compiler.zig" = 1050
-    "src/vm/vm.zig" = 800
-    "src/bytecode/bytecode.zig" = 350
-    "src/lsp/jsonrpc.zig" = 500
-    "src/concurrency/scheduler.zig" = 350
-}
-
-$oversized = Get-ChildItem -Path src -Recurse -Filter *.zig | ForEach-Object {
+$ErrorActionPreference = "Stop"
+$workspace = Split-Path -Parent $PSScriptRoot
+$files = @(Get-ChildItem -LiteralPath (Join-Path $workspace 'src'), (Join-Path $workspace 'tests'), (Join-Path $workspace 'build'), (Join-Path $workspace 'config'), (Join-Path $workspace 'tools') -Recurse -File |
+    Where-Object { $_.Extension -in '.zig', '.ps1' })
+$files += Get-Item -LiteralPath (Join-Path $workspace 'build.zig'), (Join-Path $workspace 'test.ps1')
+$oversized = @($files | ForEach-Object {
     $lines = (Get-Content -LiteralPath $_.FullName).Count
-    $rootUri = [System.Uri]::new(((Get-Location).Path.TrimEnd('\') + '\'))
-    $fileUri = [System.Uri]::new($_.FullName)
-    $relative = [System.Uri]::UnescapeDataString($rootUri.MakeRelativeUri($fileUri).ToString()).Replace('\', '/')
-    $limit = if ($temporaryBudgets.ContainsKey($relative)) { $temporaryBudgets[$relative] } else { $MaxLines }
-    if ($lines -gt $limit) {
-        [pscustomobject]@{ File = $relative; Lines = $lines; Limit = $limit }
+    if ($lines -gt $MaxLines) {
+        [pscustomobject]@{
+            File = [IO.Path]::GetRelativePath($workspace, $_.FullName)
+            Lines = $lines
+            Limit = $MaxLines
+        }
     }
-}
-
-if ($oversized) {
+})
+if ($oversized.Count -gt 0) {
     $oversized | Sort-Object Lines -Descending | Format-Table -AutoSize
     exit 1
 }
-Write-Output "All source modules satisfy their line-count budgets."
+Write-Output "All maintained source, test, build, and script files satisfy the $MaxLines-line budget."

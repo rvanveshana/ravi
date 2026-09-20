@@ -1,5 +1,8 @@
 pub const RuntimeError = error{
     OutOfMemory,
+    UnsupportedTransfer,
+    TaskQueueFull,
+    SchedulerStopped,
     StackOverflow,
     StackUnderflow,
     DivisionByZero,
@@ -29,6 +32,8 @@ pub const TypeId = enum(i64) {
 
 pub fn publicExceptionName(err: anyerror) ?[]const u8 {
     return switch (err) {
+        error.UnsupportedTransfer => "TypeError",
+        error.TaskQueueFull, error.SchedulerStopped => "RuntimeError",
         error.OutOfMemory => "OutOfMemoryError",
         error.StackOverflow => "StackOverflowError",
         error.StackUnderflow => "StackUnderflowError",

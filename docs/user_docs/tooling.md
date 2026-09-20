@@ -1,23 +1,44 @@
-# Tooling
+# Command-line tools
 
-## Build and tests
+Use the built `ravi` executable, or its full path under `zig-out/bin`. Run
+`ravi --help` for available options and `ravi --version` for the development version.
+
+| Command | Purpose |
+| --- | --- |
+| `ravi run program.rk` | Compile and execute a program |
+| `ravi program.rk` | Shorthand for `run` |
+| `ravi check program.rk` | Parse and analyze without executing |
+| `ravi tokens program.rk` | Inspect lexer tokens |
+| `ravi bytecode program.rk` | Inspect emitted bytecode |
+| `ravi trace program.rk` | Run with execution tracing |
+| `ravi fmt program.rk` | Rewrite the file using the formatter |
+| `ravi fmt-check program.rk` | Check formatting without rewriting |
+
+`check` is a partial front-end check. It is not proof that the runtime supports
+every construct in a file. Compiler selection is internal; `--ast-compiler` is not
+a supported public option.
+
+## Profiles and diagnostics
 
 ```powershell
-zig build
-zig build test --summary all
-.\test.ps1
+ravi run --lang en program.rk
+ravi check --diagnostic-format json program.rk
+ravi check --diagnostic-format compact program.rk
 ```
 
-## Compiler profiles
+`--lang kn` and `--lang en` override the source header. Diagnostic formats are
+`human` (default), `compact`, and `json`. Structured compiler diagnostics do not
+imply that all runtime failures and tool output use the same JSON envelope.
 
-The normal CLI uses the stable legacy token compiler. The AST compiler is available for migration and conformance testing:
+The current executable writes program/debug output through the runtime's diagnostic
+stream. Do not assume a stable stdout-only interface for shell pipelines. A final
+top-level expression can also be displayed by the CLI.
 
-```powershell
-ravi run --ast-compiler program.rk
-```
+## Editor integration and bug reports
 
-## Source tools
+LSP, DAP, and debugger components exist in the repository. They are under development
+and are not advertised as a production editor integration.
 
-The repository includes a formatter, structured diagnostics, bytecode verification, debugger hooks, LSP protocol support, DAP protocol support, and benchmark scripts. These components are actively developed and their implementation details are documented under `docs/`.
-
-When reporting a problem, include the `.rk` file, selected profile, command, and complete diagnostic output.
+When reporting a problem, include a minimal `.rk` file, its profile, the complete
+command and diagnostic, operating system, Zig version, and repository revision.
+For build and test instructions, see [Contributing](../contributing.md).

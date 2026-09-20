@@ -91,8 +91,9 @@ pub const Loader = struct {
     fn visit(self: *Loader, path: []const u8) !resolver.ModuleId {
         if (self.graph.find(path)) |existing| return existing;
         const id = try self.graph.register(path);
+        var published = false;
         const source = try self.provider(self.provider_context, self.allocator, path);
-        errdefer self.allocator.free(source);
+        errdefer if (!published) self.allocator.free(source);
         const language = (config.languageFromHeader(source) catch |err| return err) orelse .kn;
         var scan = try lexer.Lexer.initWithLanguage(self.allocator, source, language);
         defer scan.deinit();
@@ -102,8 +103,9 @@ pub const Loader = struct {
         defer syntax.deinit();
         if (syntax.diagnostics.items.len != 0) return error.InvalidModule;
         const owned_path = try self.allocator.dupe(u8, path);
-        errdefer self.allocator.free(owned_path);
+        errdefer if (!published) self.allocator.free(owned_path);
         try self.modules.append(self.allocator, .{ .path = owned_path, .source = source, .language = language });
+        published = true;
         // Build a concrete public interface from top-level declarations. The
         // resolver owns stable symbol names; the loader only supplies the
         // source-level declarations that are safe to import.
@@ -115,6 +117,7 @@ pub const Loader = struct {
         for (syntax.statements.items) |statement| if (statement.kind == .import) {
             const imported = statement.kind.import.module;
             const dependency_path = try self.resolvePath(path, imported);
+            defer self.allocator.free(dependency_path);
             const dependency = try self.visit(dependency_path);
             // Empty interfaces are retained for legacy side-effect imports.
             // Once a module declares exports, every requested symbol must be
@@ -127,7 +130,6 @@ pub const Loader = struct {
             }
             try self.graph.addDependency(id, dependency);
             try self.modules.items[@intFromEnum(id)].imports.append(self.allocator, dependency);
-            self.allocator.free(dependency_path);
         };
         return id;
     }
@@ -229,14 +231,16 @@ test "loader searches configured package roots after relative imports" {
     var files = std.StringHashMap([]const u8).init(std.testing.allocator);
     defer files.deinit();
     try files.put("app.rk", "math inda add tago\n");
-    try files.put("pkg/math.rk", "kriya add():\n    kodu 1\n");
+    const package_path = try std.fs.path.join(std.testing.allocator, &.{ "pkg", "math.rk" });
+    defer std.testing.allocator.free(package_path);
+    try files.put(package_path, "kriya add():\n    kodu 1\n");
     var loader = Loader.init(std.testing.allocator, Files.provide, @ptrCast(&files));
     defer loader.deinit();
     try loader.addSearchPath("pkg");
     const order = try loader.load("app.rk");
     defer std.testing.allocator.free(order);
     try std.testing.expectEqual(@as(usize, 2), order.len);
-    try std.testing.expectEqualStrings("pkg/math.rk", loader.module(order[0]).?.path);
+    try std.testing.expectEqualStrings(package_path, loader.module(order[0]).?.path);
 }
 
 test "loader validates cached interface artifacts" {

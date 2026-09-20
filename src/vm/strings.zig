@@ -7,20 +7,7 @@ fn codepoint(text: []const u8, start: usize) ?struct { value: i64, width: usize 
     if (start >= text.len) return null;
     const byte_width = width(text[start]) orelse return null;
     if (start + byte_width > text.len) return null;
-    var value: i64 = if (byte_width == 1) text[start] else @intCast(text[start] & (@as(u8, 0x7F) >> @intCast(byte_width - 2)));
-    for (1..byte_width) |index| {
-        const continuation = text[start + index];
-        if (continuation & 0xC0 != 0x80) return null;
-        value = (value << 6) | @as(i64, continuation & 0x3F);
-    }
-    const minimum: i64 = switch (byte_width) {
-        1 => 0,
-        2 => 0x80,
-        3 => 0x800,
-        4 => 0x10000,
-        else => unreachable,
-    };
-    if (value < minimum or value > 0x10FFFF or (value >= 0xD800 and value <= 0xDFFF)) return null;
+    const value = std.unicode.utf8Decode(text[start .. start + byte_width]) catch return null;
     return .{ .value = value, .width = byte_width };
 }
 pub fn length(text: []const u8) usize {
@@ -33,7 +20,9 @@ pub fn offset(text: []const u8, ordinal: usize) ?usize {
     var cursor: usize = 0;
     var current: usize = 0;
     while (cursor < text.len and current < ordinal) : (current += 1) cursor += (codepoint(text, cursor) orelse return null).width;
-    return if (current == ordinal) cursor else null;
+    if (current != ordinal) return null;
+    if (cursor < text.len and codepoint(text, cursor) == null) return null;
+    return cursor;
 }
 pub fn at(text: []const u8, ordinal: usize) ?i64 {
     const start = offset(text, ordinal) orelse return null;
@@ -49,4 +38,14 @@ test "UTF-8 helpers reject malformed, overlong, and surrogate sequences" {
     try std.testing.expectEqual(@as(usize, 0), length("\xC0\x80"));
     try std.testing.expect(at("\xED\xA0\x80", 0) == null);
     try std.testing.expect(offset("\xF4\x90\x80\x80", 0) == null);
+}
+
+test "Kannada combining marks and non-BMP scalars preserve UTF-8 offsets" {
+    const kannada = "\u{0C95}\u{0CBF}";
+    try std.testing.expectEqual(@as(usize, 2), length(kannada));
+    try std.testing.expectEqual(@as(?i64, 0x0C95), at(kannada, 0));
+    try std.testing.expectEqual(@as(?i64, 0x0CBF), at(kannada, 1));
+    try std.testing.expectEqual(@as(?usize, 3), offset(kannada, 1));
+    try std.testing.expectEqual(@as(?usize, 6), offset(kannada, 2));
+    try std.testing.expectEqual(@as(?i64, 0x1F600), at("\u{1F600}", 0));
 }

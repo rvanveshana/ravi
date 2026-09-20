@@ -63,6 +63,7 @@ pub const Stmt = struct {
 };
 
 pub const Module = struct {
+    language: @import("ravi_config").SourceLanguage = .kn,
     allocator: std.mem.Allocator,
     expressions: std.ArrayListUnmanaged(Expr) = .empty,
     format_args: std.ArrayListUnmanaged(ExprId) = .empty,

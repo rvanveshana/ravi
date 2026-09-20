@@ -1,30 +1,25 @@
 # Examples
 
-The repository examples are executable references, not syntax-only snippets.
-Contract-style fixtures raise on incorrect results, so a zero exit code means
-the demonstrated behavior was evaluated successfully.
+Start with the complete examples in [Getting started](getting-started.md), then
+use the relevant handbook page for the behavior you want to explore.
 
-Start with:
+| Topic | Handbook example |
+| --- | --- |
+| Default and English profiles | [First program](getting-started.md) |
+| Conditions, loops, and ranges | [Control flow](control-flow.md) |
+| UTF-8 indexing and transformations | [Strings](strings.md) |
+| List construction and mutation (experimental) | [Collections](collections.md) |
+| Defaults and named arguments; experimental expression functions | [Functions](functions.md) |
+| Annotated parameters | [Typing](typing.md) |
+| Constructors and methods (experimental) | [Classes](classes.md) |
+| Handling an arithmetic error | [Exceptions](exceptions.md) |
+| Two local modules | [Modules](modules.md) |
+| Scalar worker task | [Concurrency](async-concurrency.md) |
 
-- `examples/arithmetic.rk`
-- `examples/functions.rk`
-- `examples/control_flow.rk`
-- `examples/collections.rk`
-- `examples/class_oop.rk`
-- `examples/variadic_functions.rk`
-- `examples/module_app.rk`
+The repository's [examples directory](../../examples) also contains development
+fixtures. They cover more syntax than the verified handbook and are not all known
+to pass. Treat them as implementation exercises, not a stable API specification.
 
-The two language-profile collections are documented separately:
-
-- [English Examples](examples-english.md)
-- [Kannada and Kanglish Examples](examples-kannada.md)
-
-Run all production examples with `.\test.ps1` from PowerShell. Run an individual file with `ravi run path/to/file.rk`.
-
-The broad data-type and method contract is in
-`examples/data_types_and_methods.rk`. It checks literals, arithmetic,
-strings, lists, tuples, sets, dictionaries, function values, defaults, and
-variadic calls. Every production example is executed through both compiler
-paths by the test runner. The runner fails when either path fails or when the
-evaluated output differs, so examples cannot be marked successful by syntax
-checking or by silently selecting only one compiler.
+Run a file with `ravi run examples/arithmetic.rk` from the repository root. A source
+header selects its profile; use `--lang` only when intentionally overriding it.
+See [implementation status](../implementation-status.md) for validation evidence.

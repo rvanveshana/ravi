@@ -8,6 +8,9 @@ pub fn expression(comptime Error: type, self: anytype, chunk: *bytecode.Chunk, m
     if (@as(usize, expression_id) >= module.expressions.items.len) return error.InvalidExpression;
     const expression_value = module.expressions.items[expression_id];
     self.last_location = .{ .start_offset = 0, .end_offset = 0, .line = expression_value.span.line, .column = 1 };
+    const previous_location = chunk.current_location;
+    chunk.setSourceLocation(self.last_location);
+    defer chunk.setSourceLocation(previous_location);
     switch (expression_value.kind) {
         .integer => |value| try chunk.emit(.{ .op = .constant, .operand = value }),
         .float => |value| {

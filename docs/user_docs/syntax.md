@@ -1,47 +1,57 @@
-# Syntax
+# Syntax and source profiles
 
-## Comments and indentation
+Source files use UTF-8 and the `.rk` extension. Identifiers and executable keywords
+currently use the supported Latin-script vocabulary. Text literals may contain
+Kannada and other Unicode text.
+
+## Profile selection
+
+The default profile is `kn` (Kannada/Kanglish). A first-line header selects English:
+
+```text
+# ravi: language=en
+```
+
+`# ravi: language=kn` explicitly selects the default vocabulary. A CLI `--lang kn`
+or `--lang en` option overrides the header for that invocation. The language name
+is Ravi Kannada; the `# ravi:` directive is the current source format.
+
+The two profiles map to common operations. Use the [keyword table](keywords.md)
+and the method tables on the string/collection pages. Cross-profile module
+execution still has limitations; see [Modules](modules.md).
+
+## Blocks and comments
+
+A colon introduces an indented suite. Use four spaces for each indentation level;
+tabs in indentation are rejected. `#` begins a comment extending to the line end.
 
 ```ravi
-# A comment occupies the rest of the line.
-if score >= 50:
+# Select a message using the Kannada/Kanglish profile.
+score = 72
+adre score >= 50:
     mudrisu("pass")
+illa:
+    mudrisu("retry")
 ```
 
-Blocks use exactly four spaces per indentation level. Comments and blank lines do not create a block.
-
-## Values
-
-```ravi
-count = 42
-ratio = 3.14
-name = "Ravi"
-active = true
-missing = none
-numbers = [1, 2, 3]
-point = (10, 20)
-options = {"fast": true}
-```
+Output: `pass`. Keep examples on ordinary physical lines; Python-style implicit
+line continuation and every alternative quoting form are not guaranteed.
 
 ## Expressions
 
-Arithmetic, comparisons, logical operations, calls, indexing, slicing, and member access are supported:
+Parentheses group expressions. Multiplication, division, and remainder bind more
+tightly than addition and subtraction. Comparison binds below arithmetic;
+`mattu`/`and` binds more tightly than `athva`/`or`. Write parentheses whenever the
+intended grouping is not obvious. Do not assume Python's chained-comparison or
+short-circuit behavior for unverified combinations.
 
-```ravi
-result = values[0] + options["offset"]
-visible = ready and not hidden
-piece = name[0:3]
-```
+Calls use parentheses and comma-separated arguments: `square(6)`. Member access
+uses a dot: `values.gatra()`. Indexing uses brackets: `values[0]`.
 
-## Declarations
+## Assignment and declarations
 
-```ravi
-kriya greet(name: string):
-    mudrisu("Hello " + name)
+Assignment binds a name: `count = 3`. Functions and classes use declarations with
+indented bodies. Type annotations are optional in supported positions. Keywords
+are profile-specific; user-defined names do not need translation between profiles.
 
-class Counter:
-    kriya init(start: int):
-        self.value = start
-```
-
-See [Keywords](keywords.md) for the vocabulary in each profile.
+See [Data types](data-types.md), [Functions](functions.md), and [Typing](typing.md).
