@@ -29,7 +29,10 @@ const dictSlot = value_runtime.dictSlot;
 
 pub const ResumableResult = union(enum) { suspended: Value, completed: Value };
 pub fn execute(self: anytype, chunk: *const bytecode.Chunk) RuntimeError!Value {
-    return switch (try executeInternal(self, chunk, null, 0, null, true)) {
+    const result = try executeInternal(self, chunk, null, 0, null, true);
+    try object_storage.refreshRoots(self);
+    self.collector.safepoint() catch return error.OutOfMemory;
+    return switch (result) {
         .completed => |value| value,
         .suspended => unreachable,
     };
@@ -42,6 +45,8 @@ pub fn executeResumable(self: anytype, chunk: *const bytecode.Chunk, machine: *a
 pub fn executeInternal(self: anytype, chunk: *const bytecode.Chunk, machine: ?*async_state.Machine, ip_start: usize, next_ip: ?*usize, reset: bool) RuntimeError!ResumableResult {
     chunk.verify() catch |err| return if (err == error.OutOfMemory) error.OutOfMemory else error.InvalidInstruction;
     if (reset) {
+        for (self.gc_roots.items) |root| self.collector.removeRoot(root);
+        self.gc_roots.clearRetainingCapacity();
         state_helpers.clearFrames(self);
         state_helpers.clearClosures(self);
         self.frames[0] = .{ .return_ip = 0, .base = 0 };
@@ -125,6 +130,7 @@ pub fn executeInternal(self: anytype, chunk: *const bytecode.Chunk, machine: ?*a
                 .get_property => try collection_access.getProperty(RuntimeError, self, instruction.operand),
                 .set_property => try collection_access.setProperty(RuntimeError, self, instruction.operand),
                 .load_local => try frame_access.loadLocal(RuntimeError, self, instruction.operand),
+                .load_local_ref => try frame_access.loadLocalRef(RuntimeError, self, instruction.operand),
                 .store_local => try frame_access.storeLocal(RuntimeError, self, instruction.operand),
                 .load_capture => try frame_access.loadCapture(RuntimeError, self, instruction.operand),
                 .load_capture_ref => try frame_access.loadCaptureRef(RuntimeError, self, instruction.operand),
@@ -195,7 +201,7 @@ pub fn executeInternal(self: anytype, chunk: *const bytecode.Chunk, machine: ?*a
                 .remove_collection => try collection_mutation.remove(RuntimeError, self),
                 .contains_collection => try collection_mutation.contains(RuntimeError, self),
                 .clear_collection => try collection_mutation.clear(RuntimeError, self),
-                .pop_collection => try collection_mutation.pop(RuntimeError, self),
+                .pop_collection => try collection_mutation.pop(RuntimeError, self, instruction.operand),
                 .count_collection => try collection_mutation.count(RuntimeError, self),
                 .reverse_collection, .sort_collection => {
                     try collection_mutation.reverseOrSort(RuntimeError, self, instruction.op == .reverse_collection);
@@ -286,14 +292,4 @@ fn machineError(err: anyerror) RuntimeError {
     };
 }
 
-const CallKind = enum { call, call_method, call_super, call_value };
-
-fn doCall(self: anytype, kind: CallKind, chunk: *const bytecode.Chunk, operand: i64, ip: *usize) RuntimeError!void {
-    try state_helpers.ensureCallCapacity(self);
-    switch (kind) {
-        .call => call_runtime.call(self, chunk, operand, ip) catch |err| if (!state_helpers.handleFaultWithError(self, ip, err)) return err,
-        .call_method => call_runtime.callMethod(self, chunk, operand, ip) catch |err| if (!state_helpers.handleFaultWithError(self, ip, err)) return err,
-        .call_super => call_runtime.callSuper(self, chunk, operand, ip) catch |err| if (!state_helpers.handleFaultWithError(self, ip, err)) return err,
-        .call_value => call_runtime.callValue(self, chunk, operand, ip) catch |err| if (!state_helpers.handleFaultWithError(self, ip, err)) return err,
-    }
-}
+const doCall = call_runtime.invoke;

@@ -90,7 +90,8 @@ pub const Analyzer = struct {
         };
         const expected = types.fromName(element_name);
         if (!types.isValid(expected)) return error.UnknownType;
-        for (module.expressions.items[array.first .. array.first + array.count]) |element| {
+        for (module.collection_items.items[array.first .. array.first + array.count]) |element_id| {
+            const element = module.expressions.items[element_id];
             const actual: types.Type = switch (element.kind) {
                 .integer => .{ .kind = .integer, .name = "int" },
                 .float => .{ .kind = .float, .name = "float" },

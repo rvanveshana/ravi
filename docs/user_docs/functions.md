@@ -21,15 +21,16 @@ mixing advanced binding patterns until the argument-binding contract is complete
 Functions can be assigned to variables and called through those variables.
 Expression functions use `=>`:
 
-```text
+```ravi
 double = kriya(value: int) => value * 2
 mudrisu(double(6))
 ```
 
-The intended result is `12`, but this expression-function call currently fails in
-the CLI with `NoEntryBlock`. Treat it as experimental syntax.
-Nested functions and closures have implementation support;
-closure lifetime and capture semantics remain part of the conformance work.
+This prints `12`. See the [executable regression](../../examples/regressions/lambda_calls.rk).
+Nested functions and closures share captured variable cells with the enclosing
+scope. Writes through sibling closures and subsequent outer assignments are
+visible through the same cell. Broader closure lifetime coverage remains part
+of the conformance work.
 
 A function with no explicit returned value produces `none`. Built-in printing also
 returns `none`; its result is not the value printed. See [typing](typing.md) for

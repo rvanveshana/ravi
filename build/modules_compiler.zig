@@ -36,6 +36,7 @@ pub fn add(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builti
     const optimizer = b.createModule(.{ .root_source_file = b.path("src/optimizer/optimizer.zig"), .target = target, .optimize = optimize });
     optimizer.addImport("ravi_bytecode", modules.bytecode);
     const hir = b.createModule(.{ .root_source_file = b.path("src/ir/hir.zig"), .target = target, .optimize = optimize });
+    compiler.addImport("ravi_hir", hir);
     const mir = b.createModule(.{ .root_source_file = b.path("src/ir/mir.zig"), .target = target, .optimize = optimize });
     mir.addImport("ravi_hir", hir);
     const mir_verify = b.createModule(.{ .root_source_file = b.path("src/ir/mir_verify.zig"), .target = target, .optimize = optimize });

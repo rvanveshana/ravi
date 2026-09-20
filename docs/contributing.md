@@ -55,9 +55,10 @@ zig build --help
 The `test-compiler_vm-N` targets select individual compiler/VM groups; consult
 `build/artifacts_tests.zig` for their ordering. Test names and counts can change.
 
-`./test.ps1` builds, runs the full Zig suite, and then runs top-level `.rk` files
-in `examples/`. It does not compare two compiler implementations or verify every
-documentation snippet. Use it once when that full acceptance scope is required.
+`./test.ps1` builds, runs the full Zig suite, and recursively checks examples with
+expected-output files and per-process timeouts. `./test.ps1 -ExamplesOnly` skips
+unit tests; `./tools/test_examples.ps1` uses the existing binary without rebuilding.
+See [example conventions](../examples/README.md). CI reuses each configured binary.
 For documentation-only changes, validate links, source references, and selected
 runnable examples; do not rerun runtime suites unnecessarily.
 

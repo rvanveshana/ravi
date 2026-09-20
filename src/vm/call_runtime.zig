@@ -1,3 +1,4 @@
+const state_helpers = @import("state_helpers.zig");
 const bytecode = @import("ravi_bytecode");
 const Value = @import("ravi_vm_value").Value;
 
@@ -116,4 +117,16 @@ pub fn callSuper(self: anytype, chunk: anytype, operand: i64, ip: *usize) !void 
         self.trace_count += 1;
     }
     ip.* = function.entry - 1;
+}
+
+const CallKind = enum { call, call_method, call_super, call_value };
+
+pub fn invoke(self: anytype, kind: CallKind, chunk: *const bytecode.Chunk, operand: i64, ip: *usize) @import("errors.zig").RuntimeError!void {
+    try state_helpers.ensureCallCapacity(self);
+    switch (kind) {
+        .call => call(self, chunk, operand, ip) catch |err| if (!state_helpers.handleFaultWithError(self, ip, err)) return err,
+        .call_method => callMethod(self, chunk, operand, ip) catch |err| if (!state_helpers.handleFaultWithError(self, ip, err)) return err,
+        .call_super => callSuper(self, chunk, operand, ip) catch |err| if (!state_helpers.handleFaultWithError(self, ip, err)) return err,
+        .call_value => callValue(self, chunk, operand, ip) catch |err| if (!state_helpers.handleFaultWithError(self, ip, err)) return err,
+    }
 }

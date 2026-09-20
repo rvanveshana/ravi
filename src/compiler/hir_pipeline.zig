@@ -63,7 +63,10 @@ pub fn lower(allocator: std.mem.Allocator, module: *const ast.Module) !bytecode.
     var functions: std.ArrayListUnmanaged(*const mir.Function) = .empty;
     defer functions.deinit(allocator);
     var lowered_functions: std.ArrayListUnmanaged(mir.Function) = .empty;
-    defer for (lowered_functions.items) |*function| function.deinit();
+    defer {
+        for (lowered_functions.items) |*function| function.deinit();
+        lowered_functions.deinit(allocator);
+    }
     var function_statements: std.ArrayListUnmanaged(usize) = .empty;
     defer function_statements.deinit(allocator);
     for (module.statements.items, 0..) |statement, index| if (statement.kind == .function) try function_statements.append(allocator, index);
@@ -77,7 +80,7 @@ pub fn lower(allocator: std.mem.Allocator, module: *const ast.Module) !bytecode.
         var source = try lowering.lowerFunction(allocator, module, statement.kind.function, function_index, capture_info.captures[0..capture_info.capture_count], is_method);
         errdefer source.deinit();
         try lowered_functions.append(allocator, source);
-        try functions.append(allocator, &lowered_functions.items[lowered_functions.items.len - 1]);
+
         function_index += 1;
     };
     var main_source = hir.Function.init(allocator, "<module>");
@@ -112,11 +115,12 @@ pub fn lower(allocator: std.mem.Allocator, module: *const ast.Module) !bytecode.
         var source = try lowering.lowerLambda(allocator, module, expression.kind.lambda, function_index, captures);
         errdefer source.deinit();
         try lowered_functions.append(allocator, source);
-        try functions.append(allocator, &lowered_functions.items[lowered_functions.items.len - 1]);
+
         function_index += 1;
     };
+    for (lowered_functions.items) |*function| try functions.append(allocator, function);
     main_source.local_count = top_level_locals.items.len;
-    var final_expression: ?ast.ExprId = null;
+    var final_result: ?hir.ValueId = null;
     for (module.statements.items, 0..) |statement, index| {
         if (body_indices.contains(index)) continue;
         switch (statement.kind) {
@@ -144,15 +148,14 @@ pub fn lower(allocator: std.mem.Allocator, module: *const ast.Module) !bytecode.
                     const value = try lowering.lowerExpressionWithLocals(allocator, &main_source, module, assignment.value, &.{}, top_level_locals.items, &.{});
                     try main_source.appendEffect(.{ .store_local = .{ .slot = lowering.localIndex(top_level_locals.items, assignment.name) orelse return error.InvalidExpression, .value = value } }, module.expressions.items[@as(usize, expression_id)].span.line);
                 },
-                else => final_expression = expression_id,
+                else => final_result = try lowering.lowerExpressionWithLocals(allocator, &main_source, module, expression_id, &.{}, top_level_locals.items, &.{}),
             },
             else => {},
         }
     }
-    const expression_id = final_expression orelse return error.UnsupportedExpression;
-    const result = try lowering.lowerExpressionWithLocals(allocator, &main_source, module, expression_id, &.{}, top_level_locals.items, &.{});
-    try main_source.appendEffect(.{ .return_value = result }, module.expressions.items[@as(usize, expression_id)].span.line);
-        if (main_source.blocks.items.len == 0) try main_source.setBlocks(&.{.{ .first_instruction = 0, .instruction_count = main_source.instructions.items.len }});
+    const result = final_result orelse try main_source.appendValue(.none, .constant_none, 0);
+    try main_source.appendEffect(.{ .return_value = result }, 0);
+    if (main_source.blocks.items.len == 0) try main_source.setBlocks(&.{.{ .first_instruction = 0, .instruction_count = main_source.instructions.items.len }});
     var main = try mir.Function.lower(allocator, &main_source);
     defer main.deinit();
     var classes: std.ArrayListUnmanaged(bytecode.ClassInfo) = .empty;
@@ -184,8 +187,14 @@ fn functionBodySupported(module: *const ast.Module, first: usize, count: usize, 
                 const control = assignment_statement.kind.control;
                 if (control.condition == null or control.body_count != 1 or control.body_first >= module.statements.items.len) return false;
                 if (!expressionSupportedWithLocals(module, control.condition.?, parameters, assigned_names.items)) return false;
-                const body_id = switch (module.statements.items[control.body_first].kind) { .expression => |id| id, else => return false };
-                const body_assignment = switch (module.expressions.items[@as(usize, body_id)].kind) { .assignment => |value| value, else => return false };
+                const body_id = switch (module.statements.items[control.body_first].kind) {
+                    .expression => |id| id,
+                    else => return false,
+                };
+                const body_assignment = switch (module.expressions.items[@as(usize, body_id)].kind) {
+                    .assignment => |value| value,
+                    else => return false,
+                };
                 if (body_assignment.target != null or !expressionSupportedWithLocals(module, body_assignment.value, parameters, assigned_names.items)) return false;
                 if (lowering.localIndex(assigned_names.items, body_assignment.name) == null) assigned_names.append(module.allocator, body_assignment.name) catch return false;
                 continue;
@@ -266,8 +275,14 @@ fn branchSupported(module: *const ast.Module, first: usize, count: usize, parame
     var locals: std.ArrayListUnmanaged([]const u8) = .empty;
     defer locals.deinit(module.allocator);
     for (module.statements.items[first .. end - 1]) |statement| {
-        const id = switch (statement.kind) { .expression => |value| value, else => return false };
-        const assignment = switch (module.expressions.items[@as(usize, id)].kind) { .assignment => |value| value, else => return false };
+        const id = switch (statement.kind) {
+            .expression => |value| value,
+            else => return false,
+        };
+        const assignment = switch (module.expressions.items[@as(usize, id)].kind) {
+            .assignment => |value| value,
+            else => return false,
+        };
         if (assignment.target != null or !expressionSupportedWithLocals(module, assignment.value, parameters, locals.items)) return false;
         if (lowering.localIndex(locals.items, assignment.name) == null and pipeline_helpers.parameterIndex(parameters, assignment.name) == null) locals.append(module.allocator, assignment.name) catch return false;
     }

@@ -8,18 +8,20 @@ use the relevant handbook page for the behavior you want to explore.
 | Default and English profiles | [First program](getting-started.md) |
 | Conditions, loops, and ranges | [Control flow](control-flow.md) |
 | UTF-8 indexing and transformations | [Strings](strings.md) |
-| List construction and mutation (experimental) | [Collections](collections.md) |
-| Defaults and named arguments; experimental expression functions | [Functions](functions.md) |
+| List construction and mutation | [Collections](collections.md) |
+| Defaults, named arguments, and expression functions | [Functions](functions.md) |
 | Annotated parameters | [Typing](typing.md) |
-| Constructors and methods (experimental) | [Classes](classes.md) |
+| Constructors and methods | [Classes](classes.md) |
 | Handling an arithmetic error | [Exceptions](exceptions.md) |
 | Two local modules | [Modules](modules.md) |
 | Scalar worker task | [Concurrency](async-concurrency.md) |
 
-The repository's [examples directory](../../examples) also contains development
-fixtures. They cover more syntax than the verified handbook and are not all known
-to pass. Treat them as implementation exercises, not a stable API specification.
+The repository's [examples directory](../../examples/README.md) contains executable
+checks with expected-output files. The recursive runner checks results and enforces
+a timeout for each program. Regression fixtures cover the repaired handbook cases,
+including collections, classes, lambdas, and chained string methods.
 
-Run a file with `ravi run examples/arithmetic.rk` from the repository root. A source
-header selects its profile; use `--lang` only when intentionally overriding it.
-See [implementation status](../implementation-status.md) for validation evidence.
+Run `./tools/test_examples.ps1` after building, or `./test.ps1 -ExamplesOnly` to
+build and run examples without repeating unit tests. A successful example run does
+not certify every combination of language features; see
+[implementation status](../implementation-status.md) for remaining gaps.

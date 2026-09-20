@@ -1,6 +1,6 @@
 # Importing a function from another module and using it inside a
 # try-guarded branch.
-math inda add tago
+ravi.math inda add tago
 
 kriya calculate(a: int, b: int):
     nodu:

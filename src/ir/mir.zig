@@ -1,8 +1,11 @@
 const std = @import("std");
 const hir = @import("ravi_hir");
 const verifier = @import("ravi_mir_verify");
-pub const ValueId = enum(u32) { _ }; pub const BlockId = enum(u32) { _ };
-pub const Type = hir.Type; pub const Unary = hir.Unary;
+pub const ValueId = enum(u32) { _ };
+pub const BlockId = enum(u32) { _ };
+pub const builtins = hir.builtins;
+pub const Type = hir.Type;
+pub const Unary = hir.Unary;
 pub const Instruction = struct {
     result: ?ValueId = null,
     result_type: Type = .none,
@@ -37,6 +40,7 @@ pub const Instruction = struct {
         store_index: struct { object: ValueId, key: ValueId, value: ValueId },
         get_property: struct { object: ValueId, name: []const u8 },
         store_property: struct { object: ValueId, value: ValueId, name: []const u8 },
+        builtin: struct { method: usize, receiver: ValueId, arguments: []const ValueId },
         call_method: struct { function: usize, receiver: ValueId, arguments: []const ValueId, returns_receiver: bool = false },
         call_super: struct { function: usize, receiver: ValueId, arguments: []const ValueId },
         try_begin: BlockId,
@@ -50,7 +54,8 @@ pub const Instruction = struct {
         raise_value: ?ValueId,
     };
 };
-pub const Block = struct { first_instruction: usize, instruction_count: usize }; pub const PhiInput = struct { block: BlockId, value: ValueId };
+pub const Block = struct { first_instruction: usize, instruction_count: usize };
+pub const PhiInput = struct { block: BlockId, value: ValueId };
 pub const Function = struct {
     allocator: std.mem.Allocator,
     name: []const u8 = "<function>",
@@ -66,10 +71,12 @@ pub const Function = struct {
     defaults: [64]?i64 = @splat(null),
     local_count: usize = 0,
     capture_count: usize = 0,
-    pub fn init(allocator: std.mem.Allocator) Function { return .{ .allocator = allocator }; }
+    pub fn init(allocator: std.mem.Allocator) Function {
+        return .{ .allocator = allocator };
+    }
     pub fn deinit(self: *Function) void {
         for (self.instructions.items) |instruction| switch (instruction.operation) {
-            .call => |call| self.allocator.free(call.arguments),
+            inline .call, .builtin, .call_method, .call_super => |call| self.allocator.free(call.arguments),
             .call_value => |call| self.allocator.free(call.arguments),
             .phi => |inputs| self.allocator.free(inputs),
             .make_array, .make_tuple, .make_set, .make_dict => |values| self.allocator.free(values),
@@ -113,6 +120,7 @@ pub const Function = struct {
                 .store_index => |value| .{ .store_index = .{ .object = mapValue(value.object), .key = mapValue(value.key), .value = mapValue(value.value) } },
                 .get_property => |value| .{ .get_property = .{ .object = mapValue(value.object), .name = value.name } },
                 .store_property => |value| .{ .store_property = .{ .object = mapValue(value.object), .value = mapValue(value.value), .name = value.name } },
+                .builtin => |value| .{ .builtin = .{ .method = value.method, .receiver = mapValue(value.receiver), .arguments = try mapArguments(allocator, value.arguments) } },
                 .call_method => |value| .{ .call_method = .{ .function = value.function, .receiver = mapValue(value.receiver), .arguments = try mapArguments(allocator, value.arguments), .returns_receiver = value.returns_receiver } },
                 .call_super => |value| .{ .call_super = .{ .function = value.function, .receiver = mapValue(value.receiver), .arguments = try mapArguments(allocator, value.arguments) } },
                 .try_begin => |target| .{ .try_begin = @enumFromInt(@intFromEnum(target)) },
@@ -207,6 +215,11 @@ pub const Function = struct {
                         try requireDefined(definitions, value.object);
                         try requireDefined(definitions, value.key);
                     },
+                    .builtin => |value| {
+                        if (value.method >= hir.builtins.methods.len or value.arguments.len != hir.builtins.methods[value.method].arguments) return error.InvalidFunction;
+                        try requireDefined(definitions, value.receiver);
+                        for (value.arguments) |argument| try requireDefined(definitions, argument);
+                    },
                     .print => |value| try requireDefined(definitions, value),
                     .guard => |value| try requireDefined(definitions, value.value),
                     .branch => |value| {
@@ -239,47 +252,11 @@ pub const Function = struct {
         for (covered) |is_covered| if (!is_covered) return error.InvalidBlock;
         try verifier.verifyDominance(self);
     }
-    pub fn foldConstants(self: *Function) !usize {
-        const constants = try self.allocator.alloc(?i64, self.value_count);
-        defer self.allocator.free(constants);
-        @memset(constants, null);
-        var changed: usize = 0;
-        for (self.instructions.items) |*instruction| {
-            const result = instruction.result orelse continue;
-            const result_index: usize = @intFromEnum(result);
-            if (result_index >= constants.len) return error.InvalidDefinition;
-            switch (instruction.operation) {
-                .constant_integer => |value| constants[result_index] = value,
-                .binary => |binary| {
-                    const left_index = @intFromEnum(binary.left);
-                    const right_index = @intFromEnum(binary.right);
-                    if (left_index >= constants.len or right_index >= constants.len) return error.UndefinedValue;
-                    const left = constants[left_index] orelse continue;
-                    const right = constants[right_index] orelse continue;
-                    const folded: ?i64 = switch (binary.operator) {
-                        .add => left +% right,
-                        .subtract => left -% right,
-                        .multiply => left *% right,
-                        .divide => if (right == 0 or (left == std.math.minInt(i64) and right == -1)) null else @divTrunc(left, right),
-                        .modulo => if (right == 0) null else @mod(left, right),
-                        .equal => @intFromBool(left == right),
-                        .less => @intFromBool(left < right),
-                        .not_equal, .less_equal, .greater, .greater_equal, .logic_and, .logic_or => null,
-                    };
-                    if (folded) |value| {
-                        instruction.operation = .{ .constant_integer = value };
-                        constants[result_index] = value;
-                        changed += 1;
-                    }
-                },
-                else => {},
-            }
-        }
-        try self.verify();
-        return changed;
-    }
+    pub const foldConstants = @import("mir_constants.zig").foldConstants;
 };
-fn mapValue(value: hir.ValueId) ValueId { return @enumFromInt(@intFromEnum(value)); }
+fn mapValue(value: hir.ValueId) ValueId {
+    return @enumFromInt(@intFromEnum(value));
+}
 fn mapArguments(allocator: std.mem.Allocator, arguments: []const hir.ValueId) ![]ValueId {
     const mapped = try allocator.alloc(ValueId, arguments.len);
     for (arguments, 0..) |argument, index| mapped[index] = mapValue(argument);

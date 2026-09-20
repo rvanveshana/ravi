@@ -1,0 +1,10 @@
+base = 6
+nested = [[base + 1, base * 2], [3, 4]]
+pair = (base + 1, base * 2,)
+single = (base + 1,)
+empty = ()
+mapping = {base + 1: base * 2, 9: 10}
+mudrisu(nested[0][1])
+mudrisu(pair[0])
+mudrisu(single[0])
+mudrisu(mapping[7])

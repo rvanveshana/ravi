@@ -1,0 +1,16 @@
+# ravi: language=en
+print(false and (1 / 0))
+print(true or (1 / 0))
+print(1 < 2 < 3)
+print(3 < 2 < 1)
+mapping = {"answer": 42}
+print(mapping.pop("answer"))
+print(mapping.length())
+value = 0
+function work():
+    try:
+        return 7
+    finally:
+        value = 9
+print(work())
+print(value)

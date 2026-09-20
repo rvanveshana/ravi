@@ -19,12 +19,13 @@ pub fn parseExpression(
             if (min_bp > 1) break;
             const target = module.expressions.items[left].kind;
             const is_member_target = switch (target) {
-                .member => true,
+                .member, .index => true,
                 else => false,
             };
             const name = switch (target) {
                 .name => |value| value,
                 .member => |value| value.name,
+                .index => "",
                 else => return error.InvalidExpression,
             };
             parser.index += 1;
@@ -125,53 +126,8 @@ fn parsePrefix(
     if (token.kind == .string and token.lexeme.len > 1 and (token.lexeme[0] == 'f' or token.lexeme[0] == 'F')) {
         return parseFormattedString(parser, module, start, parseFormattedExpressionFn);
     }
-    if (parser.at(.l_paren)) {
-        parser.index += 1;
-        const first = module.expressions.items.len;
-        var count: usize = 0;
-        const value = try parseExpression(parser, module, 0, parseFormattedExpressionFn);
-        count += 1;
-        if (parser.at(.comma)) {
-            while (parser.at(.comma)) {
-                parser.index += 1;
-                _ = try parseExpression(parser, module, 0, parseFormattedExpressionFn);
-                count += 1;
-            }
-            if (!parser.at(.r_paren)) return error.UnexpectedToken;
-            parser.index += 1;
-            return appendExpr(module, .{ .span = .{ .first = start, .last = parser.index, .line = token.line }, .kind = .{ .tuple = .{ .first = first, .count = count } } });
-        }
-        if (!parser.at(.r_paren)) return error.UnexpectedToken;
-        parser.index += 1;
-        return value;
-    }
-    if (parser.at(.l_bracket)) {
-        parser.index += 1;
-        const first = module.expressions.items.len;
-        var count: usize = 0;
-        while (!parser.at(.r_bracket)) {
-            _ = try parseExpression(parser, module, 0, parseFormattedExpressionFn);
-            count += 1;
-            if (parser.at(.comma)) parser.index += 1 else if (!parser.at(.r_bracket)) return error.UnexpectedToken;
-        }
-        parser.index += 1;
-        return appendExpr(module, .{ .span = .{ .first = start, .last = parser.index, .line = token.line }, .kind = .{ .array = .{ .first = first, .count = count } } });
-    }
-    if (parser.at(.l_brace)) {
-        parser.index += 1;
-        const first = module.expressions.items.len;
-        var count: usize = 0;
-        while (!parser.at(.r_brace)) {
-            _ = try parseExpression(parser, module, 0, parseFormattedExpressionFn);
-            if (parser.at(.colon)) {
-                parser.index += 1;
-                _ = try parseExpression(parser, module, 0, parseFormattedExpressionFn);
-                count += 1;
-            } else count += 1;
-            if (parser.at(.comma)) parser.index += 1 else if (!parser.at(.r_brace)) return error.UnexpectedToken;
-        }
-        parser.index += 1;
-        return appendExpr(module, .{ .span = .{ .first = start, .last = parser.index, .line = token.line }, .kind = if (count == 0 or parser.tokens[start + 2].kind == .colon) .{ .map = .{ .first = first, .count = count } } else .{ .set = .{ .first = first, .count = count } } });
+    if (parser.at(.l_paren) or parser.at(.l_bracket) or parser.at(.l_brace)) {
+        return @import("parser_collections.zig").parse(parser, module, parseExpression, parseFormattedExpressionFn);
     }
 
     parser.index += 1;

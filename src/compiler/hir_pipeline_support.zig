@@ -91,8 +91,14 @@ fn assignmentRangeSupported(module: *const ast.Module, first: usize, count: usiz
     const end = std.math.add(usize, first, count) catch return false;
     if (end > module.statements.items.len) return false;
     for (module.statements.items[first..end]) |statement| {
-        const id = switch (statement.kind) { .expression => |value| value, else => return false };
-        const assignment = switch (module.expressions.items[@as(usize, id)].kind) { .assignment => |value| value, else => return false };
+        const id = switch (statement.kind) {
+            .expression => |value| value,
+            else => return false,
+        };
+        const assignment = switch (module.expressions.items[@as(usize, id)].kind) {
+            .assignment => |value| value,
+            else => return false,
+        };
         if (assignment.target != null or !expressionSupportedWithLocals(module, assignment.value, parameters, locals) and !expressionSupportedWithFunctions(module, assignment.value, parameters, captures)) return false;
     }
     return true;
@@ -240,13 +246,13 @@ fn argumentsSupportedWithLocals(module: *const ast.Module, call: anytype, parame
 }
 
 fn collectionSupported(module: *const ast.Module, first: usize, count: usize, parameters: []const ast.Parameter, captures: []const []const u8) bool {
-    if (first > module.expressions.items.len or count > module.expressions.items.len - first) return false;
-    for (first..first + count) |index| if (!expressionSupportedWithFunctions(module, @intCast(index), parameters, captures)) return false;
+    if (first > module.collection_items.items.len or count > module.collection_items.items.len - first) return false;
+    for (first..first + count) |index| if (!expressionSupportedWithFunctions(module, module.collection_items.items[index], parameters, captures)) return false;
     return true;
 }
 
 fn collectionSupportedWithLocals(module: *const ast.Module, first: usize, count: usize, parameters: []const ast.Parameter, locals: []const []const u8) bool {
-    if (first > module.expressions.items.len or count > module.expressions.items.len - first) return false;
-    for (first..first + count) |index| if (!expressionSupportedWithLocals(module, @intCast(index), parameters, locals)) return false;
+    if (first > module.collection_items.items.len or count > module.collection_items.items.len - first) return false;
+    for (first..first + count) |index| if (!expressionSupportedWithLocals(module, module.collection_items.items[index], parameters, locals)) return false;
     return true;
 }

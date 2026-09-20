@@ -19,6 +19,7 @@ pub const FunctionCaptureInfo = struct {
 };
 
 pub const State = struct {
+    generated_names: std.ArrayListUnmanaged([]u8) = .empty,
     lambdas: []const LambdaInfo = &.{},
     function_count: usize = 0,
     active_captures: []const []const u8 = &.{},
@@ -231,11 +232,22 @@ pub fn collectLambdaCaptures(module: *const ast.Module, expression_id: ast.ExprI
             if (value.first_arg > module.call_args.items.len or value.arg_count > module.call_args.items.len - value.first_arg) return error.InvalidExpression;
             for (module.call_args.items[value.first_arg .. value.first_arg + value.arg_count]) |argument_id| try collectLambdaCaptures(module, argument_id, parameters, info);
         },
-        .assignment => |value| try collectLambdaCaptures(module, value.value, parameters, info),
-        .array => |value| for (value.first..value.first + value.count) |element_id| try collectLambdaCaptures(module, @intCast(element_id), parameters, info),
-        .tuple => |value| for (value.first..value.first + value.count) |element_id| try collectLambdaCaptures(module, @intCast(element_id), parameters, info),
-        .set => |value| for (value.first..value.first + value.count) |element_id| try collectLambdaCaptures(module, @intCast(element_id), parameters, info),
-        .map => |value| for (value.first..value.first + value.count) |element_id| try collectLambdaCaptures(module, @intCast(element_id), parameters, info),
+        .assignment => |value| {
+            try collectLambdaCaptures(module, value.value, parameters, info);
+            if (value.target) |target| {
+                try collectLambdaCaptures(module, target, parameters, info);
+            } else {
+                for (parameters) |parameter| if (std.mem.eql(u8, parameter.name, value.name)) return;
+                for (info.captures[0..info.capture_count]) |capture| if (std.mem.eql(u8, capture, value.name)) return;
+                if (info.capture_count == info.captures.len) return error.InvalidFunction;
+                info.captures[info.capture_count] = value.name;
+                info.capture_count += 1;
+            }
+        },
+        .array => |value| for (module.collection_items.items[value.first .. value.first + value.count]) |element_id| try collectLambdaCaptures(module, @intCast(element_id), parameters, info),
+        .tuple => |value| for (module.collection_items.items[value.first .. value.first + value.count]) |element_id| try collectLambdaCaptures(module, @intCast(element_id), parameters, info),
+        .set => |value| for (module.collection_items.items[value.first .. value.first + value.count]) |element_id| try collectLambdaCaptures(module, @intCast(element_id), parameters, info),
+        .map => |value| for (module.collection_items.items[value.first .. value.first + value.count * 2]) |element_id| try collectLambdaCaptures(module, @intCast(element_id), parameters, info),
         .index => |value| {
             try collectLambdaCaptures(module, value.object, parameters, info);
             try collectLambdaCaptures(module, value.index, parameters, info);

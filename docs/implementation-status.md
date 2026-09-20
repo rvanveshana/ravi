@@ -33,38 +33,58 @@ Source, test, build, and maintenance files have a 300-line check without exempti
 
 These changes are foundations, not evidence of complete language correctness.
 
-## Runtime validation recorded before documentation cleanup
+## Validation on Windows
 
-The first complete execution of the repaired suite reported **99/131 passing,
-29 failing, and 3 crashing tests**; additional groups had compilation errors.
-Introduced compilation errors were subsequently corrected.
+Validated on 2026-09-20 with Zig `0.17.0-dev.1415+64dfaa568`:
 
-Focused follow-up checks passed for scheduler (11), VM (12), lexer (9), bytecode
-(5), backend contract (1), MIR fixtures (9), symbols (1), UTF-8 API (1), HIR (5),
-compiler control flow (4), loader (7), and compiler runtime (17). Counts belong to
-test targets and may include related coverage. They are not a fresh full-suite total.
+- `zig build test --summary all -j2`: **122/122 build steps succeeded**;
+  **187/187 executed tests passed**, with other test runs satisfied by Zig's cache.
+  The 187 count is this invocation's executed total, not the entire suite's inventory.
+- `zig build`: Debug executable built successfully.
+- `./tools/test_examples.ps1`: **42/42 executable examples passed** with exact
+  output snapshots, exit-code checks, and per-process timeouts.
+- `zig fmt --check src tests build config build.zig`, source-size checks, and
+  `git diff --check`: passed.
 
-The executable builds, and the arithmetic and English CLI examples passed.
-The full suite has **not** subsequently been certified green. Parser, LSP,
-JSON-RPC, and other integration failures still require follow-up. There is no
-published Python comparison, cross-platform runtime certification, or passing
-claim for the complete repository example corpus.
+This supersedes the earlier failing baselines. No tests were disabled or expected
+results weakened to obtain this result. Invalid source-profile fixtures and fixture
+allocation ownership were corrected while preserving their behavioral assertions.
 
+Repairs cover JSON-RPC parsing and escaping, VM roots and collection safepoints,
+bytecode string ownership, exception payloads and typed handlers, indexed assignment,
+short-circuit evaluation, adjacent chained comparisons, and dictionary `pop(key)`.
+Closures now share captured cells with outer locals and sibling closures. Additional
+regressions verify cleanup preserves return values and captured assignments.
+Nested generator suspension metadata is scoped to its own function; full generator
+iteration and resumable I/O remain unfinished.
+
+## Executable examples
+
+The recursive example runner discovers programs and verifies their `.out` snapshots.
+It fails on missing snapshots, incorrect output, nonzero exit codes, and timeouts.
+CI reuses each optimization-mode binary instead of rebuilding Debug for examples.
+The local results above apply to the Windows Debug executable; they do not certify
+other platforms or optimization modes.
+
+Compiler repairs preserve standalone side effects, local names in nested expressions,
+lambda entry blocks, callable table lifetimes, and method receiver arity. Collections
+store explicit element IDs, including nested expressions and dictionary pairs.
+AST and HIR compilation share built-in method metadata. The evaluation regression
+also exercises short-circuit expressions, comparison chains, dictionary pop, and
+function return cleanup through the CLI.
+
+The architecture retains HIR/MIR and direct AST compatibility paths. Most compiler/VM
+unit tests exercise the AST path; green results do not establish complete pipeline
+parity, complete libraries, native compilation, or roadmap completion. There is no
+published Python performance comparison or cross-platform runtime certification.
 The generated [feature matrix](feature-matrix.md) contains maintainer-entered stage
-flags; its `tested` column is not a live test result or release readiness verdict.
+flags rather than live test results or release-readiness verdicts.
 
-## Documentation validation
-
-The documentation review executed 17 examples against the existing development
-executable: 13 passed, and four exposed CLI integration failures. Class method
-access and list mutation/indexing failed with `InvalidName`; an expression-function
-call failed with `NoEntryBlock`; a chained string-method call failed compilation.
-Those four examples are now explicitly labeled experimental and fenced as text.
-The remaining runnable examples include both source profiles and a two-file import.
-This check did not rerun the runtime suite or certify the broader API reference.
+See [example conventions](../examples/README.md) for commands and output contracts.
 
 ## Next gate
 
-Resolve the baseline failures before declaring Stage 0 complete. Continue with the
+Use the passing suite as the regression gate; Stage 0 and the broader roadmap still
+require their remaining acceptance criteria. Continue with the
 single compiler pipeline, runtime contracts, libraries, concurrency, and performance
 in the order defined by the [development plan](development-plan.md).

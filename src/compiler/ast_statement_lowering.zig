@@ -21,6 +21,11 @@ pub fn lower(comptime CompileError: type, self: anytype, chunk: *bytecode.Chunk,
                 try self.compileAstFinalizers(chunk, module, names, loops, break_targets);
                 try chunk.emit(.{ .op = .return_value });
             },
+            .yield_stmt => |expression| {
+                if (expression) |value| try self.compileAstExpression(chunk, module, value, names) else try chunk.emit(.{ .op = .none_value });
+                try chunk.emit(.{ .op = .suspend_point, .operand = @intCast(statement.span.line) });
+                try chunk.emit(.{ .op = .pop });
+            },
             .raise_stmt => |expression| {
                 if (expression) |value| try self.compileAstExpression(chunk, module, value, names) else try chunk.emit(.{ .op = .constant, .operand = 0 });
                 try chunk.emit(.{ .op = .raise_value });
@@ -35,7 +40,7 @@ pub fn lower(comptime CompileError: type, self: anytype, chunk: *bytecode.Chunk,
                 const capture_info = self.ast_state.function_captures[index];
                 for (capture_info.captures[0..capture_info.capture_count]) |capture| {
                     if (helpers.findLocal(names.items, capture)) |slot| {
-                        try chunk.emit(.{ .op = .load_local, .operand = @intCast(slot) });
+                        try chunk.emit(.{ .op = .load_local_ref, .operand = @intCast(slot) });
                     } else if (helpers.findCapture(self.ast_state.active_captures, capture)) |capture_slot| {
                         try chunk.emit(.{ .op = .load_capture_ref, .operand = @intCast(capture_slot) });
                     } else return error.InvalidName;
@@ -62,10 +67,13 @@ pub fn lower(comptime CompileError: type, self: anytype, chunk: *bytecode.Chunk,
                 var no_match: ?usize = null;
                 if (try_stmt.except_type) |exception_type| {
                     try chunk.emit(.{ .op = .dup });
-                    const type_name = try chunk.addString(exception_type);
+                    const quoted = try std.fmt.allocPrint(self.allocator, "\"{s}\"", .{exception_type});
+                    defer self.allocator.free(quoted);
+                    const type_name = try chunk.addString(quoted);
                     try chunk.emit(.{ .op = .make_string, .operand = @intCast(type_name) });
-                    try chunk.emit(.{ .op = .make_exception });
                     try chunk.emit(.{ .op = .exception_match });
+                    no_match = chunk.code.items.len;
+                    try chunk.emit(.{ .op = .jump_if_false, .operand = 0 });
                 } else if (try_stmt.except_match) |match| {
                     try chunk.emit(.{ .op = .dup });
                     try self.compileAstExpression(chunk, module, match, names);
@@ -90,8 +98,11 @@ pub fn lower(comptime CompileError: type, self: anytype, chunk: *bytecode.Chunk,
                 }
                 if (try_stmt.finally_count != 0) try self.compileAstStatements(chunk, module, try_stmt.finally_first, try_stmt.finally_count, names, true, loops, break_targets);
                 if (no_match) |match_jump| {
-                    chunk.code.items[match_jump].operand = @intCast(chunk.code.items.len + 1);
+                    const matched_end = chunk.code.items.len;
+                    try chunk.emit(.{ .op = .jump, .operand = 0 });
+                    chunk.code.items[match_jump].operand = @intCast(chunk.code.items.len);
                     try chunk.emit(.{ .op = .raise_value });
+                    chunk.code.items[matched_end].operand = @intCast(chunk.code.items.len);
                 }
                 chunk.code.items[skip_handler].operand = @intCast(chunk.code.items.len);
                 statement_index = @max(statement_index + 1, try_stmt.body_first + try_stmt.body_count);

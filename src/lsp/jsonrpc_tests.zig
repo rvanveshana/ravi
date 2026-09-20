@@ -41,7 +41,7 @@ test "JSON-RPC completion follows the opened document language" {
     var state = server.Server.init(std.testing.allocator);
     defer state.deinit();
     var adapter = Adapter.init(std.testing.allocator, &state);
-    _ = try adapter.dispatch("{\"method\":\"textDocument/didOpen\",\"uri\":\"file:///en.rk\",\"text\":\"# ravi: en\\nkriya main():\\n    kodu 1\\n\",\"version\":1}");
+    _ = try adapter.dispatch("{\"method\":\"textDocument/didOpen\",\"uri\":\"file:///en.rk\",\"text\":\"# ravi: language=en\\nfunction main():\\n    return 1\\n\",\"version\":1}");
     const response = (try adapter.dispatch("{\"method\":\"textDocument/completion\",\"uri\":\"file:///en.rk\"}")) orelse unreachable;
     defer std.testing.allocator.free(response);
     try std.testing.expect(std.mem.indexOf(u8, response, "function") != null);
@@ -132,6 +132,7 @@ test "JSON-RPC adapter accepts cancellation notifications" {
 test "JSON-RPC adapter serves code actions as a valid list" {
     var state = server.Server.init(std.testing.allocator);
     defer state.deinit();
+    try state.open("file:///main.rk", "value = 1\n", 1);
     var adapter = Adapter.init(std.testing.allocator, &state);
     const response = (try adapter.dispatch("{\"method\":\"textDocument/codeAction\",\"uri\":\"file:///main.rk\"}")) orelse unreachable;
     defer std.testing.allocator.free(response);

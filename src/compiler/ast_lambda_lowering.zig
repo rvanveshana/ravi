@@ -8,7 +8,7 @@ pub fn expression(comptime Error: type, self: anytype, chunk: *bytecode.Chunk, m
         if (info.params_first != lambda.params_first or info.params_count != lambda.params_count or info.body != lambda.body) return error.InvalidExpression;
         for (info.captures[0..info.capture_count]) |capture| {
             if (helpers.findLocal(names.items, capture)) |slot| {
-                try chunk.emit(.{ .op = .load_local, .operand = @intCast(slot) });
+                try chunk.emit(.{ .op = .load_local_ref, .operand = @intCast(slot) });
             } else if (helpers.findCapture(self.ast_state.active_captures, capture)) |capture_slot| {
                 try chunk.emit(.{ .op = .load_capture_ref, .operand = @intCast(capture_slot) });
             } else return error.InvalidName;

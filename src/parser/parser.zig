@@ -39,6 +39,8 @@ pub const Parser = struct {
             }
             try self.parseStatement(&module, &module.statements);
         }
+        for (module.expressions.items) |*item| self.locate(&item.span);
+        for (module.statements.items) |*item| self.locate(&item.span);
         return module;
     }
 
@@ -65,7 +67,14 @@ pub const Parser = struct {
             };
             if (self.index == before) self.index += 1;
         }
+        for (module.expressions.items) |*item| self.locate(&item.span);
+        for (module.statements.items) |*item| self.locate(&item.span);
         return module;
+    }
+
+    fn locate(self: *const Parser, span: *ast.Span) void {
+        if (span.first < self.tokens.len) span.start_offset = self.tokens[span.first].start_offset;
+        if (span.last > span.first and span.last <= self.tokens.len) span.end_offset = self.tokens[span.last - 1].end_offset;
     }
 
     fn parseStatement(self: *Parser, module: *ast.Module, out: *std.ArrayListUnmanaged(ast.Stmt)) ParseError!void {

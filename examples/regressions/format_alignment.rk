@@ -1,0 +1,2 @@
+value = 7
+mudrisu(f"[{value:>4}][{value:<4}][{value:^5}]")

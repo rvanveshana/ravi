@@ -95,13 +95,6 @@ pub const Vm = struct {
     }
     pub fn runValue(self: *Vm, chunk: *const bytecode.Chunk) RuntimeError!Value {
         chunk.verify() catch |err| return if (err == error.OutOfMemory) error.OutOfMemory else error.InvalidInstruction;
-        if (self.debugger == null and dispatch.FastDispatcher.supports(chunk.code.items)) {
-            var fast_stack: [256]Value = undefined;
-            return switch (dispatch.FastDispatcher.dispatchLoop(chunk.code.items, &fast_stack)) {
-                .ok => |value| value,
-                .runtime_error => error.InvalidInstruction,
-            };
-        }
         return self.execute(chunk);
     }
     pub fn runResumable(self: *Vm, chunk: *const bytecode.Chunk) RuntimeError!ResumableResult {
@@ -153,7 +146,7 @@ pub const Vm = struct {
         // verifier; locations are intentionally zeroed rather than guessed.
         for (chunk.code.items) |_| chunk.source_map.append(self.allocator, .{ .start_offset = 0, .end_offset = 0, .line = 0, .column = 0 }) catch return error.OutOfMemory;
         for (chunk.code.items) |_| chunk.root_map.append(self.allocator, .{}) catch return error.OutOfMemory;
-        chunk.strings.appendSlice(self.allocator, template.strings.items) catch return error.OutOfMemory;
+        for (template.strings.items) |text| _ = chunk.addString(text) catch return error.OutOfMemory;
         chunk.formats.appendSlice(self.allocator, template.formats.items) catch return error.OutOfMemory;
         chunk.functions.appendSlice(self.allocator, template.functions.items) catch return error.OutOfMemory;
         chunk.classes.appendSlice(self.allocator, template.classes.items) catch return error.OutOfMemory;

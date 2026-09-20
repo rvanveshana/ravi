@@ -18,7 +18,10 @@ pub const Adapter = struct {
     }
 
     pub fn dispatch(self: *Adapter, body: []const u8) !?[]u8 {
-        const method = stringField(body, "method") orelse return error.InvalidRequest;
+        const parsed = std.json.parseFromSlice(std.json.Value, self.allocator, body, .{}) catch return error.InvalidRequest;
+        defer parsed.deinit();
+        const document = parsed.value;
+        const method = stringField(document, "method") orelse return error.InvalidRequest;
         if (std.mem.eql(u8, method, "initialize")) return try self.response("{\"capabilities\":{\"completionProvider\":{},\"hoverProvider\":true,\"definitionProvider\":true,\"referencesProvider\":true,\"renameProvider\":true,\"codeActionProvider\":true,\"semanticTokensProvider\":{\"legend\":{\"tokenTypes\":[\"keyword\",\"variable\",\"number\",\"string\",\"comment\",\"operator\"],\"tokenModifiers\":[]},\"full\":true},\"diagnosticProvider\":{\"interFileDependencies\":false,\"workspaceDiagnostics\":false}}}");
         // LSP cancellation is a notification. Requests already being served
         // may finish internally, but cancellation must never tear down the
@@ -27,23 +30,23 @@ pub const Adapter = struct {
         if (std.mem.eql(u8, method, "shutdown")) return try self.response("null");
         if (std.mem.eql(u8, method, "exit")) return null;
         if (std.mem.eql(u8, method, "textDocument/didOpen")) {
-            const uri = stringField(body, "uri") orelse return error.InvalidRequest;
-            const text = stringField(body, "text") orelse return error.InvalidRequest;
-            try self.state.open(uri, text, integerField(body, "version") orelse 1);
+            const uri = stringField(document, "uri") orelse return error.InvalidRequest;
+            const text = stringField(document, "text") orelse return error.InvalidRequest;
+            try self.state.open(uri, text, integerField(document, "version") orelse 1);
             return null;
         }
         if (std.mem.eql(u8, method, "textDocument/didChange")) {
-            const uri = stringField(body, "uri") orelse return error.InvalidRequest;
-            const text = stringField(body, "text") orelse return error.InvalidRequest;
-            try self.state.change(uri, text, integerField(body, "version") orelse 1);
+            const uri = stringField(document, "uri") orelse return error.InvalidRequest;
+            const text = stringField(document, "text") orelse return error.InvalidRequest;
+            try self.state.change(uri, text, integerField(document, "version") orelse 1);
             return null;
         }
         if (std.mem.eql(u8, method, "textDocument/didClose")) {
-            self.state.close(stringField(body, "uri") orelse return error.InvalidRequest);
+            self.state.close(stringField(document, "uri") orelse return error.InvalidRequest);
             return null;
         }
         if (std.mem.eql(u8, method, "textDocument/completion")) {
-            const uri = stringField(body, "uri") orelse return error.InvalidRequest;
+            const uri = stringField(document, "uri") orelse return error.InvalidRequest;
             const language = self.state.documentLanguage(uri) orelse return error.UnknownMethod;
             const completions = try self.state.completions(language, self.allocator);
             defer self.allocator.free(completions);
@@ -60,7 +63,7 @@ pub const Adapter = struct {
             return try self.response(result.items);
         }
         if (std.mem.eql(u8, method, "textDocument/diagnostic")) {
-            const uri = stringField(body, "uri") orelse return error.InvalidRequest;
+            const uri = stringField(document, "uri") orelse return error.InvalidRequest;
             const diagnostics = try self.state.diagnostics(uri, self.allocator);
             defer self.allocator.free(diagnostics);
             var result = std.ArrayListUnmanaged(u8).empty;
@@ -83,7 +86,7 @@ pub const Adapter = struct {
             return try self.response(result.items);
         }
         if (std.mem.eql(u8, method, "textDocument/codeAction")) {
-            const uri = stringField(body, "uri") orelse return error.InvalidRequest;
+            const uri = stringField(document, "uri") orelse return error.InvalidRequest;
             const actions = try self.state.codeActions(uri, self.allocator);
             defer self.allocator.free(actions);
             var result = std.ArrayListUnmanaged(u8).empty;
@@ -105,7 +108,7 @@ pub const Adapter = struct {
             return try self.response(result.items);
         }
         if (std.mem.eql(u8, method, "textDocument/documentSymbol")) {
-            const uri = stringField(body, "uri") orelse return error.InvalidRequest;
+            const uri = stringField(document, "uri") orelse return error.InvalidRequest;
             const symbols = try self.state.documentSymbols(uri, self.allocator);
             defer self.allocator.free(symbols);
             var result = std.ArrayListUnmanaged(u8).empty;
@@ -123,7 +126,7 @@ pub const Adapter = struct {
             return try self.response(result.items);
         }
         if (std.mem.eql(u8, method, "textDocument/semanticTokens/full")) {
-            const uri = stringField(body, "uri") orelse return error.InvalidRequest;
+            const uri = stringField(document, "uri") orelse return error.InvalidRequest;
             const tokens = try self.state.semanticTokens(uri, self.allocator);
             defer self.allocator.free(tokens);
             var result = std.ArrayListUnmanaged(u8).empty;
@@ -145,7 +148,7 @@ pub const Adapter = struct {
             return try self.response(result.items);
         }
         if (std.mem.eql(u8, method, "textDocument/formatting")) {
-            const uri = stringField(body, "uri") orelse return error.InvalidRequest;
+            const uri = stringField(document, "uri") orelse return error.InvalidRequest;
             const original = self.state.documentText(uri) orelse return error.UnknownMethod;
             const formatted = try self.state.formatDocument(uri, self.allocator);
             defer self.allocator.free(formatted);
@@ -165,8 +168,8 @@ pub const Adapter = struct {
             return try self.response(payload);
         }
         if (std.mem.eql(u8, method, "textDocument/definition")) {
-            const uri = stringField(body, "uri") orelse return error.InvalidRequest;
-            const name = stringField(body, "name") orelse return error.InvalidRequest;
+            const uri = stringField(document, "uri") orelse return error.InvalidRequest;
+            const name = stringField(document, "name") orelse return error.InvalidRequest;
             const location = try self.state.definition(uri, name, self.allocator) orelse return try self.response("null");
             const result = try std.fmt.allocPrint(self.allocator, "{{\"uri\":", .{});
             defer self.allocator.free(result);
@@ -180,8 +183,8 @@ pub const Adapter = struct {
             return try self.response(payload.items);
         }
         if (std.mem.eql(u8, method, "textDocument/references")) {
-            const uri = stringField(body, "uri") orelse return error.InvalidRequest;
-            const name = stringField(body, "name") orelse return error.InvalidRequest;
+            const uri = stringField(document, "uri") orelse return error.InvalidRequest;
+            const name = stringField(document, "name") orelse return error.InvalidRequest;
             const references = try self.state.references(uri, name, self.allocator);
             defer self.allocator.free(references);
             var result = std.ArrayListUnmanaged(u8).empty;
@@ -199,8 +202,8 @@ pub const Adapter = struct {
             return try self.response(result.items);
         }
         if (std.mem.eql(u8, method, "textDocument/hover")) {
-            const uri = stringField(body, "uri") orelse return error.InvalidRequest;
-            const name = stringField(body, "name") orelse return error.InvalidRequest;
+            const uri = stringField(document, "uri") orelse return error.InvalidRequest;
+            const name = stringField(document, "name") orelse return error.InvalidRequest;
             const value = try self.state.hover(uri, name, self.allocator) orelse return try self.response("null");
             defer self.allocator.free(value);
             var payload_list = std.ArrayListUnmanaged(u8).empty;
@@ -213,9 +216,9 @@ pub const Adapter = struct {
             return try self.response(payload);
         }
         if (std.mem.eql(u8, method, "textDocument/rename")) {
-            const uri = stringField(body, "uri") orelse return error.InvalidRequest;
-            const name = stringField(body, "name") orelse return error.InvalidRequest;
-            const replacement = stringField(body, "newName") orelse return error.InvalidRequest;
+            const uri = stringField(document, "uri") orelse return error.InvalidRequest;
+            const name = stringField(document, "name") orelse return error.InvalidRequest;
+            const replacement = stringField(document, "newName") orelse return error.InvalidRequest;
             const edits = try self.state.rename(uri, name, replacement, self.allocator);
             defer self.allocator.free(edits);
             var result = std.ArrayListUnmanaged(u8).empty;
@@ -269,11 +272,12 @@ pub fn serve(allocator: std.mem.Allocator, state: *server.Server, reader: anytyp
                 error.Incomplete => break,
                 else => return err,
             };
-            const response = try adapter.dispatch(frame.body) orelse return;
-            defer allocator.free(response);
-            const encoded = try protocol.encode(allocator, response);
-            defer allocator.free(encoded);
-            try writer.writeAll(encoded);
+            if (try adapter.dispatch(frame.body)) |response| {
+                defer allocator.free(response);
+                const encoded = try protocol.encode(allocator, response);
+                defer allocator.free(encoded);
+                try writer.writeAll(encoded);
+            }
             const remaining = pending.items.len - frame.consumed;
             if (remaining == 0) {
                 pending.clearRetainingCapacity();

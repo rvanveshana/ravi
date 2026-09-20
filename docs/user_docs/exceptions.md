@@ -16,8 +16,10 @@ This prints `7`. Raise explicitly with `yese` (`raise` in English).
 
 The implementation includes handler tables, runtime error identities, and cleanup
 paths. It does not yet provide a complete, uniform public exception object model.
-Typed catches, payloads, cause chains, traceback inspection, re-raising, and cleanup
-across every control-flow exit still require conformance work. In particular,
+Explicit raises preserve their payloads, and typed handlers match runtime error
+identities. Regression tests cover cleanup on ordinary completion, function return,
+loop break, and loop continue. Cause chains, traceback inspection, re-raising, and
+cleanup across every control-flow exit still require conformance work. In particular,
 worker tasks preserve runtime error identities but do not transfer rich exception
 objects between VM heaps.
 

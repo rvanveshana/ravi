@@ -198,6 +198,7 @@ test "AST array lowering creates an ordered array value" {
     const first = module.expressions.items.len;
     try module.expressions.append(std.testing.allocator, .{ .span = .{ .first = 0, .last = 1, .line = 1 }, .kind = .{ .integer = 7 } });
     try module.expressions.append(std.testing.allocator, .{ .span = .{ .first = 3, .last = 4, .line = 1 }, .kind = .{ .integer = 11 } });
+    for (first..module.expressions.items.len) |id| try module.collection_items.append(std.testing.allocator, @intCast(id));
     const array_id = module.expressions.items.len;
     try module.expressions.append(std.testing.allocator, .{ .span = .{ .first = 0, .last = 5, .line = 1 }, .kind = .{ .array = .{ .first = first, .count = 2 } } });
     try module.statements.append(std.testing.allocator, .{ .span = .{ .first = 0, .last = 5, .line = 1 }, .kind = .{ .expression = @intCast(array_id) } });
@@ -216,6 +217,7 @@ test "AST tuple set and map lowering creates collection values" {
     const tuple_first = module.expressions.items.len;
     try module.expressions.append(std.testing.allocator, .{ .span = .{ .first = 0, .last = 1, .line = 1 }, .kind = .{ .integer = 1 } });
     try module.expressions.append(std.testing.allocator, .{ .span = .{ .first = 3, .last = 4, .line = 1 }, .kind = .{ .integer = 2 } });
+    for (tuple_first..module.expressions.items.len) |id| try module.collection_items.append(std.testing.allocator, @intCast(id));
     const tuple_id = module.expressions.items.len;
     try module.expressions.append(std.testing.allocator, .{ .span = .{ .first = 0, .last = 5, .line = 1 }, .kind = .{ .tuple = .{ .first = tuple_first, .count = 2 } } });
     try module.statements.append(std.testing.allocator, .{ .span = .{ .first = 0, .last = 5, .line = 1 }, .kind = .{ .expression = @intCast(tuple_id) } });
@@ -237,8 +239,10 @@ test "AST tuple set and map lowering creates collection values" {
     const map_first = module.expressions.items.len;
     try module.expressions.append(std.testing.allocator, .{ .span = .{ .first = 0, .last = 1, .line = 1 }, .kind = .{ .integer = 4 } });
     try module.expressions.append(std.testing.allocator, .{ .span = .{ .first = 3, .last = 4, .line = 1 }, .kind = .{ .integer = 9 } });
+    const map_items = module.collection_items.items.len;
+    for (map_first..module.expressions.items.len) |id| try module.collection_items.append(std.testing.allocator, @intCast(id));
     const map_id = module.expressions.items.len;
-    try module.expressions.append(std.testing.allocator, .{ .span = .{ .first = 0, .last = 5, .line = 1 }, .kind = .{ .map = .{ .first = map_first, .count = 2 } } });
+    try module.expressions.append(std.testing.allocator, .{ .span = .{ .first = 0, .last = 5, .line = 1 }, .kind = .{ .map = .{ .first = map_items, .count = 1 } } });
     module.statements.items[0].kind = .{ .expression = @intCast(map_id) };
     var map_chunk = try compile.compileAstModule(&module);
     defer map_chunk.deinit();
@@ -252,10 +256,13 @@ test "AST index lowering reads an array element" {
     const first = module.expressions.items.len;
     try module.expressions.append(std.testing.allocator, .{ .span = .{ .first = 0, .last = 1, .line = 1 }, .kind = .{ .integer = 7 } });
     try module.expressions.append(std.testing.allocator, .{ .span = .{ .first = 3, .last = 4, .line = 1 }, .kind = .{ .integer = 11 } });
+    for (first..module.expressions.items.len) |id| try module.collection_items.append(std.testing.allocator, @intCast(id));
     const array_id = module.expressions.items.len;
     try module.expressions.append(std.testing.allocator, .{ .span = .{ .first = 0, .last = 5, .line = 1 }, .kind = .{ .array = .{ .first = first, .count = 2 } } });
+    const zero_id = module.expressions.items.len;
+    try module.expressions.append(std.testing.allocator, .{ .span = .{ .first = 0, .last = 1, .line = 1 }, .kind = .{ .integer = 0 } });
     const index_id = module.expressions.items.len;
-    try module.expressions.append(std.testing.allocator, .{ .span = .{ .first = 0, .last = 7, .line = 1 }, .kind = .{ .index = .{ .object = @intCast(array_id), .index = 0 } } });
+    try module.expressions.append(std.testing.allocator, .{ .span = .{ .first = 0, .last = 7, .line = 1 }, .kind = .{ .index = .{ .object = @intCast(array_id), .index = @intCast(zero_id) } } });
     try module.statements.append(std.testing.allocator, .{ .span = .{ .first = 0, .last = 7, .line = 1 }, .kind = .{ .expression = @intCast(index_id) } });
     var compile = compiler.Compiler.init(std.testing.allocator);
     var chunk = try compile.compileAstModule(&module);
@@ -272,6 +279,7 @@ test "AST slice lowering creates an array range" {
     for ([_]i64{ 3, 5, 7, 9 }) |value| {
         try module.expressions.append(std.testing.allocator, .{ .span = .{ .first = 0, .last = 1, .line = 1 }, .kind = .{ .integer = value } });
     }
+    for (first..module.expressions.items.len) |id| try module.collection_items.append(std.testing.allocator, @intCast(id));
     const array_id = module.expressions.items.len;
     try module.expressions.append(std.testing.allocator, .{ .span = .{ .first = 0, .last = 11, .line = 1 }, .kind = .{ .array = .{ .first = first, .count = 4 } } });
     const start_id = module.expressions.items.len;
@@ -289,4 +297,3 @@ test "AST slice lowering creates an array range" {
     const result = try vm.runValue(&chunk);
     try std.testing.expectEqual(@as(?vm_mod.RuntimeValue.ObjectKind, .array), result.handleKind());
 }
-

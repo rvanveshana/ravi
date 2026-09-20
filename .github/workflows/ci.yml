@@ -35,6 +35,5 @@ jobs:
         shell: pwsh
         run: zig build test -Doptimize=${{ matrix.optimize }}
       - name: Executable examples
-        if: matrix.optimize == 'Debug'
         shell: pwsh
-        run: ./test.ps1
+        run: ./tools/test_examples.ps1

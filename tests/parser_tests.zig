@@ -47,7 +47,7 @@ test "parser accepts function defaults and variadic parameters" {
 }
 
 test "parser preserves yield as a distinct statement" {
-    const source = "kriya values():\n    yese 1\n    kodu 2\n";
+    const source = "kriya values():\n    taru 1\n    kodu 2\n";
     var scan = try lexer.Lexer.init(std.testing.allocator, source);
     defer scan.deinit();
     const tokens = try scan.tokenize();
@@ -56,7 +56,8 @@ test "parser preserves yield as a distinct statement" {
     defer module.deinit();
     try std.testing.expectEqual(@as(usize, 0), module.diagnostics.items.len);
     try std.testing.expect(module.statements.items.len >= 3);
-    try std.testing.expect(module.statements.items[0].kind == .yield_stmt);
+    const body = module.statements.items[0].kind.function;
+    try std.testing.expect(module.statements.items[body.body_first].kind == .yield_stmt);
 }
 
 test "parser preserves member assignment targets" {
@@ -161,7 +162,7 @@ test "parser retains context manager binding and suite" {
     var module = try instance.parseRecovering();
     defer module.deinit();
     try std.testing.expectEqual(@as(usize, 0), module.diagnostics.items.len);
-    switch (module.statements.items[0].kind) {
+    switch (module.statements.items[module.statements.items.len - 1].kind) {
         .context => |context| {
             try std.testing.expectEqualStrings("file", context.binding.?);
             try std.testing.expectEqual(@as(usize, 1), context.body_count);
@@ -190,7 +191,7 @@ test "parser retains optional class base names" {
     var module = try instance.parseRecovering();
     defer module.deinit();
     try std.testing.expectEqual(@as(usize, 0), module.diagnostics.items.len);
-    switch (module.statements.items[0].kind) {
+    switch (module.statements.items[module.statements.items.len - 1].kind) {
         .class_decl => |class_decl| try std.testing.expectEqualStrings("Parent", class_decl.base.?),
         else => return error.TestExpectedEqual,
     }
@@ -205,7 +206,7 @@ test "parser preserves visibility modifiers" {
     var module = try instance.parseRecovering();
     defer module.deinit();
     try std.testing.expectEqual(@as(usize, 0), module.diagnostics.items.len);
-    switch (module.statements.items[0].kind) {
+    switch (module.statements.items[module.statements.items.len - 1].kind) {
         .class_decl => |class_decl| try std.testing.expectEqualStrings("private", @tagName(class_decl.visibility)),
         else => return error.TestExpectedEqual,
     }

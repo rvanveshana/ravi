@@ -4,15 +4,14 @@ Lists, tuples, sets, and dictionaries are available, but their protocols are sti
 being made consistent. Prefer explicit operations and avoid relying on Python's
 collection behavior where it is not documented here.
 
-```text
+```ravi
 values = [3, 1, 2]
 values.serisu(4)
 mudrisu(values.gatra())
 mudrisu(values[0])
 ```
 
-This illustrates append followed by indexed access. The current CLI rejects this
-combination with `InvalidName`; it is not a verified runnable example.
+This prints `4` and `3`. See the [executable regression](../../examples/regressions/list_methods.rk).
 Indices start at zero. Negative indices are not supported.
 List assignment such as `values[0] = 9` updates an element.
 
@@ -56,6 +55,7 @@ text content.
 | `tago` / `get` | Key | Look up a key; do not assume Python's optional default argument |
 | `badala` / `update` | Key, value | Set one entry; does not accept a mapping |
 | `tegi` / `remove` | Key | Remove an entry |
+| `kithu` / `pop` | Key | Remove and return the value; missing keys fail |
 | `olagide` / `contains` | Key | Test key membership |
 | `kili` / `keys` | None | Materialize keys |
 | `bele` / `values` | None | Materialize values |

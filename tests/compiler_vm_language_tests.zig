@@ -12,7 +12,7 @@ const run = helpers.run;
 const runAst = helpers.runAst;
 
 test "parsed AST nested closures forward enclosing captures" {
-    const source = "value = 7\nouter = function() => function() => value\ninner = outer()\ninner()\n";
+    const source = "value = 7\nouter = kriya() => kriya() => value\ninner = outer()\ninner()\n";
     var scan = try lexer.Lexer.init(std.testing.allocator, source);
     defer scan.deinit();
     const tokens = try scan.tokenize();
@@ -60,8 +60,8 @@ test "typed handlers match native exception hierarchy" {
     try std.testing.expectEqual(@as(i64, 1), try helpers.runAst(source, .kn));
 }
 
-test "native faults use the same exception reference as Ravi constructors" {
-    const source = "caught = false\nnodu:\n    5 / 0\ntappu exception:\n    caught = (exception == \"ZeroDivisionError\")\nvalue = 1 if caught else 0\nvalue\n";
+test "native faults retain the concrete exception type" {
+    const source = "value = 0\nnodu:\n    5 / 0\ntappu ZeroDivisionError aagi exception:\n    value = 1\nvalue\n";
     try std.testing.expectEqual(@as(i64, 1), try helpers.runAst(source, .kn));
 }
 
@@ -221,7 +221,7 @@ test "parsed formatted index expressions execute through the AST compiler" {
 }
 
 test "AST compiler lowers if and while control flow" {
-    const source = "value = 0\nwhile value < 3:\n    value = value + 1\nif value == 3:\n    value = value + 4\nvalue\n";
+    const source = "value = 0\nvargu value < 3:\n    value = value + 1\nadre value == 3:\n    value = value + 4\nvalue\n";
     var scan = try lexer.Lexer.init(std.testing.allocator, source);
     defer scan.deinit();
     const tokens = try scan.tokenize();

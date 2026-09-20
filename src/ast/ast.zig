@@ -3,13 +3,14 @@ const std = @import("std");
 pub const ExprId = u32;
 pub const StmtId = u32;
 
-pub const Span = struct { first: usize, last: usize, line: usize };
+pub const Span = struct { first: usize, last: usize, line: usize, start_offset: usize = 0, end_offset: usize = 0 };
 
 pub const UnaryOp = enum { negate, not };
 pub const BinaryOp = enum { add, subtract, multiply, divide, modulo, equal, not_equal, less, less_equal, greater, greater_equal, logic_and, logic_or, in_op, is };
 pub const Visibility = enum { public, private, protected, internal };
 
 pub const Expr = struct {
+    parenthesized: bool = false,
     span: Span,
     kind: Kind,
 
@@ -66,6 +67,7 @@ pub const Module = struct {
     language: @import("ravi_config").SourceLanguage = .kn,
     allocator: std.mem.Allocator,
     expressions: std.ArrayListUnmanaged(Expr) = .empty,
+    collection_items: std.ArrayListUnmanaged(ExprId) = .empty,
     format_args: std.ArrayListUnmanaged(ExprId) = .empty,
     statements: std.ArrayListUnmanaged(Stmt) = .empty,
     parameters: std.ArrayListUnmanaged(Parameter) = .empty,
@@ -79,6 +81,7 @@ pub const Module = struct {
 
     pub fn deinit(self: *Module) void {
         self.expressions.deinit(self.allocator);
+        self.collection_items.deinit(self.allocator);
         self.format_args.deinit(self.allocator);
         self.statements.deinit(self.allocator);
         self.parameters.deinit(self.allocator);

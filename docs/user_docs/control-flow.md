@@ -20,6 +20,11 @@ illa:
 Output: `pass`. Prefer explicit comparisons when the intended condition matters;
 truth conversion for every future object type is not yet a stable protocol.
 
+`mattu`/`and` and `athva`/`or` short-circuit: the right operand runs only
+when needed. Comparisons such as `1 < value < 10` compare adjacent operands
+and evaluate the middle operand once. Explicit parentheses preserve grouping.
+See the [evaluation regression](../../examples/regressions/evaluation_semantics.rk).
+
 ## While loops
 
 `vargu` repeats a suite while its condition holds:

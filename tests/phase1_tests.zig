@@ -45,8 +45,8 @@ test "golden diagnostics cover lexical parsing semantic compile verify and runti
 
 test "golden pipeline preserves Kannada and English source profiles" {
     const sources = [_]struct { language: config.SourceLanguage, text: []const u8 }{
-        .{ .language = .kn, .text = "kriya main():\n    kodu 7\n" },
-        .{ .language = .en, .text = "# ravi: language=en\nfunction main():\n    return 7\n" },
+        .{ .language = .kn, .text = "kriya main():\n    kodu 7\nmain()\n" },
+        .{ .language = .en, .text = "# ravi: language=en\nfunction main():\n    return 7\nmain()\n" },
     };
     for (sources) |case| {
         var scan = try lexer.Lexer.initWithLanguage(std.testing.allocator, case.text, case.language);

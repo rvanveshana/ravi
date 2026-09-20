@@ -1,4 +1,4 @@
-# Importing a single name from a module file (lib/math.rk) and calling it.
+# Importing a single name from a module file (lib/ravi/math.rk) and calling it.
 ravi.math inda answer tago
 value = answer()
 adre alla (value == 41):

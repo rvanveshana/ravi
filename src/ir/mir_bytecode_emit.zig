@@ -194,6 +194,15 @@ fn emitInstruction(chunk: *bytecode.Chunk, function: *const mir.Function, instru
             const property = try chunk.addString(value.name);
             try chunk.emit(.{ .op = .set_property, .operand = @intCast(property) });
         },
+        .builtin => |value| {
+            const method = mir.builtins.methods[value.method];
+            try chunk.emit(.{ .op = .load_local, .operand = @intCast(@intFromEnum(value.receiver)) });
+            for (value.arguments) |argument| try chunk.emit(.{ .op = .load_local, .operand = @intCast(@intFromEnum(argument)) });
+            const opcode = std.meta.stringToEnum(bytecode.OpCode, method.opcode) orelse return error.InvalidInstruction;
+            try chunk.emit(.{ .op = opcode, .operand = if (opcode == .pop_collection) @intCast(value.arguments.len) else 0 });
+            if (method.mutates) try chunk.emit(.{ .op = .constant, .operand = 0 });
+            if (instruction.result) |result| try chunk.emit(.{ .op = .store_local, .operand = @intCast(@intFromEnum(result)) });
+        },
         .call_method => |value| {
             try chunk.emit(.{ .op = .load_local, .operand = @intCast(@intFromEnum(value.receiver)) });
             for (value.arguments) |argument| try chunk.emit(.{ .op = .load_local, .operand = @intCast(@intFromEnum(argument)) });

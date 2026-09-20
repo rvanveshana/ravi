@@ -1,0 +1,7 @@
+kriya echo(value: int):
+    mudrisu(value)
+    kodu value
+
+echo(1)
+echo(2)
+mudrisu(echo(3))

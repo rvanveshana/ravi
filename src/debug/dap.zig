@@ -254,7 +254,9 @@ test "DAP adapter uses LSP-compatible content framing" {
     var state = debugger.Debugger.init(std.testing.allocator);
     defer state.deinit();
     var adapter = Adapter.init(std.testing.allocator, &state);
-    const framed = try adapter.dispatchFrame(try framing.encode(std.testing.allocator, "{\"command\":\"continue\"}"));
+    const input = try framing.encode(std.testing.allocator, "{\"command\":\"continue\"}");
+    defer std.testing.allocator.free(input);
+    const framed = try adapter.dispatchFrame(input);
     defer std.testing.allocator.free(framed);
     try std.testing.expect(std.mem.startsWith(u8, framed, "Content-Length:"));
     try std.testing.expect(std.mem.indexOf(u8, framed, "\"success\":true") != null);

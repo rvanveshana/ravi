@@ -1,0 +1,11 @@
+roopa Counter:
+    saarva kriya huttu(start: int):
+        tanna.value = start
+    saarva kriya increment():
+        tanna.value = tanna.value + 1
+    saarva kriya current():
+        kodu tanna.value
+
+counter = Counter(0)
+counter.increment()
+mudrisu(counter.current())

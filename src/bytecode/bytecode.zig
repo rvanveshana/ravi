@@ -89,6 +89,7 @@ pub const Chunk = struct {
 
     pub fn deinit(self: *Chunk) void {
         self.code.deinit(self.allocator);
+        for (self.strings.items) |text| self.allocator.free(text);
         self.strings.deinit(self.allocator);
         self.formats.deinit(self.allocator);
         self.floats.deinit(self.allocator);
@@ -147,7 +148,9 @@ pub const Chunk = struct {
     pub fn addString(self: *Chunk, text: []const u8) !usize {
         for (self.strings.items, 0..) |existing, index| if (std.mem.eql(u8, existing, text)) return index;
         const index = self.strings.items.len;
-        try self.strings.append(self.allocator, text);
+        const owned = try self.allocator.dupe(u8, text);
+        errdefer self.allocator.free(owned);
+        try self.strings.append(self.allocator, owned);
         return index;
     }
 

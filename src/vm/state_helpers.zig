@@ -26,9 +26,11 @@ pub fn handleFault(self: anytype, ip: *usize) bool {
 
 pub fn handleFaultWithError(self: anytype, ip: *usize, err: anyerror) bool {
     if (!self.handler_active) return false;
-    const name = errors.publicExceptionName(err) orelse return false;
-    const slot = @import("object_storage.zig").newException(self, name) catch return false;
-    self.last_exception = @import("ravi_vm_value").Value.fromHandle(.exception, slot) catch return false;
+    if (err != error.RaisedException) {
+        const name = errors.publicExceptionName(err) orelse return false;
+        const slot = @import("object_storage.zig").newException(self, name) catch return false;
+        self.last_exception = @import("ravi_vm_value").Value.fromHandle(.exception, slot) catch return false;
+    }
     self.handler_active = false;
     self.stack_top = self.handler_stack_top;
     push(self, self.last_exception) catch return false;

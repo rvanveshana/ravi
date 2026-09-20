@@ -31,7 +31,7 @@ pub fn topLevel(comptime Error: type, self: anytype, chunk: *bytecode.Chunk, mod
                 if (function_index >= function_statements.items.len or function_statements.items[function_index] != index) return error.InvalidExpression;
                 const capture_info = self.ast_state.function_captures[function_index];
                 for (capture_info.captures[0..capture_info.capture_count]) |capture| {
-                    if (helpers.findLocal(names.items, capture)) |slot| try chunk.emit(.{ .op = .load_local, .operand = @intCast(slot) }) else if (helpers.findCapture(self.ast_state.active_captures, capture)) |capture_slot| try chunk.emit(.{ .op = .load_capture_ref, .operand = @intCast(capture_slot) }) else return error.InvalidName;
+                    if (helpers.findLocal(names.items, capture)) |slot| try chunk.emit(.{ .op = .load_local_ref, .operand = @intCast(slot) }) else if (helpers.findCapture(self.ast_state.active_captures, capture)) |capture_slot| try chunk.emit(.{ .op = .load_capture_ref, .operand = @intCast(capture_slot) }) else return error.InvalidName;
                 }
                 try chunk.emit(.{ .op = if (capture_info.capture_count == 0) .make_function else .make_closure, .operand = @intCast(function_index) });
                 const slot = try helpers.localSlot(names, self.allocator, function.name);

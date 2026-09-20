@@ -1,0 +1,4 @@
+# ravi: language=en
+value = 6
+values = [value, value + 1]
+print(values[0] + values[1])

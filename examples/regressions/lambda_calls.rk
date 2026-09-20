@@ -1,0 +1,2 @@
+double = kriya(value: int) => value * 2
+mudrisu(double(6))

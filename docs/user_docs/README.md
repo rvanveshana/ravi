@@ -36,8 +36,8 @@ the default `kn` profile: Kannada vocabulary written in Latin characters, also
 called Kanglish. Kannada-script text is supported in strings; Kannada-script
 keywords are not currently an executable profile.
 
-Fenced `ravi` examples were executed during the documentation review. Fenced `text`
-examples explicitly identify experimental forms that currently fail in the CLI.
+Fenced `ravi` blocks show executable source. Regression examples under
+`examples/regressions` check the repaired handbook cases against expected output.
 Examples that print results show the expected output or describe the result.
 Run commands from the repository root unless stated otherwise. Some advanced
 features remain experimental even where syntax is accepted.

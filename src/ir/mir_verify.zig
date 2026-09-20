@@ -19,7 +19,7 @@ pub fn verifyDominance(function: *const mir.Function) !void {
     const dominators = try function.allocator.alloc(bool, block_count * block_count);
     defer function.allocator.free(dominators);
     for (0..block_count) |block| {
-        for (0..block_count) |candidate| dominators[block * block_count + candidate] = block == 0 or block == candidate;
+        for (0..block_count) |candidate| dominators[block * block_count + candidate] = if (block == 0) candidate == 0 else true;
     }
     var changed = true;
     while (changed) {
@@ -33,6 +33,7 @@ pub fn verifyDominance(function: *const mir.Function) !void {
                 const reaches = switch (last) {
                     .jump => |target| @intFromEnum(target) == block,
                     .branch => |branch| @intFromEnum(branch.then_block) == block or @intFromEnum(branch.else_block) == block,
+                    .return_value, .raise_value => false,
                     else => candidate_index + 1 == block and candidate_index + 1 < block_count,
                 };
                 if (reaches and predecessor_count < predecessors.len) {
@@ -66,6 +67,10 @@ pub fn verifyDominance(function: *const mir.Function) !void {
             .binary => |value| {
                 try check(definition_blocks, dominators, block_count, instruction_blocks, block, value.left);
                 try check(definition_blocks, dominators, block_count, instruction_blocks, block, value.right);
+            },
+            .builtin => |value| {
+                try check(definition_blocks, dominators, block_count, instruction_blocks, block, value.receiver);
+                for (value.arguments) |argument| try check(definition_blocks, dominators, block_count, instruction_blocks, block, argument);
             },
             .call => |value| for (value.arguments) |argument| try check(definition_blocks, dominators, block_count, instruction_blocks, block, argument),
             .store_local => |value| try check(definition_blocks, dominators, block_count, instruction_blocks, block, value.value),

@@ -93,7 +93,19 @@ pub fn clear(comptime Error: type, self: anytype) Error!void {
     self.stack_top -= 1;
 }
 
-pub fn pop(comptime Error: type, self: anytype) Error!void {
+pub fn pop(comptime Error: type, self: anytype, arguments: i64) Error!void {
+    if (arguments == 1) {
+        if (self.stack_top < 2) return error.StackUnderflow;
+        const key = self.stack[self.stack_top - 1];
+        const handle = self.stack[self.stack_top - 2];
+        if (handle.handleKind() != .dictionary) return error.InvalidInstruction;
+        const slot = handle.handleIndex().?;
+        if (slot >= self.dict_count) return error.InvalidInstruction;
+        self.stack[self.stack_top - 2] = try collections.remove(self.dicts[slot], key);
+        self.stack_top -= 1;
+        return;
+    }
+    if (arguments != 0) return error.InvalidInstruction;
     if (self.stack_top == 0) return error.StackUnderflow;
     const handle = self.stack[self.stack_top - 1];
     const slot = value_runtime.arraySlot(handle) orelse return error.InvalidInstruction;

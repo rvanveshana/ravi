@@ -4,7 +4,7 @@ The object model is experimental. It provides class declarations, constructors,
 instance fields, methods, inheritance, and visibility metadata. Enforcement and
 behavior across compiler paths are not yet complete.
 
-```text
+```ravi
 roopa Counter:
     saarva kriya huttu(start: int):
         tanna.value = start
@@ -20,15 +20,14 @@ counter.increment()
 mudrisu(counter.current())
 ```
 
-This illustrates the intended counter behavior, but the current CLI rejects this
-example with `InvalidName`. It is not a runnable getting-started example.
+This prints `1`. The executable regression is [counter.rk](../../examples/regressions/counter.rk).
 Methods have an implicit receiver: use `tanna`
 (`self` in English) inside the body, without declaring a receiver parameter.
 The constructor is `huttu` (`init` in English).
 
 ## Inheritance
 
-A class can name a base in its declaration, for example `roopa Child(Parent):`.
+A class can name a base in its declaration, for example `roopa Child guru Parent:`.
 The compiler contains method override and base lookup support, including `guru`
 references. Constructor chaining and dynamic method lookup are still undergoing
 conformance work. Do not assume automatic base-constructor invocation or Python's

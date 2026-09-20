@@ -9,8 +9,8 @@ pub fn lower(comptime CompileError: type, self: anytype, chunk: *bytecode.Chunk,
     if (std.mem.eql(u8, control.keyword, "for")) {
         const iterable = control.iterable orelse return error.InvalidExpression;
         const target = control.target orelse return error.InvalidExpression;
-        const collection_name = try std.fmt.allocPrint(self.allocator, "__ast_for_collection_{d}", .{names.items.len});
-        const index_name = try std.fmt.allocPrint(self.allocator, "__ast_for_index_{d}", .{names.items.len});
+        const collection_name = try generatedName(self, "__ast_for_collection_{d}", .{names.items.len});
+        const index_name = try generatedName(self, "__ast_for_index_{d}", .{names.items.len});
         const collection_slot = try helpers.localSlot(names, self.allocator, collection_name);
         const index_slot = try helpers.localSlot(names, self.allocator, index_name);
         if (@as(usize, iterable) < module.expressions.items.len and module.expressions.items[iterable].kind == .call) {
@@ -19,9 +19,9 @@ pub fn lower(comptime CompileError: type, self: anytype, chunk: *bytecode.Chunk,
                 const range_name = module.expressions.items[range_call.callee].kind.name;
                 const is_range = std.mem.eql(u8, range_name, if (self.language == .kn) "shreni" else "range") or std.mem.eql(u8, range_name, "range");
                 if (is_range and range_call.arg_count >= 1 and range_call.arg_count <= 3) {
-                    const current_name = try std.fmt.allocPrint(self.allocator, "__ast_range_current_{d}", .{names.items.len});
-                    const limit_name = try std.fmt.allocPrint(self.allocator, "__ast_range_limit_{d}", .{names.items.len});
-                    const step_name = try std.fmt.allocPrint(self.allocator, "__ast_range_step_{d}", .{names.items.len});
+                    const current_name = try generatedName(self, "__ast_range_current_{d}", .{names.items.len});
+                    const limit_name = try generatedName(self, "__ast_range_limit_{d}", .{names.items.len});
+                    const step_name = try generatedName(self, "__ast_range_step_{d}", .{names.items.len});
                     const current_slot = try helpers.localSlot(names, self.allocator, current_name);
                     const limit_slot = try helpers.localSlot(names, self.allocator, limit_name);
                     const step_slot = try helpers.localSlot(names, self.allocator, step_name);
@@ -71,9 +71,9 @@ pub fn lower(comptime CompileError: type, self: anytype, chunk: *bytecode.Chunk,
             }
         }
         if (@as(usize, iterable) < module.expressions.items.len and module.expressions.items[iterable].kind == .integer) {
-            const current_name = try std.fmt.allocPrint(self.allocator, "__ast_range_current_{d}", .{names.items.len});
-            const limit_name = try std.fmt.allocPrint(self.allocator, "__ast_range_limit_{d}", .{names.items.len});
-            const step_name = try std.fmt.allocPrint(self.allocator, "__ast_range_step_{d}", .{names.items.len});
+            const current_name = try generatedName(self, "__ast_range_current_{d}", .{names.items.len});
+            const limit_name = try generatedName(self, "__ast_range_limit_{d}", .{names.items.len});
+            const step_name = try generatedName(self, "__ast_range_step_{d}", .{names.items.len});
             const current_slot = try helpers.localSlot(names, self.allocator, current_name);
             const limit_slot = try helpers.localSlot(names, self.allocator, limit_name);
             const step_slot = try helpers.localSlot(names, self.allocator, step_name);
@@ -186,4 +186,11 @@ pub fn lower(comptime CompileError: type, self: anytype, chunk: *bytecode.Chunk,
     statement_index.* = @max(statement_index.* + 1, control.body_first + control.body_count);
     if (control.else_count != 0) statement_index.* = @max(statement_index.*, control.else_first + control.else_count);
     statement_index.* -= 1;
+}
+
+fn generatedName(self: anytype, comptime format: []const u8, args: anytype) ![]const u8 {
+    const name = try std.fmt.allocPrint(self.allocator, format, args);
+    errdefer self.allocator.free(name);
+    try self.ast_state.generated_names.append(self.allocator, name);
+    return name;
 }

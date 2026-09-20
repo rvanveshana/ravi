@@ -52,7 +52,10 @@ pub fn appendValue(output: *std.ArrayListUnmanaged(u8), allocator: std.mem.Alloc
         alignment = spec[0];
         cursor = 1;
     }
-    while (cursor < spec.len and std.ascii.isDigit(spec[cursor])) : (cursor += 1) width = std.math.mul(usize, width, 10) catch return error.StringTooLong;
+    while (cursor < spec.len and std.ascii.isDigit(spec[cursor])) : (cursor += 1) {
+        width = std.math.mul(usize, width, 10) catch return error.StringTooLong;
+        width = std.math.add(usize, width, spec[cursor] - '0') catch return error.StringTooLong;
+    }
     if (cursor < spec.len) {
         if (cursor + 1 != spec.len or (spec[cursor] != 's' and spec[cursor] != 'd' and spec[cursor] != 'f')) return error.InvalidInstruction;
         type_marker = spec[cursor];

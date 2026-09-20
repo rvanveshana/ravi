@@ -46,7 +46,7 @@ fn verifyControlFlow(chunk: anytype) VerifyError!void {
                 try appendState(chunk, &work, instruction.operand, next_depth + 1);
                 if (state.instruction + 1 < chunk.code.items.len) work.append(chunk.allocator, .{ .instruction = state.instruction + 1, .depth = next_depth }) catch return error.OutOfMemory;
             },
-            .return_value, .halt, .raise_value, .suspend_point => {},
+            .return_value, .halt, .raise_value => {},
             else => if (state.instruction + 1 < chunk.code.items.len) work.append(chunk.allocator, .{ .instruction = state.instruction + 1, .depth = next_depth }) catch return error.InvalidInstruction,
         }
     }
@@ -89,11 +89,11 @@ fn stackAfter(chunk: anytype, instruction: anytype, depth: isize) VerifyError!is
             if (instruction.operand < 0 or instruction.operand >= @as(i64, @intCast(chunk.classes.items.len))) return error.InvalidInstruction;
             delta = 1;
         },
-        .load_local, .load_capture, .load_capture_ref => {
+        .load_local, .load_local_ref, .load_capture, .load_capture_ref => {
             if (instruction.operand < 0) return error.InvalidLocal;
             delta = 1;
         },
-        .store_local, .store_capture, .get_property, .length, .iterable, .type_query, .string_lower, .string_upper, .string_strip, .pop_collection, .dict_keys, .dict_values, .dict_items, .negate, .not, .guard_integer, .guard_float, .guard_boolean, .guard_string, .box_dynamic, .unbox_integer, .sleep, .wait => required = 1,
+        .store_local, .store_capture, .get_property, .length, .iterable, .type_query, .string_lower, .string_upper, .string_strip, .dict_keys, .dict_values, .dict_items, .negate, .not, .guard_integer, .guard_float, .guard_boolean, .guard_string, .box_dynamic, .unbox_integer, .sleep, .wait => required = 1,
         .spawn => {
             if (instruction.operand < 0) return error.InvalidInstruction;
             required = @intCast(instruction.operand + 1);
@@ -116,6 +116,11 @@ fn stackAfter(chunk: anytype, instruction: anytype, depth: isize) VerifyError!is
         .set_property, .add, .subtract, .multiply, .divide, .modulo, .equal, .not_equal, .less, .less_equal, .greater, .greater_equal, .logic_and, .logic_or, .index, .string_find, .string_split, .string_join, .append_collection, .contains_collection, .dict_get, .dict_remove, .dict_contains, .set_union, .set_intersection, .set_difference => {
             required = 2;
             delta = -1;
+        },
+        .pop_collection => {
+            if (instruction.operand < 0 or instruction.operand > 1) return error.InvalidInstruction;
+            required = 1 + instruction.operand;
+            delta = -instruction.operand;
         },
         .slice, .string_replace, .insert_collection, .store_index, .dict_put, .range_condition => {
             required = 3;

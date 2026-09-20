@@ -103,7 +103,7 @@ test "parsed AST lowers membership and identity expressions" {
 }
 
 test "parsed AST lambdas produce callable function values" {
-    const source = "add = function(a, b) => a + b\nadd(4, 6)\n";
+    const source = "add = kriya(a, b) => a + b\nadd(4, 6)\n";
     var scan = try lexer.Lexer.init(std.testing.allocator, source);
     defer scan.deinit();
     const tokens = try scan.tokenize();
@@ -143,7 +143,7 @@ test "spawn and wait execute a function in isolated VM state" {
 }
 
 test "parsed AST lambdas capture outer locals" {
-    const source = "value = 7\nread = function() => value\nread()\n";
+    const source = "value = 7\nread = kriya() => value\nread()\n";
     var scan = try lexer.Lexer.init(std.testing.allocator, source);
     defer scan.deinit();
     const tokens = try scan.tokenize();
@@ -160,7 +160,7 @@ test "parsed AST lambdas capture outer locals" {
 }
 
 test "parsed AST closures preserve multiple capture slots" {
-    const source = "left = 4\nright = 9\ncombine = function() => left + right\ncombine()\n";
+    const source = "left = 4\nright = 9\ncombine = kriya() => left + right\ncombine()\n";
     var scan = try lexer.Lexer.init(std.testing.allocator, source);
     defer scan.deinit();
     const tokens = try scan.tokenize();
@@ -194,7 +194,7 @@ test "parsed AST nested functions execute only through their own entry" {
 }
 
 test "parsed AST closures mutate shared captured cells" {
-    const source = "value = 0\ninc = function() => value = value + 1\ninc()\ninc()\n";
+    const source = "value = 0\ninc = kriya() => value = value + 1\ninc()\ninc()\n";
     var scan = try lexer.Lexer.init(std.testing.allocator, source);
     defer scan.deinit();
     const tokens = try scan.tokenize();
@@ -262,8 +262,18 @@ test "parsed AST finally runs on the normal path" {
 }
 
 test "parsed AST finally runs before function return" {
-    const source = "value = 0\nwork = function():\n    nodu:\n        yese 7\n    kone:\n        value = 9\nwork()\nvalue\n";
+    const source = "value = 0\nkriya work():\n    nodu:\n        kodu 7\n    kone:\n        value = 9\nwork()\nvalue\n";
     try std.testing.expectEqual(@as(i64, 9), try helpers.runAst(source, .kn));
+}
+
+test "sibling closures and outer assignments share captured storage" {
+    const source = "value = 1\nread = kriya() => value\nwrite = kriya() => value = 9\nwrite()\nvalue = value + 1\nread()\n";
+    try std.testing.expectEqual(@as(i64, 10), try helpers.runAst(source, .kn));
+}
+
+test "finally preserves the pending return value" {
+    const source = "value = 0\nkriya work():\n    nodu:\n        kodu 7\n    kone:\n        value = 9\nwork() * 10 + value\n";
+    try std.testing.expectEqual(@as(i64, 79), try helpers.runAst(source, .kn));
 }
 
 test "parsed AST finally runs before loop continue" {
@@ -275,4 +285,3 @@ test "parsed AST finally runs before loop break" {
     const source = "value = 0\nprati item alli [1, 2, 3]:\n    nodu:\n        value = value + 1\n        adre item == 2:\n            nillu\n        value = value + 10\n    kone:\n        value = value + 100\nvalue\n";
     try std.testing.expectEqual(@as(i64, 212), try helpers.runAst(source, .kn));
 }
-

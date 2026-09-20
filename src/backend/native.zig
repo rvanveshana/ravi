@@ -20,8 +20,14 @@ pub fn lower(allocator: std.mem.Allocator, function: *const mir.Function) anyerr
     if (function.instructions.items.len != 2) return error.UnsupportedNativeOperation;
     const constant = function.instructions.items[0];
     const returned = function.instructions.items[1];
-    const value = switch (constant.operation) { .constant_integer => |integer| integer, else => return error.UnsupportedNativeOperation };
-    const returned_value = switch (returned.operation) { .return_value => |result| result, else => return error.UnsupportedNativeOperation };
+    const value = switch (constant.operation) {
+        .constant_integer => |integer| integer,
+        else => return error.UnsupportedNativeOperation,
+    };
+    const returned_value = switch (returned.operation) {
+        .return_value => |result| result,
+        else => return error.UnsupportedNativeOperation,
+    };
     if (constant.result == null or returned_value == null or @intFromEnum(returned_value.?) != @intFromEnum(constant.result.?)) return error.UnsupportedNativeOperation;
     var bytes = try allocator.alloc(u8, 11);
     bytes[0] = 0x48;

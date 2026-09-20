@@ -1,0 +1,4 @@
+values = [3, 1, 2]
+values.serisu(4)
+mudrisu(values.gatra())
+mudrisu(values[0])

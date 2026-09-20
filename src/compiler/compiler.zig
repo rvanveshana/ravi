@@ -47,6 +47,11 @@ pub const Compiler = struct {
 
     /// Compile the scalar AST subset without consulting source tokens.
     pub fn compileAstModule(self: *Compiler, module: *const ast.Module) CompileError!bytecode.Chunk {
+        defer {
+            for (self.ast_state.generated_names.items) |name| self.allocator.free(name);
+            self.ast_state.generated_names.deinit(self.allocator);
+            self.ast_state.generated_names = .empty;
+        }
         var chunk = bytecode.Chunk.init(self.allocator);
         errdefer chunk.deinit();
         var names: std.ArrayListUnmanaged([]const u8) = .empty;
@@ -144,6 +149,10 @@ pub const Compiler = struct {
             for (module.parameters.items[function.params_first .. function.params_first + function.params_count]) |parameter| try function_names.append(self.allocator, parameter.name);
             self.ast_state.active_captures = function_captures.items[function_index].captures[0..function_captures.items[function_index].capture_count];
             try self.compileAstStatements(&chunk, module, function.body_first, function.body_count, &function_names, true, &loops, &break_targets);
+            for (chunk.code.items[chunk.functions.items[function_index].entry..]) |instruction| {
+                if (instruction.op == .suspend_point) chunk.functions.items[function_index].suspension_count += 1;
+            }
+            chunk.functions.items[function_index].resumable = chunk.functions.items[function_index].suspension_count != 0;
             self.ast_state.active_captures = &.{};
             try chunk.emit(.{ .op = .constant, .operand = 0 });
             try chunk.emit(.{ .op = .return_value });

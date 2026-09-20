@@ -87,10 +87,10 @@ fn collectCaptureNames(allocator: std.mem.Allocator, module: *const ast.Module, 
             try collectCaptureNames(allocator, module, value.callee, parameters, visible, captures);
             for (module.call_args.items[value.first_arg .. value.first_arg + value.arg_count]) |argument| try collectCaptureNames(allocator, module, argument, parameters, visible, captures);
         },
-        .array => |value| for (value.first..value.first + value.count) |index| try collectCaptureNames(allocator, module, @intCast(index), parameters, visible, captures),
-        .tuple => |value| for (value.first..value.first + value.count) |index| try collectCaptureNames(allocator, module, @intCast(index), parameters, visible, captures),
-        .set => |value| for (value.first..value.first + value.count) |index| try collectCaptureNames(allocator, module, @intCast(index), parameters, visible, captures),
-        .map => |value| for (value.first..value.first + value.count) |index| try collectCaptureNames(allocator, module, @intCast(index), parameters, visible, captures),
+        .array => |value| for (module.collection_items.items[value.first .. value.first + value.count]) |index| try collectCaptureNames(allocator, module, @intCast(index), parameters, visible, captures),
+        .tuple => |value| for (module.collection_items.items[value.first .. value.first + value.count]) |index| try collectCaptureNames(allocator, module, @intCast(index), parameters, visible, captures),
+        .set => |value| for (module.collection_items.items[value.first .. value.first + value.count]) |index| try collectCaptureNames(allocator, module, @intCast(index), parameters, visible, captures),
+        .map => |value| for (module.collection_items.items[value.first .. value.first + value.count * 2]) |index| try collectCaptureNames(allocator, module, @intCast(index), parameters, visible, captures),
         .index => |value| {
             try collectCaptureNames(allocator, module, value.object, parameters, visible, captures);
             try collectCaptureNames(allocator, module, value.index, parameters, visible, captures);
@@ -98,28 +98,23 @@ fn collectCaptureNames(allocator: std.mem.Allocator, module: *const ast.Module, 
         else => {},
     }
 }
-pub fn lower(allocator: std.mem.Allocator, function: *hir.Function, module: *const ast.Module, expression_id: ast.ExprId, parameter_names: []const []const u8, parameter_base: ?usize, capture_names: []const []const u8) anyerror!hir.ValueId {
+pub fn lowerWithLocals(allocator: std.mem.Allocator, function: *hir.Function, module: *const ast.Module, expression_id: ast.ExprId, parameter_names: []const []const u8, local_names: []const []const u8, capture_names: []const []const u8) anyerror!hir.ValueId {
     if (@as(usize, expression_id) >= module.expressions.items.len) return error.InvalidExpression;
     const expression = module.expressions.items[expression_id];
-    return switch (expression.kind) {
-        .integer => |value| function.appendValue(.integer, .{ .constant_integer = value }, expression.span.line),
-        .float => |value| function.appendValue(.float, .{ .constant_float = value }, expression.span.line),
-        .string => |value| function.appendValue(.string, .{ .constant_string = value }, expression.span.line),
-        .boolean => |value| function.appendValue(.boolean, .{ .constant_boolean = value }, expression.span.line),
-        .none => function.appendValue(.none, .constant_none, expression.span.line),
-        .name => |name| if (parameterIndex(parameter_names, name)) |slot| function.appendValue(function.parameterType((parameter_base orelse 0) + slot), .{ .parameter = (parameter_base orelse 0) + slot }, expression.span.line) else if ((std.mem.eql(u8, name, "guru") or std.mem.eql(u8, name, "super")) and parameterIndex(parameter_names, "tanna") != null) function.appendValue(function.parameterType(parameter_base orelse 0), .{ .parameter = parameter_base orelse 0 }, expression.span.line) else if (localIndex(capture_names, name)) |slot| function.appendValue(.dynamic, .{ .load_capture = slot }, expression.span.line) else if (functionIndex(module, name)) |index| function.appendValue(.dynamic, .{ .make_function = index }, expression.span.line) else error.InvalidName,
-        .member => |member| {
-            const object = try lower(allocator, function, module, member.object, parameter_names, parameter_base, capture_names);
-            return function.appendValue(.dynamic, .{ .get_property = .{ .object = object, .name = member.name } }, expression.span.line);
-        },
-        .lambda => return function.appendValue(.dynamic, .{ .make_function = lambdaIndex(module, expression_id) orelse return error.InvalidFunction }, expression.span.line),
+    switch (expression.kind) {
+        .integer => |value| return function.appendValue(.integer, .{ .constant_integer = value }, expression.span.line),
+        .float => |value| return function.appendValue(.float, .{ .constant_float = value }, expression.span.line),
+        .string => |value| return function.appendValue(.string, .{ .constant_string = value }, expression.span.line),
+        .boolean => |value| return function.appendValue(.boolean, .{ .constant_boolean = value }, expression.span.line),
+        .none => return function.appendValue(.none, .constant_none, expression.span.line),
+        .name => |name| return if (localIndex(local_names, name)) |slot| function.appendValue(.dynamic, .{ .load_local = slot }, expression.span.line) else if (parameterIndex(parameter_names, name)) |slot| function.appendValue(function.parameterType(slot), .{ .parameter = slot }, expression.span.line) else if ((std.mem.eql(u8, name, "guru") or std.mem.eql(u8, name, "super")) and parameterIndex(parameter_names, "tanna") != null) function.appendValue(function.parameterType(0), .{ .parameter = 0 }, expression.span.line) else if (localIndex(capture_names, name)) |slot| function.appendValue(.dynamic, .{ .load_capture = slot }, expression.span.line) else if (functionIndex(module, name)) |index| function.appendValue(.dynamic, .{ .make_function = index }, expression.span.line) else error.InvalidName,
         .unary => |unary| {
-            const operand = try lower(allocator, function, module, unary.operand, parameter_names, parameter_base, capture_names);
+            const operand = try lowerWithLocals(allocator, function, module, unary.operand, parameter_names, local_names, capture_names);
             return function.appendValue(if (unary.op == .not) .boolean else .integer, .{ .unary = .{ .operator = if (unary.op == .not) .not else .negate, .operand = operand } }, expression.span.line);
         },
         .binary => |binary| {
-            const left = try lower(allocator, function, module, binary.left, parameter_names, parameter_base, capture_names);
-            const right = try lower(allocator, function, module, binary.right, parameter_names, parameter_base, capture_names);
+            const left = try lowerWithLocals(allocator, function, module, binary.left, parameter_names, local_names, capture_names);
+            const right = try lowerWithLocals(allocator, function, module, binary.right, parameter_names, local_names, capture_names);
             const operator: hir.Binary = switch (binary.op) {
                 .add => .add,
                 .subtract => .subtract,
@@ -136,49 +131,24 @@ pub fn lower(allocator: std.mem.Allocator, function: *hir.Function, module: *con
                 .logic_or => .logic_or,
                 else => return error.UnsupportedExpression,
             };
-            return function.appendValue(expressionType(module, expression_id), .{ .binary = .{ .operator = operator, .left = left, .right = right } }, expression.span.line);
+            const left_type = valueType(function, left);
+            const right_type = valueType(function, right);
+            const result_type: hir.Type = switch (operator) {
+                .equal, .not_equal, .less, .less_equal, .greater, .greater_equal, .logic_and, .logic_or => .boolean,
+                else => if (left_type == .dynamic or right_type == .dynamic) .dynamic else left_type,
+            };
+            return function.appendValue(result_type, .{ .binary = .{ .operator = operator, .left = left, .right = right } }, expression.span.line);
         },
-        .array => |value| return collection(allocator, function, module, value.first, value.count, parameter_names, parameter_base, capture_names, .make_array, expression.span.line),
-        .tuple => |value| return collection(allocator, function, module, value.first, value.count, parameter_names, parameter_base, capture_names, .make_tuple, expression.span.line),
-        .set => |value| return collection(allocator, function, module, value.first, value.count, parameter_names, parameter_base, capture_names, .make_set, expression.span.line),
-        .map => |value| return collection(allocator, function, module, value.first, value.count * 2, parameter_names, parameter_base, capture_names, .make_dict, expression.span.line),
+        .array => |value| return collection(allocator, function, module, value.first, value.count, parameter_names, local_names, capture_names, .make_array, expression.span.line),
+        .tuple => |value| return collection(allocator, function, module, value.first, value.count, parameter_names, local_names, capture_names, .make_tuple, expression.span.line),
+        .set => |value| return collection(allocator, function, module, value.first, value.count, parameter_names, local_names, capture_names, .make_set, expression.span.line),
+        .map => |value| return collection(allocator, function, module, value.first, value.count * 2, parameter_names, local_names, capture_names, .make_dict, expression.span.line),
         .index => |value| {
-            const object = try lower(allocator, function, module, value.object, parameter_names, parameter_base, capture_names);
-            const key = try lower(allocator, function, module, value.index, parameter_names, parameter_base, capture_names);
+            const object = try lowerWithLocals(allocator, function, module, value.object, parameter_names, local_names, capture_names);
+            const key = try lowerWithLocals(allocator, function, module, value.index, parameter_names, local_names, capture_names);
             return function.appendValue(.dynamic, .{ .index = .{ .object = object, .key = key } }, expression.span.line);
         },
-        .call => |call| {
-            const callee = switch (module.expressions.items[call.callee].kind) {
-                .name => |name| name,
-                else => return error.InvalidFunction,
-            };
-            if (isPrintName(callee)) {
-                if (call.arg_count != 1) return error.InvalidFunction;
-                return function.appendValue(.none, .{ .print = try lower(allocator, function, module, module.call_args.items[call.first_arg], parameter_names, parameter_base, capture_names) }, expression.span.line);
-            }
-            if (classIndex(module, callee)) |class_index| {
-                const receiver = try function.appendValue(.dynamic, .{ .make_instance = class_index }, expression.span.line);
-                const constructor = methodIndex(module, callee, "init") orelse methodIndex(module, callee, "huttu");
-                if (constructor) |method| {
-                    const arguments = try callArguments(allocator, function, module, call.first_arg, call.arg_count, parameter_names, parameter_base, false, &.{}, capture_names);
-                    return function.appendValue(.dynamic, .{ .call_method = .{ .function = method, .receiver = receiver, .arguments = arguments, .returns_receiver = true } }, expression.span.line);
-                }
-                if (call.arg_count != 0) return error.InvalidFunction;
-                return receiver;
-            }
-            const arguments = try callArguments(allocator, function, module, call.first_arg, call.arg_count, parameter_names, parameter_base, false, &.{}, capture_names);
-            if (functionIndex(module, callee)) |index| return function.appendValue(.integer, .{ .call = .{ .function = index, .arguments = try calls.directArguments(allocator, function, module, callee, call, parameter_names, &.{}, capture_names, expression.span.line, lowerArgument) } }, expression.span.line);
-            const callee_value = try lower(allocator, function, module, call.callee, parameter_names, parameter_base, capture_names);
-            return function.appendValue(.dynamic, .{ .call_value = .{ .callee = callee_value, .arguments = arguments } }, expression.span.line);
-        },
-        else => error.UnsupportedExpression,
-    };
-}
-pub fn lowerWithLocals(allocator: std.mem.Allocator, function: *hir.Function, module: *const ast.Module, expression_id: ast.ExprId, parameter_names: []const []const u8, local_names: []const []const u8, capture_names: []const []const u8) anyerror!hir.ValueId {
-    if (@as(usize, expression_id) >= module.expressions.items.len) return error.InvalidExpression;
-    const expression = module.expressions.items[expression_id];
-    switch (expression.kind) {
-        .name => |name| if (localIndex(local_names, name)) |slot| return function.appendValue(.integer, .{ .load_local = slot }, expression.span.line),
+
         .member => |member| {
             const object = try lowerWithLocals(allocator, function, module, member.object, parameter_names, local_names, capture_names);
             return function.appendValue(.dynamic, .{ .get_property = .{ .object = object, .name = member.name } }, expression.span.line);
@@ -212,6 +182,10 @@ pub fn lowerWithLocals(allocator: std.mem.Allocator, function: *hir.Function, mo
                 const member = module.expressions.items[call.callee].kind.member;
                 const receiver = try lowerWithLocals(allocator, function, module, member.object, parameter_names, local_names, capture_names);
                 const arguments = try callArguments(allocator, function, module, call.first_arg, call.arg_count, parameter_names, local_names, true, local_names, capture_names);
+                if (hir.builtins.resolve(member.name, module.language, call.arg_count)) |method| {
+                    if (arguments.len != hir.builtins.methods[method].arguments or call.keyword_count != 0) return error.InvalidFunction;
+                    return function.appendValue(.dynamic, .{ .builtin = .{ .method = method, .receiver = receiver, .arguments = arguments } }, expression.span.line);
+                }
                 const method = anyMethodIndex(module, member.name) orelse return error.InvalidFunction;
                 if (module.expressions.items[member.object].kind == .name and (std.mem.eql(u8, module.expressions.items[member.object].kind.name, "guru") or std.mem.eql(u8, module.expressions.items[member.object].kind.name, "super"))) return function.appendValue(.dynamic, .{ .call_super = .{ .function = method, .receiver = receiver, .arguments = arguments } }, expression.span.line);
                 return function.appendValue(.dynamic, .{ .call_method = .{ .function = method, .receiver = receiver, .arguments = arguments } }, expression.span.line);
@@ -220,32 +194,40 @@ pub fn lowerWithLocals(allocator: std.mem.Allocator, function: *hir.Function, mo
                 .name => |name| name,
                 else => return error.InvalidFunction,
             };
+            if (classIndex(module, callee)) |class_index| {
+                const receiver = try function.appendValue(.dynamic, .{ .make_instance = class_index }, expression.span.line);
+                const constructor = methodIndex(module, callee, "init") orelse methodIndex(module, callee, "huttu");
+                if (constructor) |method| {
+                    const arguments = try callArguments(allocator, function, module, call.first_arg, call.arg_count, parameter_names, local_names, true, local_names, capture_names);
+                    return function.appendValue(.dynamic, .{ .call_method = .{ .function = method, .receiver = receiver, .arguments = arguments, .returns_receiver = true } }, expression.span.line);
+                }
+                if (call.arg_count != 0) return error.InvalidFunction;
+                return receiver;
+            }
             if (isPrintName(callee)) return function.appendValue(.none, .{ .print = try lowerWithLocals(allocator, function, module, module.call_args.items[call.first_arg], parameter_names, local_names, capture_names) }, expression.span.line);
-            const arguments = try callArguments(allocator, function, module, call.first_arg, call.arg_count, parameter_names, local_names, true, local_names, capture_names);
             if (functionIndex(module, callee)) |index| return function.appendValue(.integer, .{ .call = .{ .function = index, .arguments = try calls.directArguments(allocator, function, module, callee, call, parameter_names, local_names, capture_names, expression.span.line, lowerLocalArgument) } }, expression.span.line);
+            const arguments = try callArguments(allocator, function, module, call.first_arg, call.arg_count, parameter_names, local_names, true, local_names, capture_names);
             const callee_value = try lowerWithLocals(allocator, function, module, call.callee, parameter_names, local_names, capture_names);
             return function.appendValue(.dynamic, .{ .call_value = .{ .callee = callee_value, .arguments = arguments } }, expression.span.line);
         },
         else => {},
     }
-    return lower(allocator, function, module, expression_id, parameter_names, null, capture_names);
+    return error.UnsupportedExpression;
 }
 fn callArguments(allocator: std.mem.Allocator, function: *hir.Function, module: *const ast.Module, first: usize, count: usize, parameters: []const []const u8, locals: anytype, with_locals: bool, local_names: []const []const u8, capture_names: []const []const u8) ![]hir.ValueId {
-    const arguments = try allocator.alloc(hir.ValueId, count);
-    for (module.call_args.items[first .. first + count], 0..) |argument, index| arguments[index] = if (with_locals) try lowerWithLocals(allocator, function, module, argument, parameters, local_names, capture_names) else try lower(allocator, function, module, argument, parameters, null, capture_names);
     _ = locals;
+    _ = with_locals;
+    const arguments = try allocator.alloc(hir.ValueId, count);
+    errdefer allocator.free(arguments);
+    for (module.call_args.items[first .. first + count], 0..) |argument, index| arguments[index] = try lowerWithLocals(allocator, function, module, argument, parameters, local_names, capture_names);
     return arguments;
-}
-fn lowerArgument(allocator: std.mem.Allocator, function: *hir.Function, module: *const ast.Module, argument: ast.ExprId, parameters: []const []const u8, local_names: []const []const u8, capture_names: []const []const u8) !hir.ValueId {
-    _ = local_names;
-    return lower(allocator, function, module, argument, parameters, null, capture_names);
 }
 fn lowerLocalArgument(allocator: std.mem.Allocator, function: *hir.Function, module: *const ast.Module, argument: ast.ExprId, parameters: []const []const u8, local_names: []const []const u8, capture_names: []const []const u8) !hir.ValueId {
     return lowerWithLocals(allocator, function, module, argument, parameters, local_names, capture_names);
 }
-fn collection(allocator: std.mem.Allocator, function: *hir.Function, module: *const ast.Module, first: usize, count: usize, parameters: []const []const u8, base: ?usize, capture_names: []const []const u8, tag: std.meta.Tag(hir.Instruction.Operation), line: usize) !hir.ValueId {
+fn collection(allocator: std.mem.Allocator, function: *hir.Function, module: *const ast.Module, first: usize, count: usize, parameters: []const []const u8, local_names: []const []const u8, capture_names: []const []const u8, tag: std.meta.Tag(hir.Instruction.Operation), line: usize) !hir.ValueId {
     const values = try allocator.alloc(hir.ValueId, count);
-    for (values, 0..) |*value, index| value.* = try lower(allocator, function, module, @intCast(first + index), parameters, base, capture_names);
+    for (values, 0..) |*value, index| value.* = try lowerWithLocals(allocator, function, module, module.collection_items.items[first + index], parameters, local_names, capture_names);
     return function.appendValue(.dynamic, switch (tag) {
         .make_array => .{ .make_array = values },
         .make_tuple => .{ .make_tuple = values },
@@ -265,17 +247,9 @@ fn parameterRecordIndex(parameters: []const ast.Parameter, name: []const u8) ?us
 fn isPrintName(name: []const u8) bool {
     return std.mem.eql(u8, name, "mudrisu") or std.mem.eql(u8, name, "print");
 }
-fn expressionType(module: *const ast.Module, expression_id: ast.ExprId) hir.Type {
-    return switch (module.expressions.items[@as(usize, expression_id)].kind) {
-        .float => .float,
-        .boolean => .boolean,
-        .none => .none,
-        .string => .string,
-        .unary => |value| if (value.op == .not) .boolean else expressionType(module, value.operand),
-        .binary => |value| switch (value.op) {
-            .equal, .not_equal, .less, .less_equal, .greater, .greater_equal, .logic_and, .logic_or => .boolean,
-            else => if (expressionType(module, value.left) == .float or expressionType(module, value.right) == .float) .float else .integer,
-        },
-        else => .integer,
-    };
+fn valueType(function: *const hir.Function, id: hir.ValueId) hir.Type {
+    for (function.instructions.items) |instruction| {
+        if (instruction.result == id) return instruction.result_type;
+    }
+    return .dynamic;
 }

@@ -1,4 +1,5 @@
 const std = @import("std");
+const method_catalog = @import("ravi_hir").builtins;
 const bytecode = @import("ravi_bytecode");
 const ast = @import("ravi_ast");
 const helpers = @import("helpers.zig");
@@ -7,7 +8,7 @@ const lambda_lowering = @import("ast_lambda_lowering.zig");
 pub fn expression(comptime Error: type, self: anytype, chunk: *bytecode.Chunk, module: *const ast.Module, expression_id: ast.ExprId, names: *std.ArrayListUnmanaged([]const u8)) Error!void {
     if (@as(usize, expression_id) >= module.expressions.items.len) return error.InvalidExpression;
     const expression_value = module.expressions.items[expression_id];
-    self.last_location = .{ .start_offset = 0, .end_offset = 0, .line = expression_value.span.line, .column = 1 };
+    self.last_location = .{ .start_offset = expression_value.span.start_offset, .end_offset = expression_value.span.end_offset, .line = expression_value.span.line, .column = 1 };
     const previous_location = chunk.current_location;
     chunk.setSourceLocation(self.last_location);
     defer chunk.setSourceLocation(previous_location);
@@ -32,6 +33,17 @@ pub fn expression(comptime Error: type, self: anytype, chunk: *bytecode.Chunk, m
         .assignment => |assignment| {
             if (assignment.target) |target| {
                 const member = if (@as(usize, target) < module.expressions.items.len) module.expressions.items[target].kind else return error.InvalidExpression;
+                if (member == .index) {
+                    try expression(Error, self, chunk, module, member.index.object, names);
+                    try expression(Error, self, chunk, module, member.index.index, names);
+                    try expression(Error, self, chunk, module, assignment.value, names);
+                    const slot = names.items.len;
+                    try names.append(self.allocator, "");
+                    try chunk.emit(.{ .op = .store_local, .operand = @intCast(slot) });
+                    try chunk.emit(.{ .op = .store_index });
+                    try chunk.emit(.{ .op = .load_local, .operand = @intCast(slot) });
+                    return;
+                }
                 const member_value = switch (member) {
                     .member => |value| value,
                     else => return error.InvalidExpression,
@@ -48,7 +60,6 @@ pub fn expression(comptime Error: type, self: anytype, chunk: *bytecode.Chunk, m
             if (assignment.target == null) {
                 if (helpers.findCapture(self.ast_state.active_captures, assignment.name)) |capture| {
                     try chunk.emit(.{ .op = .store_capture, .operand = @intCast(capture) });
-                    try chunk.emit(.{ .op = .load_capture, .operand = @intCast(capture) });
                 } else {
                     const slot = try helpers.localSlot(names, self.allocator, assignment.name);
                     try chunk.emit(.{ .op = .store_local, .operand = @intCast(slot) });
@@ -60,6 +71,8 @@ pub fn expression(comptime Error: type, self: anytype, chunk: *bytecode.Chunk, m
                 try chunk.emit(.{ .op = .load_local, .operand = @intCast(slot) });
             } else if (helpers.findCapture(self.ast_state.active_captures, name)) |capture| {
                 try chunk.emit(.{ .op = .load_capture, .operand = @intCast(capture) });
+            } else if ((std.mem.eql(u8, name, "guru") or std.mem.eql(u8, name, "super")) and helpers.findLocal(names.items, "tanna") != null) {
+                try chunk.emit(.{ .op = .load_local, .operand = @intCast(helpers.findLocal(names.items, "tanna").?) });
             } else return error.InvalidName;
         },
         .spawn => |operand| {
@@ -89,55 +102,11 @@ pub fn expression(comptime Error: type, self: anytype, chunk: *bytecode.Chunk, m
                 .not => .not,
             } });
         },
-        .binary => |binary| {
-            if (binary.op == .in_op) {
-                try expression(Error, self, chunk, module, binary.right, names);
-                try expression(Error, self, chunk, module, binary.left, names);
-                try chunk.emit(.{ .op = .contains_collection });
-                return;
-            }
-            try expression(Error, self, chunk, module, binary.left, names);
-            try expression(Error, self, chunk, module, binary.right, names);
-            const op: bytecode.OpCode = switch (binary.op) {
-                .add => .add,
-                .subtract => .subtract,
-                .multiply => .multiply,
-                .divide => .divide,
-                .modulo => .modulo,
-                .equal => .equal,
-                .not_equal => .not_equal,
-                .less => .less,
-                .less_equal => .less_equal,
-                .greater => .greater,
-                .greater_equal => .greater_equal,
-                .logic_and => .logic_and,
-                .logic_or => .logic_or,
-                .is => .equal,
-                else => return error.UnsupportedOperator,
-            };
-            try chunk.emit(.{ .op = op });
-        },
-        .array => |array| {
-            if (array.first > module.expressions.items.len or array.count > module.expressions.items.len - array.first) return error.InvalidExpression;
-            for (module.expressions.items[array.first .. array.first + array.count], array.first..) |_, element_id| try expression(Error, self, chunk, module, @intCast(element_id), names);
-            try chunk.emit(.{ .op = .make_array, .operand = @intCast(array.count) });
-        },
-        .tuple => |tuple| {
-            if (tuple.first > module.expressions.items.len or tuple.count > module.expressions.items.len - tuple.first) return error.InvalidExpression;
-            for (module.expressions.items[tuple.first .. tuple.first + tuple.count], tuple.first..) |_, element_id| try expression(Error, self, chunk, module, @intCast(element_id), names);
-            try chunk.emit(.{ .op = .make_tuple, .operand = @intCast(tuple.count) });
-        },
-        .set => |set| {
-            if (set.first > module.expressions.items.len or set.count > module.expressions.items.len - set.first) return error.InvalidExpression;
-            for (module.expressions.items[set.first .. set.first + set.count], set.first..) |_, element_id| try expression(Error, self, chunk, module, @intCast(element_id), names);
-            try chunk.emit(.{ .op = .make_set, .operand = @intCast(set.count) });
-        },
-        .map => |map| {
-            const element_count = std.math.mul(usize, map.count, 2) catch return error.InvalidExpression;
-            if (map.first > module.expressions.items.len or element_count > module.expressions.items.len - map.first) return error.InvalidExpression;
-            for (module.expressions.items[map.first .. map.first + element_count], map.first..) |_, element_id| try expression(Error, self, chunk, module, @intCast(element_id), names);
-            try chunk.emit(.{ .op = .make_dict, .operand = @intCast(map.count) });
-        },
+        .binary => |binary| try @import("ast_binary.zig").lower(Error, self, chunk, module, binary, names, expression),
+        .array => |value| try @import("ast_collections.zig").lower(Error, self, chunk, module, value.first, value.count, .make_array, names, expression),
+        .tuple => |value| try @import("ast_collections.zig").lower(Error, self, chunk, module, value.first, value.count, .make_tuple, names, expression),
+        .set => |value| try @import("ast_collections.zig").lower(Error, self, chunk, module, value.first, value.count, .make_set, names, expression),
+        .map => |value| try @import("ast_collections.zig").lower(Error, self, chunk, module, value.first, value.count, .make_dict, names, expression),
         .index => |index| {
             try expression(Error, self, chunk, module, index.object, names);
             try expression(Error, self, chunk, module, index.index, names);
@@ -179,7 +148,8 @@ pub fn expression(comptime Error: type, self: anytype, chunk: *bytecode.Chunk, m
                     try chunk.emit(.{ .op = .make_exception });
                     return;
                 }
-                if (std.mem.eql(u8, name, "add") or std.mem.eql(u8, name, "sub") or std.mem.eql(u8, name, "mul") or std.mem.eql(u8, name, "div") or std.mem.eql(u8, name, "mod")) {
+                if (helpers.findLocal(names.items, name) == null and self.findAstFunction(module, name) == null and (std.mem.eql(u8, name, "add") or std.mem.eql(u8, name, "sub") or std.mem.eql(u8, name, "mul") or std.mem.eql(u8, name, "div") or std.mem.eql(u8, name, "mod"))) {
+                    if (call.arg_count != 2) return error.InvalidFunction;
                     for (module.call_args.items[call.first_arg .. call.first_arg + call.arg_count]) |argument_id| try expression(Error, self, chunk, module, argument_id, names);
                     const op: bytecode.OpCode = if (std.mem.eql(u8, name, "add")) .add else if (std.mem.eql(u8, name, "sub")) .subtract else if (std.mem.eql(u8, name, "mul")) .multiply else if (std.mem.eql(u8, name, "div")) .divide else .modulo;
                     try chunk.emit(.{ .op = op });
@@ -205,6 +175,7 @@ pub fn expression(comptime Error: type, self: anytype, chunk: *bytecode.Chunk, m
                                 if (call.keyword_first + call.keyword_count > module.call_keywords.items.len) return error.InvalidExpression;
                                 for (module.call_keywords.items[call.keyword_first .. call.keyword_first + call.keyword_count], keyword_values) |keyword, argument_id| {
                                     const quoted = try self.allocator.alloc(u8, keyword.len + 2);
+                                    defer self.allocator.free(quoted);
                                     quoted[0] = '"';
                                     @memcpy(quoted[1 .. quoted.len - 1], keyword);
                                     quoted[quoted.len - 1] = '"';
@@ -277,15 +248,25 @@ pub fn expression(comptime Error: type, self: anytype, chunk: *bytecode.Chunk, m
                 try expression(Error, self, chunk, module, member.object, names);
                 for (module.call_args.items[call.first_arg .. call.first_arg + call.arg_count]) |argument_id| try expression(Error, self, chunk, module, argument_id, names);
                 const method = member.name;
-                if (builtins.method(self.language, method, "lower", "chikku")) try chunk.emit(.{ .op = .string_lower }) else if (builtins.method(self.language, method, "upper", "doddu")) try chunk.emit(.{ .op = .string_upper }) else if (builtins.method(self.language, method, "strip", "kadi")) try chunk.emit(.{ .op = .string_strip }) else if (builtins.method(self.language, method, "find", "huduk")) try chunk.emit(.{ .op = .string_find }) else if (builtins.method(self.language, method, "replace", "badla")) try chunk.emit(.{ .op = .string_replace }) else if (builtins.method(self.language, method, "split", "ode")) try chunk.emit(.{ .op = .string_split }) else if (builtins.method(self.language, method, "join", "jote")) try chunk.emit(.{ .op = .string_join }) else if (builtins.method(self.language, method, "length", "gatra")) try chunk.emit(.{ .op = .length }) else if (builtins.method(self.language, method, "append", "serisu")) try chunk.emit(.{ .op = .append_collection }) else if (builtins.method(self.language, method, "insert", "haku")) try chunk.emit(.{ .op = .insert_collection }) else if (builtins.method(self.language, method, "remove", "tegi")) try chunk.emit(.{ .op = .remove_collection }) else if (builtins.method(self.language, method, "contains", "olagide")) try chunk.emit(.{ .op = .contains_collection }) else if (builtins.method(self.language, method, "clear", "khaali")) try chunk.emit(.{ .op = .clear_collection }) else if (builtins.method(self.language, method, "pop", "kithu")) try chunk.emit(.{ .op = .pop_collection }) else if (builtins.method(self.language, method, "count", "enisu")) try chunk.emit(.{ .op = .count_collection }) else if (builtins.method(self.language, method, "reverse", "ultha")) try chunk.emit(.{ .op = .reverse_collection }) else if (builtins.method(self.language, method, "sort", "jodisu")) try chunk.emit(.{ .op = .sort_collection }) else if (builtins.method(self.language, method, "get", "tago")) try chunk.emit(.{ .op = .dict_get }) else if (builtins.method(self.language, method, "update", "badala")) try chunk.emit(.{ .op = .dict_put }) else if (builtins.method(self.language, method, "keys", "kili")) try chunk.emit(.{ .op = .dict_keys }) else if (builtins.method(self.language, method, "values", "bele")) try chunk.emit(.{ .op = .dict_values }) else if (builtins.method(self.language, method, "items", "jodi")) try chunk.emit(.{ .op = .dict_items }) else if (builtins.method(self.language, method, "union", "koodu")) try chunk.emit(.{ .op = .set_union }) else if (builtins.method(self.language, method, "intersection", "ondu")) try chunk.emit(.{ .op = .set_intersection }) else if (builtins.method(self.language, method, "difference", "bere")) try chunk.emit(.{ .op = .set_difference }) else {
+                if (method_catalog.resolve(method, self.language, call.arg_count)) |method_index| {
+                    const info = method_catalog.methods[method_index];
+                    if (call.arg_count != info.arguments or call.keyword_count != 0) return error.InvalidFunction;
+                    try chunk.emit(.{ .op = std.meta.stringToEnum(bytecode.OpCode, info.opcode) orelse return error.InvalidFunction, .operand = if (std.mem.eql(u8, info.opcode, "pop_collection")) @intCast(info.arguments) else 0 });
+                    if (info.mutates) try chunk.emit(.{ .op = .constant, .operand = 0 });
+                } else {
                     var method_index: ?usize = null;
                     for (chunk.methods.items) |method_info| if (std.mem.eql(u8, method_info.name, method)) {
                         method_index = method_info.function_index;
                         break;
                     };
-                    if (method_index) |function_index| try chunk.emit(.{ .op = .call_method, .operand = @intCast(function_index) }) else return error.UnsupportedOperator;
+                    if (method_index) |function_index| {
+                        for (chunk.methods.items) |info| if (info.function_index == function_index and info.visibility == 1 and helpers.findLocal(names.items, "tanna") == null) return error.PrivateAccess;
+                        const object = module.expressions.items[member.object].kind;
+                        const is_super = object == .name and (std.mem.eql(u8, object.name, "guru") or std.mem.eql(u8, object.name, "super"));
+                        try chunk.emit(.{ .op = if (is_super) .call_super else .call_method, .operand = @intCast(function_index) });
+                    } else return error.UnsupportedOperator;
                 }
-                if (builtins.method(self.language, method, "append", "serisu") or builtins.method(self.language, method, "insert", "haku") or builtins.method(self.language, method, "remove", "tegi") or builtins.method(self.language, method, "clear", "khaali") or builtins.method(self.language, method, "reverse", "ultha") or builtins.method(self.language, method, "sort", "jodisu") or builtins.method(self.language, method, "update", "badala")) try chunk.emit(.{ .op = .constant, .operand = 0 });
+
                 return;
             }
             try expression(Error, self, chunk, module, call.callee, names);

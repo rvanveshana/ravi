@@ -1,4 +1,5 @@
 const std = @import("std");
+pub const builtins = @import("builtin_methods.zig");
 pub const ValueId = enum(u32) { _ };
 pub const BlockId = enum(u32) { _ };
 pub const Type = enum { none, boolean, integer, float, string, dynamic };
@@ -48,6 +49,7 @@ pub const Instruction = struct {
         store_index: struct { object: ValueId, key: ValueId, value: ValueId },
         get_property: struct { object: ValueId, name: []const u8 },
         store_property: struct { object: ValueId, value: ValueId, name: []const u8 },
+        builtin: struct { method: usize, receiver: ValueId, arguments: []const ValueId },
         call_method: struct { function: usize, receiver: ValueId, arguments: []const ValueId, returns_receiver: bool = false },
         call_super: struct { function: usize, receiver: ValueId, arguments: []const ValueId },
         try_begin: BlockId,
@@ -84,7 +86,7 @@ pub const Function = struct {
     }
     pub fn deinit(self: *Function) void {
         for (self.instructions.items) |instruction| switch (instruction.operation) {
-            .call => |call| self.allocator.free(call.arguments),
+            inline .call, .builtin, .call_method, .call_super => |call| self.allocator.free(call.arguments),
             .call_value => |call| self.allocator.free(call.arguments),
             .phi => |inputs| self.allocator.free(inputs),
             .make_array, .make_tuple, .make_set, .make_dict => |values| self.allocator.free(values),
@@ -143,6 +145,8 @@ pub const Function = struct {
                                 break :blk .boolean;
                             },
                             else => blk: {
+                                if (left_type == .dynamic or right_type == .dynamic) break :blk .dynamic;
+                                if (left_type == .string and right_type == .string and value.operator == .add) break :blk .string;
                                 if (left_type != right_type or (left_type != .integer and left_type != .float)) return error.InvalidType;
                                 break :blk left_type;
                             },
@@ -187,6 +191,11 @@ pub const Function = struct {
                         try requireDefined(definitions, value.object);
                         try requireDefined(definitions, value.key);
                         try requireDefined(definitions, value.value);
+                    },
+                    .builtin => |value| {
+                        if (value.method >= builtins.methods.len or value.arguments.len != builtins.methods[value.method].arguments) return error.InvalidFunction;
+                        try requireDefined(definitions, value.receiver);
+                        for (value.arguments) |argument| try requireDefined(definitions, argument);
                     },
                     .print => |value| try requireDefined(definitions, value),
                     .branch => |value| {

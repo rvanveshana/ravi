@@ -39,13 +39,12 @@ pub const validation_error = ExceptionInfo{ .code = 402, .name = "ValidationErro
 
 pub fn fromCode(code: i64) ?ExceptionInfo {
     inline for (.{
-        base_exception, exception, runtime_error, arithmetic_error, zero_division_error,
-        overflow_error, lookup_error, index_error, key_error, name_error, unbound_local_error,
-        attribute_error, invalid_function_error, invalid_instruction_error, stack_error,
-        stack_underflow_error, stack_overflow_error, call_stack_overflow_error, invalid_local_error,
-        invalid_jump_error, collection_error, collection_full_error, string_too_long_error,
-        memory_error, out_of_memory_error, debugger_paused_error, raised_exception_error,
-        value_error, type_error, validation_error,
+        base_exception,        exception,              runtime_error,             arithmetic_error,          zero_division_error,
+        overflow_error,        lookup_error,           index_error,               key_error,                 name_error,
+        unbound_local_error,   attribute_error,        invalid_function_error,    invalid_instruction_error, stack_error,
+        stack_underflow_error, stack_overflow_error,   call_stack_overflow_error, invalid_local_error,       invalid_jump_error,
+        collection_error,      collection_full_error,  string_too_long_error,     memory_error,              out_of_memory_error,
+        debugger_paused_error, raised_exception_error, value_error,               type_error,                validation_error,
     }) |info| {
         if (info.code == code) return info;
     }
@@ -54,13 +53,12 @@ pub fn fromCode(code: i64) ?ExceptionInfo {
 
 pub fn fromName(name: []const u8) ?ExceptionInfo {
     inline for (.{
-        base_exception, exception, runtime_error, arithmetic_error, zero_division_error,
-        overflow_error, lookup_error, index_error, key_error, name_error, unbound_local_error,
-        attribute_error, invalid_function_error, invalid_instruction_error, stack_error,
-        stack_underflow_error, stack_overflow_error, call_stack_overflow_error, invalid_local_error,
-        invalid_jump_error, collection_error, collection_full_error, string_too_long_error,
-        memory_error, out_of_memory_error, debugger_paused_error, raised_exception_error,
-        value_error, type_error, validation_error,
+        base_exception,        exception,              runtime_error,             arithmetic_error,          zero_division_error,
+        overflow_error,        lookup_error,           index_error,               key_error,                 name_error,
+        unbound_local_error,   attribute_error,        invalid_function_error,    invalid_instruction_error, stack_error,
+        stack_underflow_error, stack_overflow_error,   call_stack_overflow_error, invalid_local_error,       invalid_jump_error,
+        collection_error,      collection_full_error,  string_too_long_error,     memory_error,              out_of_memory_error,
+        debugger_paused_error, raised_exception_error, value_error,               type_error,                validation_error,
     }) |info| {
         if (std.mem.eql(u8, info.name, name)) return info;
     }

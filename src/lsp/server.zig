@@ -151,7 +151,7 @@ pub const Server = struct {
                 .operator, .arrow, .fat_arrow => 5,
                 else => null,
             };
-            if (token_type) |kind| try result.append(allocator, .{ .line = @intCast(if (token.line > 0) token.line - 1 else 0), .character = @intCast(token.column), .length = @intCast(token.lexeme.len), .token_type = kind });
+            if (token_type) |kind| try result.append(allocator, .{ .line = @intCast(if (token.line > 0) token.line - 1 else 0), .character = @intCast(token.column -| 1), .length = @intCast(token.lexeme.len), .token_type = kind });
         }
         return result.toOwnedSlice(allocator);
     }
@@ -278,7 +278,7 @@ test "LSP completion follows the file language profile" {
 test "LSP symbols and definitions follow the document language profile" {
     var server = Server.init(std.testing.allocator);
     defer server.deinit();
-    try server.open("file:///kn.rk", "kriya main():\n    kodu 1\nroopa Box:\n    pass\n", 1);
+    try server.open("file:///kn.rk", "kriya main():\n    kodu 1\nroopa Box:\n    bidu\n", 1);
     const kn_symbols = try server.documentSymbols("file:///kn.rk", std.testing.allocator);
     defer std.testing.allocator.free(kn_symbols);
     try std.testing.expectEqual(@as(usize, 2), kn_symbols.len);
@@ -286,7 +286,7 @@ test "LSP symbols and definitions follow the document language profile" {
     try std.testing.expectEqualStrings("Class", kn_symbols[1].kind);
     try std.testing.expect((try server.definition("file:///kn.rk", "main", std.testing.allocator)) != null);
 
-    try server.open("file:///en.rk", "function main():\n    return 1\nclass Box:\n    pass\n", 1);
+    try server.open("file:///en.rk", "# ravi: language=en\nfunction main():\n    return 1\nclass Box:\n    pass\n", 1);
     const en_symbols = try server.documentSymbols("file:///en.rk", std.testing.allocator);
     defer std.testing.allocator.free(en_symbols);
     try std.testing.expectEqual(@as(usize, 2), en_symbols.len);

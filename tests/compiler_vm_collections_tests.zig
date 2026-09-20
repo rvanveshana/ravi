@@ -12,21 +12,17 @@ const run = helpers.run;
 const runAst = helpers.runAst;
 
 test "AST call lowering emits an indirect call" {
-    var module = ast.Module{ .allocator = std.testing.allocator };
-    defer module.deinit();
-    const callee = module.expressions.items.len;
-    try module.expressions.append(std.testing.allocator, .{ .span = .{ .first = 0, .last = 3, .line = 1 }, .kind = .{ .name = "callback" } });
-    const argument = module.expressions.items.len;
-    try module.expressions.append(std.testing.allocator, .{ .span = .{ .first = 4, .last = 4, .line = 1 }, .kind = .{ .integer = 8 } });
-    try module.call_args.append(std.testing.allocator, @intCast(argument));
-    const call_id = module.expressions.items.len;
-    try module.expressions.append(std.testing.allocator, .{ .span = .{ .first = 0, .last = 5, .line = 1 }, .kind = .{ .call = .{ .callee = @intCast(callee), .first_arg = 0, .arg_count = 1 } } });
-    try module.statements.append(std.testing.allocator, .{ .span = .{ .first = 0, .last = 5, .line = 1 }, .kind = .{ .expression = @intCast(call_id) } });
-    var compile = compiler.Compiler.init(std.testing.allocator);
-    var chunk = try compile.compileAstModule(&module);
+    var chunk = try helpers.compileSource("kriya increment(value: int):\n    kodu value + 1\ncallback = increment\ncallback(8)\n", .kn);
     defer chunk.deinit();
-    try std.testing.expectEqual(bytecode.OpCode.call_value, chunk.code.items[2].op);
-    try std.testing.expectEqual(@as(i64, 1), chunk.code.items[2].operand);
+    var found = false;
+    for (chunk.code.items) |instruction| if (instruction.op == .call_value) {
+        found = true;
+        try std.testing.expectEqual(@as(i64, 1), instruction.operand);
+    };
+    try std.testing.expect(found);
+    var vm = try vm_mod.Vm.init(std.testing.allocator);
+    defer vm.deinit();
+    try std.testing.expectEqual(@as(i64, 9), try vm.run(&chunk));
 }
 
 test "packed release execution matches source chunk" {
@@ -119,9 +115,11 @@ test "VM dictionaries are traced and reclaimed between executions" {
 test "VM closures and cells are traced and reclaimed between executions" {
     var closure_chunk = bytecode.Chunk.init(std.testing.allocator);
     defer closure_chunk.deinit();
-    _ = try closure_chunk.addFunction(.{ .entry = 0, .arity = 0, .name = "closure", .capture_count = 0 });
+    _ = try closure_chunk.addFunction(.{ .entry = 2, .arity = 0, .name = "closure", .capture_count = 0 });
     try closure_chunk.emit(.{ .op = .make_closure, .operand = 0 });
     try closure_chunk.emit(.{ .op = .halt });
+    try closure_chunk.emit(.{ .op = .none_value });
+    try closure_chunk.emit(.{ .op = .return_value });
     var empty_chunk = bytecode.Chunk.init(std.testing.allocator);
     defer empty_chunk.deinit();
     try empty_chunk.emit(.{ .op = .halt });
@@ -288,4 +286,3 @@ test "constructors initialize instance properties through tanna" {
 test "nested ranges keep independent cursors when names repeat" {
     try std.testing.expectEqual(@as(i64, 3), try helpers.run("prati i alli shreni(1, 4):\n    prati i alli shreni(1, 4):\n        x = i\nx\n", .kn));
 }
-
