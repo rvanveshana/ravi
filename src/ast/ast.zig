@@ -3,13 +3,14 @@ const std = @import("std");
 pub const ExprId = u32;
 pub const StmtId = u32;
 
-pub const Span = struct { first: usize, last: usize, line: usize, start_offset: usize = 0, end_offset: usize = 0 };
+pub const Span = struct { first: usize, last: usize, line: usize, start_offset: usize = 0, end_offset: usize = 0, source_id: u32 = 0 };
 
 pub const UnaryOp = enum { negate, not };
 pub const BinaryOp = enum { add, subtract, multiply, divide, modulo, equal, not_equal, less, less_equal, greater, greater_equal, logic_and, logic_or, in_op, is };
 pub const Visibility = enum { public, private, protected, internal };
 
 pub const Expr = struct {
+    language: ?@import("ravi_config").SourceLanguage = null,
     parenthesized: bool = false,
     span: Span,
     kind: Kind,
@@ -45,6 +46,7 @@ pub const Decorator = struct { name: []const u8, span: Span };
 pub const ParseDiagnostic = struct { message: []const u8, span: Span };
 
 pub const Stmt = struct {
+    language: ?@import("ravi_config").SourceLanguage = null,
     span: Span,
     kind: Kind,
 
@@ -54,7 +56,7 @@ pub const Stmt = struct {
         yield_stmt: ?ExprId,
         raise_stmt: ?ExprId,
         import: struct { module: []const u8, names_first: usize, names_count: usize },
-        function: struct { name: []const u8, params_first: usize, params_count: usize, return_type: ?[]const u8, body_first: usize, body_count: usize, decorators_first: usize, decorators_count: usize, visibility: Visibility },
+        function: struct { name: []const u8, method_name: ?[]const u8 = null, params_first: usize, params_count: usize, return_type: ?[]const u8, body_first: usize, body_count: usize, decorators_first: usize, decorators_count: usize, visibility: Visibility },
         class_decl: struct { name: []const u8, base: ?[]const u8 = null, body_first: usize, body_count: usize, visibility: Visibility },
         control: struct { keyword: []const u8, condition: ?ExprId, body_first: usize, body_count: usize, else_first: usize = 0, else_count: usize = 0, target: ?[]const u8 = null, iterable: ?ExprId = null },
         try_stmt: struct { body_first: usize, body_count: usize, except_first: usize = 0, except_count: usize = 0, except_binding: ?[]const u8 = null, except_match: ?ExprId = null, except_type: ?[]const u8 = null, finally_first: usize = 0, finally_count: usize = 0 },

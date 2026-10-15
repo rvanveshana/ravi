@@ -34,3 +34,6 @@ jobs:
       - name: Verify executable examples
         shell: pwsh
         run: ./tools/test_examples.ps1
+      - name: Verify CLI compilation contracts
+        shell: pwsh
+        run: ./tools/test_cli.ps1

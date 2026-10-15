@@ -8,7 +8,8 @@ const lambda_lowering = @import("ast_lambda_lowering.zig");
 pub fn expression(comptime Error: type, self: anytype, chunk: *bytecode.Chunk, module: *const ast.Module, expression_id: ast.ExprId, names: *std.ArrayListUnmanaged([]const u8)) Error!void {
     if (@as(usize, expression_id) >= module.expressions.items.len) return error.InvalidExpression;
     const expression_value = module.expressions.items[expression_id];
-    self.last_location = .{ .start_offset = expression_value.span.start_offset, .end_offset = expression_value.span.end_offset, .line = expression_value.span.line, .column = 1 };
+    const language = expression_value.language orelse self.language;
+    self.last_location = .{ .source_id = expression_value.span.source_id, .start_offset = expression_value.span.start_offset, .end_offset = expression_value.span.end_offset, .line = expression_value.span.line, .column = 1 };
     const previous_location = chunk.current_location;
     chunk.setSourceLocation(self.last_location);
     defer chunk.setSourceLocation(previous_location);
@@ -58,6 +59,7 @@ pub fn expression(comptime Error: type, self: anytype, chunk: *bytecode.Chunk, m
                 try expression(Error, self, chunk, module, assignment.value, names);
             }
             if (assignment.target == null) {
+                if (!assignment.array_type) try @import("type_guards.zig").emit(chunk, assignment.annotation);
                 if (helpers.findCapture(self.ast_state.active_captures, assignment.name)) |capture| {
                     try chunk.emit(.{ .op = .store_capture, .operand = @intCast(capture) });
                 } else {
@@ -123,20 +125,20 @@ pub fn expression(comptime Error: type, self: anytype, chunk: *bytecode.Chunk, m
             if (call.callee >= module.expressions.items.len) return error.InvalidExpression;
             if (module.expressions.items[call.callee].kind == .name) {
                 const name = module.expressions.items[call.callee].kind.name;
-                if (builtins.isPrint(self.language, name)) {
+                if (builtins.isPrint(language, name)) {
                     if (call.arg_count != 1) return error.UnsupportedOperator;
                     try expression(Error, self, chunk, module, module.call_args.items[call.first_arg], names);
                     try chunk.emit(.{ .op = .print });
                     try chunk.emit(.{ .op = .constant, .operand = 0 });
                     return;
                 }
-                if (builtins.isType(self.language, name)) {
+                if (builtins.isType(language, name)) {
                     if (call.arg_count != 1) return error.UnsupportedOperator;
                     try expression(Error, self, chunk, module, module.call_args.items[call.first_arg], names);
                     try chunk.emit(.{ .op = .type_query });
                     return;
                 }
-                if (builtins.isSleep(self.language, name)) {
+                if (builtins.isSleep(language, name)) {
                     if (call.arg_count != 1) return error.UnsupportedOperator;
                     try expression(Error, self, chunk, module, module.call_args.items[call.first_arg], names);
                     try chunk.emit(.{ .op = .sleep });
@@ -233,6 +235,7 @@ pub fn expression(comptime Error: type, self: anytype, chunk: *bytecode.Chunk, m
                 if (class_index) |resolved_class_index| {
                     try chunk.emit(.{ .op = .make_instance, .operand = @intCast(resolved_class_index) });
                     for (chunk.methods.items) |method| if (method.class_index == resolved_class_index and (std.mem.eql(u8, method.name, "huttu") or std.mem.eql(u8, method.name, "init"))) {
+                        if (call.arg_count != chunk.functions.items[method.function_index].arity) return error.InvalidFunction;
                         try chunk.emit(.{ .op = .dup });
                         for (module.call_args.items[call.first_arg .. call.first_arg + call.arg_count]) |argument_id| try expression(Error, self, chunk, module, argument_id, names);
                         try chunk.emit(.{ .op = .call_method, .operand = @intCast(method.function_index) });
@@ -248,14 +251,14 @@ pub fn expression(comptime Error: type, self: anytype, chunk: *bytecode.Chunk, m
                 try expression(Error, self, chunk, module, member.object, names);
                 for (module.call_args.items[call.first_arg .. call.first_arg + call.arg_count]) |argument_id| try expression(Error, self, chunk, module, argument_id, names);
                 const method = member.name;
-                if (method_catalog.resolve(method, self.language, call.arg_count)) |method_index| {
+                if (method_catalog.resolve(method, language, call.arg_count)) |method_index| {
                     const info = method_catalog.methods[method_index];
                     if (call.arg_count != info.arguments or call.keyword_count != 0) return error.InvalidFunction;
                     try chunk.emit(.{ .op = std.meta.stringToEnum(bytecode.OpCode, info.opcode) orelse return error.InvalidFunction, .operand = if (std.mem.eql(u8, info.opcode, "pop_collection")) @intCast(info.arguments) else 0 });
                     if (info.mutates) try chunk.emit(.{ .op = .constant, .operand = 0 });
                 } else {
                     var method_index: ?usize = null;
-                    for (chunk.methods.items) |method_info| if (std.mem.eql(u8, method_info.name, method)) {
+                    for (chunk.methods.items) |method_info| if (std.mem.eql(u8, method_info.name, method) and chunk.functions.items[method_info.function_index].arity == call.arg_count) {
                         method_index = method_info.function_index;
                         break;
                     };

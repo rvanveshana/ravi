@@ -12,9 +12,12 @@ pub const Module = struct {
     path: []u8,
     source: []u8,
     language: config.SourceLanguage,
+    syntax: ast.Module,
+    complete: bool = false,
     imports: std.ArrayListUnmanaged(resolver.ModuleId) = .empty,
 
     fn deinit(self: *Module, allocator: std.mem.Allocator) void {
+        self.syntax.deinit();
         allocator.free(self.path);
         allocator.free(self.source);
         self.imports.deinit(allocator);
@@ -32,12 +35,19 @@ pub const Loader = struct {
     graph: resolver.Resolver,
     modules: std.ArrayListUnmanaged(Module) = .empty,
     search_paths: std.ArrayListUnmanaged([]u8) = .empty,
+    root_language: ?config.SourceLanguage = null,
+    error_path: ?[]const u8 = null,
+    error_source: ?[]u8 = null,
+    error_context: []const u8 = "",
+    error_span: ast.Span = .{ .first = 0, .last = 0, .line = 1 },
+    error_column: usize = 1,
 
     pub fn init(allocator: std.mem.Allocator, provider: SourceProvider, context: *anyopaque) Loader {
         return .{ .allocator = allocator, .provider = provider, .provider_context = context, .graph = resolver.Resolver.init(allocator) };
     }
 
     pub fn deinit(self: *Loader) void {
+        if (self.error_source) |source| self.allocator.free(source);
         for (self.modules.items) |*entry| entry.deinit(self.allocator);
         self.modules.deinit(self.allocator);
         for (self.search_paths.items) |path| self.allocator.free(path);
@@ -48,11 +58,9 @@ pub const Loader = struct {
     /// Adds a package root searched after the importing file's directory.
     /// Paths are owned by the loader and consulted in insertion order.
     pub fn addSearchPath(self: *Loader, path: []const u8) !void {
-        if (path.len != 0 and (path[path.len - 1] == '/' or path[path.len - 1] == '\\')) {
-            try self.search_paths.append(self.allocator, try self.allocator.dupe(u8, path));
-        } else {
-            try self.search_paths.append(self.allocator, try std.fmt.allocPrint(self.allocator, "{s}{c}", .{ path, std.fs.path.sep }));
-        }
+        const owned = if (path.len != 0 and (path[path.len - 1] == '/' or path[path.len - 1] == '\\')) try self.allocator.dupe(u8, path) else try std.fmt.allocPrint(self.allocator, "{s}{c}", .{ path, std.fs.path.sep });
+        errdefer self.allocator.free(owned);
+        try self.search_paths.append(self.allocator, owned);
     }
 
     pub fn load(self: *Loader, root_path: []const u8) ![]resolver.ModuleId {
@@ -88,55 +96,96 @@ pub const Loader = struct {
             decoded.profile == @intFromEnum(profile);
     }
 
-    fn visit(self: *Loader, path: []const u8) !resolver.ModuleId {
-        if (self.graph.find(path)) |existing| return existing;
+    fn visit(self: *Loader, path: []const u8) anyerror!resolver.ModuleId {
+        const canonical = try std.fs.path.resolve(self.allocator, &.{path});
+        defer self.allocator.free(canonical);
+        return self.visitCanonical(canonical);
+    }
+
+    fn visitCanonical(self: *Loader, path: []const u8) anyerror!resolver.ModuleId {
+        if (self.graph.find(path)) |existing| {
+            const index = @intFromEnum(existing);
+            if (index >= self.modules.items.len or !self.modules.items[index].complete) return error.ImportCycle;
+            return existing;
+        }
         const id = try self.graph.register(path);
         var published = false;
+        self.error_path = self.graph.moduleName(id) catch path;
         const source = try self.provider(self.provider_context, self.allocator, path);
-        errdefer if (!published) self.allocator.free(source);
-        const language = (config.languageFromHeader(source) catch |err| return err) orelse .kn;
+        errdefer if (!published) {
+            self.error_source = source;
+        };
+        self.error_context = source;
+        self.error_span = .{ .first = 0, .last = 0, .line = 1 };
+        self.error_column = 1;
+        const language = if (@intFromEnum(id) == 0 and self.root_language != null) self.root_language.? else (try config.languageFromHeader(source)) orelse .kn;
         var scan = try lexer.Lexer.initWithLanguage(self.allocator, source, language);
         defer scan.deinit();
-        const tokens = try scan.tokenize();
+        const tokens = scan.tokenize() catch |err| {
+            self.error_span = .{ .first = 0, .last = 0, .line = scan.error_line, .start_offset = scan.error_offset, .end_offset = @min(scan.error_offset + 1, source.len) };
+            self.error_column = scan.error_column;
+            return err;
+        };
         var instance = parser.Parser.initWithLanguage(self.allocator, tokens, language);
         var syntax = try instance.parseRecovering();
-        defer syntax.deinit();
-        if (syntax.diagnostics.items.len != 0) return error.InvalidModule;
+        errdefer if (!published) syntax.deinit();
+        if (syntax.diagnostics.items.len != 0) {
+            const token = tokens[@min(syntax.diagnostics.items[0].span.first, tokens.len - 1)];
+            self.error_span = .{ .first = 0, .last = 0, .line = token.line, .start_offset = token.start_offset, .end_offset = token.end_offset };
+            self.error_column = token.column;
+            return error.InvalidModule;
+        }
         const owned_path = try self.allocator.dupe(u8, path);
         errdefer if (!published) self.allocator.free(owned_path);
-        try self.modules.append(self.allocator, .{ .path = owned_path, .source = source, .language = language });
+        try self.modules.append(self.allocator, .{ .path = owned_path, .source = source, .language = language, .syntax = syntax });
         published = true;
         // Build a concrete public interface from top-level declarations. The
         // resolver owns stable symbol names; the loader only supplies the
         // source-level declarations that are safe to import.
         for (syntax.statements.items, 0..) |statement, statement_index| switch (statement.kind) {
-            .function => |function| if (!isClassMethod(&syntax, statement_index)) try self.graph.exportSymbol(id, function.name, resolverVisibility(function.visibility)),
-            .class_decl => |class_decl| try self.graph.exportSymbol(id, class_decl.name, resolverVisibility(class_decl.visibility)),
+            .function => |function| if (!isNested(&syntax, statement_index)) try self.graph.exportSymbol(id, function.name, resolverVisibility(function.visibility)),
+            .class_decl => |class_decl| if (!isNested(&syntax, statement_index)) try self.graph.exportSymbol(id, class_decl.name, resolverVisibility(class_decl.visibility)),
+            .expression => |expression| if (!isNested(&syntax, statement_index)) {
+                if (syntax.expressions.items[expression].kind == .assignment) {
+                    const assignment = syntax.expressions.items[expression].kind.assignment;
+                    if (assignment.target == null) {
+                        var present = false;
+                        for (self.graph.moduleExports(id)) |symbol| if (std.mem.eql(u8, symbol.name, assignment.name)) {
+                            present = true;
+                            break;
+                        };
+                        if (!present) try self.graph.exportSymbol(id, assignment.name, .public);
+                    }
+                }
+            },
             else => {},
         };
         for (syntax.statements.items) |statement| if (statement.kind == .import) {
+            self.error_path = owned_path;
+            self.error_context = source;
+            self.error_span = statement.span;
             const imported = statement.kind.import.module;
             const dependency_path = try self.resolvePath(path, imported);
             defer self.allocator.free(dependency_path);
             const dependency = try self.visit(dependency_path);
-            // Empty interfaces are retained for legacy side-effect imports.
-            // Once a module declares exports, every requested symbol must be
-            // present and public.
-            const dependency_exports = self.graph.moduleExports(dependency);
-            if (dependency_exports.len != 0) {
-                for (syntax.import_names.items[statement.kind.import.names_first .. statement.kind.import.names_first + statement.kind.import.names_count]) |name| {
-                    _ = self.graph.bindImport(dependency, name) catch |err| return err;
-                }
+            self.error_path = owned_path;
+            self.error_context = source;
+            self.error_span = statement.span;
+            self.error_column = 1;
+            for (syntax.import_names.items[statement.kind.import.names_first .. statement.kind.import.names_first + statement.kind.import.names_count]) |name| {
+                _ = try self.graph.bindImport(dependency, name);
             }
             try self.graph.addDependency(id, dependency);
             try self.modules.items[@intFromEnum(id)].imports.append(self.allocator, dependency);
         };
+        self.modules.items[@intFromEnum(id)].complete = true;
         return id;
     }
 
-    fn isClassMethod(module_ast: *const ast.Module, statement_index: usize) bool {
+    fn isNested(module_ast: *const ast.Module, statement_index: usize) bool {
         for (module_ast.statements.items) |statement| switch (statement.kind) {
             .class_decl => |class_decl| if (statement_index >= class_decl.body_first and statement_index < class_decl.body_first + class_decl.body_count) return true,
+            .function => |function| if (statement_index >= function.body_first and statement_index < function.body_first + function.body_count) return true,
             else => {},
         };
         return false;
@@ -162,16 +211,22 @@ pub const Loader = struct {
             if (self.provider(self.provider_context, self.allocator, candidate)) |source| {
                 self.allocator.free(source);
                 return candidate;
-            } else |_| self.allocator.free(candidate);
+            } else |err| {
+                self.allocator.free(candidate);
+                if (err != error.FileNotFound) return err;
+            }
         }
         for (self.search_paths.items) |root| {
             const package_candidate = try std.fmt.allocPrint(self.allocator, "{s}{s}.rk", .{ root, relative_name });
             if (self.provider(self.provider_context, self.allocator, package_candidate)) |source| {
                 self.allocator.free(source);
                 return package_candidate;
-            } else |_| self.allocator.free(package_candidate);
+            } else |err| {
+                self.allocator.free(package_candidate);
+                if (err != error.FileNotFound) return err;
+            }
         }
-        return self.allocator.dupe(u8, module_name);
+        return error.FileNotFound;
     }
 
     fn modulePath(allocator: std.mem.Allocator, module_name: []const u8) ![]u8 {
@@ -183,85 +238,6 @@ pub const Loader = struct {
     }
 };
 
-test "loader parses imports, orders dependencies, and preserves profiles" {
-    const Files = struct {
-        fn provide(ctx: *anyopaque, allocator: std.mem.Allocator, path: []const u8) ![]u8 {
-            const files: *const std.StringHashMap([]const u8) = @ptrCast(@alignCast(ctx));
-            const source = files.get(path) orelse return error.FileNotFound;
-            return allocator.dupe(u8, source);
-        }
-    };
-    var files = std.StringHashMap([]const u8).init(std.testing.allocator);
-    defer files.deinit();
-    try files.put("app.rk", "math inda add tago\n");
-    try files.put("math.rk", "# ravi: language=en\nprint(1)\n");
-    var loader = Loader.init(std.testing.allocator, Files.provide, @ptrCast(&files));
-    defer loader.deinit();
-    const order = try loader.load("app.rk");
-    defer std.testing.allocator.free(order);
-    try std.testing.expectEqual(@as(usize, 2), order.len);
-    try std.testing.expectEqualStrings("math.rk", loader.module(order[0]).?.path);
-    try std.testing.expectEqual(config.SourceLanguage.en, loader.module(order[0]).?.language);
-    try std.testing.expectEqualStrings("app.rk", loader.module(order[1]).?.path);
-}
-
-test "loader rejects import cycles" {
-    const Files = struct {
-        fn provide(ctx: *anyopaque, allocator: std.mem.Allocator, path: []const u8) ![]u8 {
-            const files: *const std.StringHashMap([]const u8) = @ptrCast(@alignCast(ctx));
-            return allocator.dupe(u8, files.get(path) orelse return error.FileNotFound);
-        }
-    };
-    var files = std.StringHashMap([]const u8).init(std.testing.allocator);
-    defer files.deinit();
-    try files.put("a.rk", "b inda x tago\n");
-    try files.put("b.rk", "a inda x tago\n");
-    var loader = Loader.init(std.testing.allocator, Files.provide, @ptrCast(&files));
-    defer loader.deinit();
-    try std.testing.expectError(error.ImportCycle, loader.load("a.rk"));
-}
-
-test "loader searches configured package roots after relative imports" {
-    const Files = struct {
-        fn provide(ctx: *anyopaque, allocator: std.mem.Allocator, path: []const u8) ![]u8 {
-            const files: *const std.StringHashMap([]const u8) = @ptrCast(@alignCast(ctx));
-            return allocator.dupe(u8, files.get(path) orelse return error.FileNotFound);
-        }
-    };
-    var files = std.StringHashMap([]const u8).init(std.testing.allocator);
-    defer files.deinit();
-    try files.put("app.rk", "math inda add tago\n");
-    const package_path = try std.fs.path.join(std.testing.allocator, &.{ "pkg", "math.rk" });
-    defer std.testing.allocator.free(package_path);
-    try files.put(package_path, "kriya add():\n    kodu 1\n");
-    var loader = Loader.init(std.testing.allocator, Files.provide, @ptrCast(&files));
-    defer loader.deinit();
-    try loader.addSearchPath("pkg");
-    const order = try loader.load("app.rk");
-    defer std.testing.allocator.free(order);
-    try std.testing.expectEqual(@as(usize, 2), order.len);
-    try std.testing.expectEqualStrings(package_path, loader.module(order[0]).?.path);
-}
-
-test "loader validates cached interface artifacts" {
-    const Files = struct {
-        fn provide(_: *anyopaque, allocator: std.mem.Allocator, _: []const u8) ![]u8 {
-            return allocator.dupe(u8, "kodu 1\n");
-        }
-    };
-    var loader = Loader.init(std.testing.allocator, Files.provide, @ptrFromInt(1));
-    defer loader.deinit();
-    const bytes = try artifact.encode(std.testing.allocator, "math", "ravi-debug", 0, "exports");
-    defer std.testing.allocator.free(bytes);
-    var decoded = try loader.decodeArtifact(bytes, .{});
-    defer decoded.deinit();
-    try std.testing.expectEqualStrings("math", decoded.module_name);
-    try std.testing.expectError(error.ResourceLimit, loader.decodeArtifact(bytes, .{ .max_payload_bytes = 2 }));
-    try std.testing.expect(try loader.artifactReusable(bytes, "math", "ravi-debug", .kn, .{}));
-    try std.testing.expect(!(try loader.artifactReusable(bytes, "math", "ravi-release", .kn, .{})));
-    try std.testing.expect(!(try loader.artifactReusable(bytes, "math", "ravi-debug", .en, .{})));
-    var corrupt = try std.testing.allocator.dupe(u8, bytes);
-    defer std.testing.allocator.free(corrupt);
-    corrupt[corrupt.len - 1] ^= 1;
-    try std.testing.expect(!(try loader.artifactReusable(corrupt, "math", "ravi-debug", .kn, .{})));
+test {
+    _ = @import("loader_tests.zig");
 }

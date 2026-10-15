@@ -20,7 +20,7 @@ test "formatted strings apply width and alignment specifications" {
     defer module.deinit();
     try std.testing.expectEqual(@as(usize, 0), module.diagnostics.items.len);
     var compile = compiler.Compiler.init(std.testing.allocator);
-    var chunk = try compile.compileAstModule(&module);
+    var chunk = try compile.lowerModule(&module);
     defer chunk.deinit();
     var vm = try vm_mod.Vm.init(std.testing.allocator);
     defer vm.deinit();
@@ -37,7 +37,7 @@ test "formatted strings enforce numeric type specifications" {
     defer module.deinit();
     try std.testing.expectEqual(@as(usize, 0), module.diagnostics.items.len);
     var compile = compiler.Compiler.init(std.testing.allocator);
-    var chunk = try compile.compileAstModule(&module);
+    var chunk = try compile.lowerModule(&module);
     defer chunk.deinit();
     var vm = try vm_mod.Vm.init(std.testing.allocator);
     defer vm.deinit();
@@ -60,7 +60,7 @@ test "AST formatted strings render typed values and escaped braces" {
     try module.format_args.append(std.testing.allocator, @intCast(boolean_id));
     try module.statements.append(std.testing.allocator, .{ .span = .{ .first = 0, .last = 35, .line = 1 }, .kind = .{ .expression = @intCast(format_id) } });
     var compile = compiler.Compiler.init(std.testing.allocator);
-    var chunk = try compile.compileAstModule(&module);
+    var chunk = try compile.lowerModule(&module);
     defer chunk.deinit();
     var vm = try vm_mod.Vm.init(std.testing.allocator);
     defer vm.deinit();
@@ -75,7 +75,7 @@ test "AST string lowering creates a managed string value" {
     try module.expressions.append(std.testing.allocator, .{ .span = .{ .first = 0, .last = 7, .line = 1 }, .kind = .{ .string = "\"ravi\"" } });
     try module.statements.append(std.testing.allocator, .{ .span = .{ .first = 0, .last = 7, .line = 1 }, .kind = .{ .expression = @intCast(string_id) } });
     var compile = compiler.Compiler.init(std.testing.allocator);
-    var chunk = try compile.compileAstModule(&module);
+    var chunk = try compile.lowerModule(&module);
     defer chunk.deinit();
     var vm = try vm_mod.Vm.init(std.testing.allocator);
     defer vm.deinit();
@@ -90,7 +90,7 @@ test "VM preserves backslashes in raw string literals" {
     try module.expressions.append(std.testing.allocator, .{ .span = .{ .first = 0, .last = 16, .line = 1 }, .kind = .{ .string = "r'C:\\data\\input.rk'" } });
     try module.statements.append(std.testing.allocator, .{ .span = .{ .first = 0, .last = 16, .line = 1 }, .kind = .{ .expression = @intCast(string_id) } });
     var compile = compiler.Compiler.init(std.testing.allocator);
-    var chunk = try compile.compileAstModule(&module);
+    var chunk = try compile.lowerModule(&module);
     defer chunk.deinit();
     var vm = try vm_mod.Vm.init(std.testing.allocator);
     defer vm.deinit();
@@ -105,7 +105,7 @@ test "AST boolean lowering preserves boolean values" {
     try module.expressions.append(std.testing.allocator, .{ .span = .{ .first = 0, .last = 3, .line = 1 }, .kind = .{ .boolean = true } });
     try module.statements.append(std.testing.allocator, .{ .span = .{ .first = 0, .last = 3, .line = 1 }, .kind = .{ .expression = @intCast(true_id) } });
     var compile = compiler.Compiler.init(std.testing.allocator);
-    var chunk = try compile.compileAstModule(&module);
+    var chunk = try compile.lowerModule(&module);
     defer chunk.deinit();
     var vm = try vm_mod.Vm.init(std.testing.allocator);
     defer vm.deinit();
@@ -125,7 +125,7 @@ test "AST logical binary lowering returns boolean truthiness" {
     try module.expressions.append(std.testing.allocator, .{ .span = .{ .first = 0, .last = 10, .line = 1 }, .kind = .{ .binary = .{ .op = .logic_or, .left = @intCast(left), .right = @intCast(right) } } });
     try module.statements.append(std.testing.allocator, .{ .span = .{ .first = 0, .last = 10, .line = 1 }, .kind = .{ .expression = @intCast(result) } });
     var compile = compiler.Compiler.init(std.testing.allocator);
-    var chunk = try compile.compileAstModule(&module);
+    var chunk = try compile.lowerModule(&module);
     defer chunk.deinit();
     var vm = try vm_mod.Vm.init(std.testing.allocator);
     defer vm.deinit();
@@ -145,7 +145,7 @@ test "AST float lowering preserves IEEE arithmetic and comparisons" {
     try module.expressions.append(std.testing.allocator, .{ .span = .{ .first = 0, .last = 8, .line = 1 }, .kind = .{ .binary = .{ .op = .multiply, .left = @intCast(left), .right = @intCast(right) } } });
     try module.statements.append(std.testing.allocator, .{ .span = .{ .first = 0, .last = 8, .line = 1 }, .kind = .{ .expression = @intCast(result) } });
     var compile = compiler.Compiler.init(std.testing.allocator);
-    var chunk = try compile.compileAstModule(&module);
+    var chunk = try compile.lowerModule(&module);
     defer chunk.deinit();
     var vm = try vm_mod.Vm.init(std.testing.allocator);
     defer vm.deinit();
@@ -165,7 +165,7 @@ test "mixed numeric operations widen integers to floats" {
     try module.expressions.append(std.testing.allocator, .{ .span = .{ .first = 0, .last = 6, .line = 1 }, .kind = .{ .binary = .{ .op = .add, .left = @intCast(integer_id), .right = @intCast(float_id) } } });
     try module.statements.append(std.testing.allocator, .{ .span = .{ .first = 0, .last = 6, .line = 1 }, .kind = .{ .expression = @intCast(result_id) } });
     var compile = compiler.Compiler.init(std.testing.allocator);
-    var chunk = try compile.compileAstModule(&module);
+    var chunk = try compile.lowerModule(&module);
     defer chunk.deinit();
     var vm = try vm_mod.Vm.init(std.testing.allocator);
     defer vm.deinit();
@@ -185,7 +185,7 @@ test "float division by zero raises the numeric runtime error" {
     try module.expressions.append(std.testing.allocator, .{ .span = .{ .first = 0, .last = 7, .line = 1 }, .kind = .{ .binary = .{ .op = .divide, .left = @intCast(numerator), .right = @intCast(denominator) } } });
     try module.statements.append(std.testing.allocator, .{ .span = .{ .first = 0, .last = 7, .line = 1 }, .kind = .{ .expression = @intCast(result) } });
     var compile = compiler.Compiler.init(std.testing.allocator);
-    var chunk = try compile.compileAstModule(&module);
+    var chunk = try compile.lowerModule(&module);
     defer chunk.deinit();
     var vm = try vm_mod.Vm.init(std.testing.allocator);
     defer vm.deinit();
@@ -203,7 +203,7 @@ test "AST array lowering creates an ordered array value" {
     try module.expressions.append(std.testing.allocator, .{ .span = .{ .first = 0, .last = 5, .line = 1 }, .kind = .{ .array = .{ .first = first, .count = 2 } } });
     try module.statements.append(std.testing.allocator, .{ .span = .{ .first = 0, .last = 5, .line = 1 }, .kind = .{ .expression = @intCast(array_id) } });
     var compile = compiler.Compiler.init(std.testing.allocator);
-    var chunk = try compile.compileAstModule(&module);
+    var chunk = try compile.lowerModule(&module);
     defer chunk.deinit();
     var vm = try vm_mod.Vm.init(std.testing.allocator);
     defer vm.deinit();
@@ -222,7 +222,7 @@ test "AST tuple set and map lowering creates collection values" {
     try module.expressions.append(std.testing.allocator, .{ .span = .{ .first = 0, .last = 5, .line = 1 }, .kind = .{ .tuple = .{ .first = tuple_first, .count = 2 } } });
     try module.statements.append(std.testing.allocator, .{ .span = .{ .first = 0, .last = 5, .line = 1 }, .kind = .{ .expression = @intCast(tuple_id) } });
     var compile = compiler.Compiler.init(std.testing.allocator);
-    var chunk = try compile.compileAstModule(&module);
+    var chunk = try compile.lowerModule(&module);
     defer chunk.deinit();
     var vm = try vm_mod.Vm.init(std.testing.allocator);
     defer vm.deinit();
@@ -231,7 +231,7 @@ test "AST tuple set and map lowering creates collection values" {
 
     module.statements.items[0].kind = .{ .expression = @intCast(tuple_id) };
     module.expressions.items[tuple_id].kind = .{ .set = .{ .first = tuple_first, .count = 2 } };
-    var set_chunk = try compile.compileAstModule(&module);
+    var set_chunk = try compile.lowerModule(&module);
     defer set_chunk.deinit();
     const set = try vm.runValue(&set_chunk);
     try std.testing.expectEqual(@as(?vm_mod.RuntimeValue.ObjectKind, .set), set.handleKind());
@@ -244,7 +244,7 @@ test "AST tuple set and map lowering creates collection values" {
     const map_id = module.expressions.items.len;
     try module.expressions.append(std.testing.allocator, .{ .span = .{ .first = 0, .last = 5, .line = 1 }, .kind = .{ .map = .{ .first = map_items, .count = 1 } } });
     module.statements.items[0].kind = .{ .expression = @intCast(map_id) };
-    var map_chunk = try compile.compileAstModule(&module);
+    var map_chunk = try compile.lowerModule(&module);
     defer map_chunk.deinit();
     const map = try vm.runValue(&map_chunk);
     try std.testing.expectEqual(@as(?vm_mod.RuntimeValue.ObjectKind, .dictionary), map.handleKind());
@@ -265,7 +265,7 @@ test "AST index lowering reads an array element" {
     try module.expressions.append(std.testing.allocator, .{ .span = .{ .first = 0, .last = 7, .line = 1 }, .kind = .{ .index = .{ .object = @intCast(array_id), .index = @intCast(zero_id) } } });
     try module.statements.append(std.testing.allocator, .{ .span = .{ .first = 0, .last = 7, .line = 1 }, .kind = .{ .expression = @intCast(index_id) } });
     var compile = compiler.Compiler.init(std.testing.allocator);
-    var chunk = try compile.compileAstModule(&module);
+    var chunk = try compile.lowerModule(&module);
     defer chunk.deinit();
     var vm = try vm_mod.Vm.init(std.testing.allocator);
     defer vm.deinit();
@@ -290,7 +290,7 @@ test "AST slice lowering creates an array range" {
     try module.expressions.append(std.testing.allocator, .{ .span = .{ .first = 0, .last = 15, .line = 1 }, .kind = .{ .slice = .{ .object = @intCast(array_id), .start = @intCast(start_id), .end = @intCast(end_id) } } });
     try module.statements.append(std.testing.allocator, .{ .span = .{ .first = 0, .last = 15, .line = 1 }, .kind = .{ .expression = @intCast(slice_id) } });
     var compile = compiler.Compiler.init(std.testing.allocator);
-    var chunk = try compile.compileAstModule(&module);
+    var chunk = try compile.lowerModule(&module);
     defer chunk.deinit();
     var vm = try vm_mod.Vm.init(std.testing.allocator);
     defer vm.deinit();

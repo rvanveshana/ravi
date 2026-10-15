@@ -58,10 +58,9 @@ test "golden pipeline preserves Kannada and English source profiles" {
         try std.testing.expectEqual(@as(usize, 0), module.diagnostics.items.len);
         var analyzer = semantic.Analyzer.init(std.testing.allocator);
         defer analyzer.deinit();
-        try analyzer.analyzeWithLanguage(tokens, case.language);
         try analyzer.analyzeModule(&module);
         var compiler = compiler_mod.Compiler.initWithLanguage(std.testing.allocator, case.language);
-        var chunk = try compiler.compileAstModule(&module);
+        var chunk = try compiler.lowerModule(&module);
         defer chunk.deinit();
         try chunk.verify();
         var vm = try vm_mod.Vm.init(std.testing.allocator);

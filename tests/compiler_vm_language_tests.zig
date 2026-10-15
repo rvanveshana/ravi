@@ -21,7 +21,7 @@ test "parsed AST nested closures forward enclosing captures" {
     defer module.deinit();
     try std.testing.expectEqual(@as(usize, 0), module.diagnostics.items.len);
     var compile = compiler.Compiler.init(std.testing.allocator);
-    var chunk = try compile.compileAstModule(&module);
+    var chunk = try compile.lowerModule(&module);
     defer chunk.deinit();
     var vm = try vm_mod.Vm.init(std.testing.allocator);
     defer vm.deinit();
@@ -38,7 +38,7 @@ test "parsed AST explicit raise payloads recover through except" {
     defer module.deinit();
     try std.testing.expectEqual(@as(usize, 0), module.diagnostics.items.len);
     var compile = compiler.Compiler.init(std.testing.allocator);
-    var chunk = try compile.compileAstModule(&module);
+    var chunk = try compile.lowerModule(&module);
     defer chunk.deinit();
     var vm = try vm_mod.Vm.init(std.testing.allocator);
     defer vm.deinit();
@@ -75,7 +75,7 @@ test "parsed AST for loops iterate arrays" {
     defer module.deinit();
     try std.testing.expectEqual(@as(usize, 0), module.diagnostics.items.len);
     var compile = compiler.Compiler.init(std.testing.allocator);
-    var chunk = try compile.compileAstModule(&module);
+    var chunk = try compile.lowerModule(&module);
     defer chunk.deinit();
     var vm = try vm_mod.Vm.init(std.testing.allocator);
     defer vm.deinit();
@@ -128,7 +128,7 @@ test "parsed AST except binds raised payload" {
     defer module.deinit();
     try std.testing.expectEqual(@as(usize, 0), module.diagnostics.items.len);
     var compile = compiler.Compiler.init(std.testing.allocator);
-    var chunk = try compile.compileAstModule(&module);
+    var chunk = try compile.lowerModule(&module);
     defer chunk.deinit();
     var vm = try vm_mod.Vm.init(std.testing.allocator);
     defer vm.deinit();
@@ -164,7 +164,7 @@ test "AST formatted strings lower to formatting bytecode" {
     try module.format_args.append(std.testing.allocator, @intCast(value_id));
     try module.statements.append(std.testing.allocator, .{ .span = .{ .first = 0, .last = 23, .line = 1 }, .kind = .{ .expression = @intCast(string_id) } });
     var compile = compiler.Compiler.init(std.testing.allocator);
-    var chunk = try compile.compileAstModule(&module);
+    var chunk = try compile.lowerModule(&module);
     defer chunk.deinit();
     try std.testing.expectEqual(bytecode.OpCode.make_format, chunk.code.items[1].op);
 }
@@ -178,7 +178,7 @@ test "parsed formatted strings execute through the AST compiler" {
     defer module.deinit();
     try std.testing.expectEqual(@as(usize, 0), module.diagnostics.items.len);
     var compile = compiler.Compiler.init(std.testing.allocator);
-    var chunk = try compile.compileAstModule(&module);
+    var chunk = try compile.lowerModule(&module);
     defer chunk.deinit();
     var vm = try vm_mod.Vm.init(std.testing.allocator);
     defer vm.deinit();
@@ -195,7 +195,7 @@ test "parsed formatted expressions execute through the AST compiler" {
     defer module.deinit();
     try std.testing.expectEqual(@as(usize, 0), module.diagnostics.items.len);
     var compile = compiler.Compiler.init(std.testing.allocator);
-    var chunk = try compile.compileAstModule(&module);
+    var chunk = try compile.lowerModule(&module);
     defer chunk.deinit();
     var vm = try vm_mod.Vm.init(std.testing.allocator);
     defer vm.deinit();
@@ -212,7 +212,7 @@ test "parsed formatted index expressions execute through the AST compiler" {
     defer module.deinit();
     try std.testing.expectEqual(@as(usize, 0), module.diagnostics.items.len);
     var compile = compiler.Compiler.init(std.testing.allocator);
-    var chunk = try compile.compileAstModule(&module);
+    var chunk = try compile.lowerModule(&module);
     defer chunk.deinit();
     var vm = try vm_mod.Vm.init(std.testing.allocator);
     defer vm.deinit();
@@ -230,7 +230,7 @@ test "AST compiler lowers if and while control flow" {
     defer module.deinit();
     try std.testing.expectEqual(@as(usize, 0), module.diagnostics.items.len);
     var compile = compiler.Compiler.init(std.testing.allocator);
-    var chunk = try compile.compileAstModule(&module);
+    var chunk = try compile.lowerModule(&module);
     defer chunk.deinit();
     var vm = try vm_mod.Vm.init(std.testing.allocator);
     defer vm.deinit();

@@ -17,6 +17,7 @@ pub const FunctionInfo = struct {
     varargs_index: ?usize = null,
     kwargs_index: ?usize = null,
     name: []const u8,
+    method_name: ?[]const u8 = null,
     defaults: [64]?i64 = @splat(null),
     capture_count: usize = 0,
     resumable: bool = false,
@@ -66,7 +67,7 @@ pub fn canAccessProtected(classes: []const ClassInfo, declaring_class: usize, ca
 }
 
 pub const CaptureInfo = struct { function: usize, slot: usize };
-pub const SourceLocation = struct { start_offset: usize, end_offset: usize, line: usize, column: usize };
+pub const SourceLocation = struct { start_offset: usize, end_offset: usize, line: usize, column: usize, source_id: u32 = 0 };
 pub const RootMetadata = struct { stack_slots: usize = 0, local_slots: usize = 0, capture_slots: usize = 0 };
 
 pub const Chunk = struct {

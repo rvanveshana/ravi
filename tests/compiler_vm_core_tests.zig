@@ -50,7 +50,7 @@ test "AST scalar lowering executes through the VM" {
     try module.expressions.append(std.testing.allocator, .{ .span = .{ .first = 0, .last = 3, .line = 1 }, .kind = .{ .binary = .{ .op = .add, .left = @intCast(left), .right = @intCast(right) } } });
     try module.statements.append(std.testing.allocator, .{ .span = .{ .first = 0, .last = 3, .line = 1 }, .kind = .{ .expression = @intCast(result) } });
     var compile = compiler.Compiler.init(std.testing.allocator);
-    var chunk = try compile.compileAstModule(&module);
+    var chunk = try compile.lowerModule(&module);
     defer chunk.deinit();
     var vm = try vm_mod.Vm.init(std.testing.allocator);
     defer vm.deinit();
@@ -62,7 +62,7 @@ test "AST scalar lowering rejects invalid expression ids" {
     defer module.deinit();
     try module.statements.append(std.testing.allocator, .{ .span = .{ .first = 0, .last = 1, .line = 1 }, .kind = .{ .expression = 7 } });
     var compile = compiler.Compiler.init(std.testing.allocator);
-    try std.testing.expectError(error.InvalidExpression, compile.compileAstModule(&module));
+    try std.testing.expectError(error.InvalidExpression, compile.lowerModule(&module));
 }
 
 test "parsed AST functions bind parameters and return values" {
@@ -75,7 +75,7 @@ test "parsed AST functions bind parameters and return values" {
     defer module.deinit();
     try std.testing.expectEqual(@as(usize, 0), module.diagnostics.items.len);
     var compile = compiler.Compiler.init(std.testing.allocator);
-    var chunk = try compile.compileAstModule(&module);
+    var chunk = try compile.lowerModule(&module);
     defer chunk.deinit();
     var vm = try vm_mod.Vm.init(std.testing.allocator);
     defer vm.deinit();
@@ -112,7 +112,7 @@ test "parsed AST lambdas produce callable function values" {
     defer module.deinit();
     try std.testing.expectEqual(@as(usize, 0), module.diagnostics.items.len);
     var compile = compiler.Compiler.init(std.testing.allocator);
-    var chunk = try compile.compileAstModule(&module);
+    var chunk = try compile.lowerModule(&module);
     defer chunk.deinit();
     var vm = try vm_mod.Vm.init(std.testing.allocator);
     defer vm.deinit();
@@ -152,7 +152,7 @@ test "parsed AST lambdas capture outer locals" {
     defer module.deinit();
     try std.testing.expectEqual(@as(usize, 0), module.diagnostics.items.len);
     var compile = compiler.Compiler.init(std.testing.allocator);
-    var chunk = try compile.compileAstModule(&module);
+    var chunk = try compile.lowerModule(&module);
     defer chunk.deinit();
     var vm = try vm_mod.Vm.init(std.testing.allocator);
     defer vm.deinit();
@@ -169,7 +169,7 @@ test "parsed AST closures preserve multiple capture slots" {
     defer module.deinit();
     try std.testing.expectEqual(@as(usize, 0), module.diagnostics.items.len);
     var compile = compiler.Compiler.init(std.testing.allocator);
-    var chunk = try compile.compileAstModule(&module);
+    var chunk = try compile.lowerModule(&module);
     defer chunk.deinit();
     var vm = try vm_mod.Vm.init(std.testing.allocator);
     defer vm.deinit();
@@ -186,7 +186,7 @@ test "parsed AST nested functions execute only through their own entry" {
     defer module.deinit();
     try std.testing.expectEqual(@as(usize, 0), module.diagnostics.items.len);
     var compile = compiler.Compiler.init(std.testing.allocator);
-    var chunk = try compile.compileAstModule(&module);
+    var chunk = try compile.lowerModule(&module);
     defer chunk.deinit();
     var vm = try vm_mod.Vm.init(std.testing.allocator);
     defer vm.deinit();
@@ -203,7 +203,7 @@ test "parsed AST closures mutate shared captured cells" {
     defer module.deinit();
     try std.testing.expectEqual(@as(usize, 0), module.diagnostics.items.len);
     var compile = compiler.Compiler.init(std.testing.allocator);
-    var chunk = try compile.compileAstModule(&module);
+    var chunk = try compile.lowerModule(&module);
     defer chunk.deinit();
     var vm = try vm_mod.Vm.init(std.testing.allocator);
     defer vm.deinit();
@@ -220,7 +220,7 @@ test "parsed AST functions apply numeric default parameters" {
     defer module.deinit();
     try std.testing.expectEqual(@as(usize, 0), module.diagnostics.items.len);
     var compile = compiler.Compiler.init(std.testing.allocator);
-    var chunk = try compile.compileAstModule(&module);
+    var chunk = try compile.lowerModule(&module);
     defer chunk.deinit();
     var vm = try vm_mod.Vm.init(std.testing.allocator);
     defer vm.deinit();
@@ -237,7 +237,7 @@ test "parsed AST try and except recover VM faults" {
     defer module.deinit();
     try std.testing.expectEqual(@as(usize, 0), module.diagnostics.items.len);
     var compile = compiler.Compiler.init(std.testing.allocator);
-    var chunk = try compile.compileAstModule(&module);
+    var chunk = try compile.lowerModule(&module);
     defer chunk.deinit();
     var vm = try vm_mod.Vm.init(std.testing.allocator);
     defer vm.deinit();
@@ -254,7 +254,7 @@ test "parsed AST finally runs on the normal path" {
     defer module.deinit();
     try std.testing.expectEqual(@as(usize, 0), module.diagnostics.items.len);
     var compile = compiler.Compiler.init(std.testing.allocator);
-    var chunk = try compile.compileAstModule(&module);
+    var chunk = try compile.lowerModule(&module);
     defer chunk.deinit();
     var vm = try vm_mod.Vm.init(std.testing.allocator);
     defer vm.deinit();

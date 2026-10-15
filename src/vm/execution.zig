@@ -31,7 +31,7 @@ pub const ResumableResult = union(enum) { suspended: Value, completed: Value };
 pub fn execute(self: anytype, chunk: *const bytecode.Chunk) RuntimeError!Value {
     const result = try executeInternal(self, chunk, null, 0, null, true);
     try object_storage.refreshRoots(self);
-    self.collector.safepoint() catch return error.OutOfMemory;
+    self.collector.collect() catch return error.OutOfMemory;
     return switch (result) {
         .completed => |value| value,
         .suspended => unreachable,
@@ -153,7 +153,8 @@ pub fn executeInternal(self: anytype, chunk: *const bytecode.Chunk, machine: ?*a
                     self.stack_top -= count;
                     try state_helpers.push(self, try makeHandle(.closure, slot));
                 },
-                .box_dynamic, .unbox_integer, .guard_integer => {},
+                .box_dynamic => {},
+                .unbox_integer, .guard_integer => try stack_operations.guardInteger(RuntimeError, self),
                 .sleep => {
                     if (self.stack_top == 0) return error.StackUnderflow;
                     const duration = self.stack[self.stack_top - 1];

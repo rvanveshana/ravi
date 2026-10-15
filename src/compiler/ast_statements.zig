@@ -24,9 +24,7 @@ pub fn topLevel(comptime Error: type, self: anytype, chunk: *bytecode.Chunk, mod
     while (index < module.statements.items.len) {
         const statement = module.statements.items[index];
         switch (statement.kind) {
-            .import => {
-                index += 1;
-            },
+            .import => return error.InvalidName,
             .function => |function| {
                 if (function_index >= function_statements.items.len or function_statements.items[function_index] != index) return error.InvalidExpression;
                 const capture_info = self.ast_state.function_captures[function_index];
@@ -41,6 +39,7 @@ pub fn topLevel(comptime Error: type, self: anytype, chunk: *bytecode.Chunk, mod
                 index = function.body_first + function.body_count;
             },
             .class_decl => |class_decl| {
+                while (function_index < function_statements.items.len and function_statements.items[function_index] < class_decl.body_first + class_decl.body_count) function_index += 1;
                 index = @max(index + 1, class_decl.body_first + class_decl.body_count);
             },
             .control => |control| {

@@ -50,6 +50,7 @@ On Linux, use `./zig-out/bin/ravi`. To validate the project:
 ```powershell
 zig build test --summary all -j2
 ./tools/test_examples.ps1
+./tools/test_cli.ps1
 ```
 
 The [installation guide](docs/user_docs/installation.md) covers the supported setup,

@@ -2,7 +2,6 @@ const std = @import("std");
 const bytecode = @import("ravi_bytecode");
 const debug = @import("ravi_debug");
 const gc = @import("ravi_gc");
-const dispatch = @import("ravi_dispatch");
 const collections = @import("ravi_vm_collections");
 const trace_runtime = @import("trace.zig");
 const errors = @import("errors.zig");
@@ -132,15 +131,6 @@ pub const Vm = struct {
         defer chunk.deinit();
         const decoded = bytecode.decodePackedCode(self.allocator, bytes) catch return error.InvalidInstruction;
         defer self.allocator.free(decoded);
-        if (template.functions.items.len == 0 and template.classes.items.len == 0 and
-            self.debugger == null and dispatch.FastDispatcher.supports(decoded))
-        {
-            var fast_stack: [256]Value = undefined;
-            return switch (dispatch.FastDispatcher.dispatchLoop(decoded, &fast_stack)) {
-                .ok => |value| value,
-                .runtime_error => error.InvalidInstruction,
-            };
-        }
         chunk.code.appendSlice(self.allocator, decoded) catch return error.OutOfMemory;
         // A release chunk still needs a structurally valid source map for the
         // verifier; locations are intentionally zeroed rather than guessed.
@@ -148,6 +138,7 @@ pub const Vm = struct {
         for (chunk.code.items) |_| chunk.root_map.append(self.allocator, .{}) catch return error.OutOfMemory;
         for (template.strings.items) |text| _ = chunk.addString(text) catch return error.OutOfMemory;
         chunk.formats.appendSlice(self.allocator, template.formats.items) catch return error.OutOfMemory;
+        chunk.floats.appendSlice(self.allocator, template.floats.items) catch return error.OutOfMemory;
         chunk.functions.appendSlice(self.allocator, template.functions.items) catch return error.OutOfMemory;
         chunk.classes.appendSlice(self.allocator, template.classes.items) catch return error.OutOfMemory;
         chunk.methods.appendSlice(self.allocator, template.methods.items) catch return error.OutOfMemory;

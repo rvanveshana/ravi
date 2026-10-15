@@ -191,7 +191,7 @@ test "parser retains optional class base names" {
     var module = try instance.parseRecovering();
     defer module.deinit();
     try std.testing.expectEqual(@as(usize, 0), module.diagnostics.items.len);
-    switch (module.statements.items[module.statements.items.len - 1].kind) {
+    switch (module.statements.items[0].kind) {
         .class_decl => |class_decl| try std.testing.expectEqualStrings("Parent", class_decl.base.?),
         else => return error.TestExpectedEqual,
     }
@@ -206,7 +206,7 @@ test "parser preserves visibility modifiers" {
     var module = try instance.parseRecovering();
     defer module.deinit();
     try std.testing.expectEqual(@as(usize, 0), module.diagnostics.items.len);
-    switch (module.statements.items[module.statements.items.len - 1].kind) {
+    switch (module.statements.items[0].kind) {
         .class_decl => |class_decl| try std.testing.expectEqualStrings("private", @tagName(class_decl.visibility)),
         else => return error.TestExpectedEqual,
     }

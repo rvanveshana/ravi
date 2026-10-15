@@ -17,7 +17,7 @@ pub fn lower(comptime CompileError: type, self: anytype, chunk: *bytecode.Chunk,
             const range_call = module.expressions.items[iterable].kind.call;
             if (@as(usize, range_call.callee) < module.expressions.items.len and module.expressions.items[range_call.callee].kind == .name) {
                 const range_name = module.expressions.items[range_call.callee].kind.name;
-                const is_range = std.mem.eql(u8, range_name, if (self.language == .kn) "shreni" else "range") or std.mem.eql(u8, range_name, "range");
+                const is_range = std.mem.eql(u8, range_name, if ((module.statements.items[statement_index.*].language orelse self.language) == .kn) "shreni" else "range") or std.mem.eql(u8, range_name, "range");
                 if (is_range and range_call.arg_count >= 1 and range_call.arg_count <= 3) {
                     const current_name = try generatedName(self, "__ast_range_current_{d}", .{names.items.len});
                     const limit_name = try generatedName(self, "__ast_range_limit_{d}", .{names.items.len});

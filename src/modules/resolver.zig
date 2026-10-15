@@ -53,10 +53,8 @@ pub const Resolver = struct {
         _ = try self.index(to);
         for (self.modules.items[from_index].dependencies.items) |existing| if (existing == to) return;
         try self.modules.items[from_index].dependencies.append(self.allocator, to);
-        if (self.hasCycle()) {
-            _ = self.modules.items[from_index].dependencies.pop();
-            return error.ImportCycle;
-        }
+        errdefer _ = self.modules.items[from_index].dependencies.pop();
+        if (try self.hasCycle()) return error.ImportCycle;
     }
 
     pub fn exportSymbol(self: *Resolver, module: ModuleId, name: []const u8, visibility: Visibility) ResolveError!void {
@@ -143,8 +141,8 @@ pub const Resolver = struct {
         return value;
     }
 
-    fn hasCycle(self: *const Resolver) bool {
-        const order = self.topologicalOrder(self.allocator) catch return true;
+    fn hasCycle(self: *const Resolver) ResolveError!bool {
+        const order = self.topologicalOrder(self.allocator) catch |err| return if (err == error.ImportCycle) true else err;
         self.allocator.free(order);
         return false;
     }

@@ -73,8 +73,10 @@ fn parseClass(
         base = parser.tokens[parser.index].lexeme;
         parser.index += 1;
     }
+    const statement_index = out.items.len;
+    try out.append(parser.allocator, .{ .span = .{ .first = start, .last = start, .line = parser.tokens[start].line }, .kind = .{ .transfer = "pass" } });
     const body = try parseSuite(parser, module, parseExpressionFn);
-    try out.append(parser.allocator, .{ .span = .{ .first = start, .last = parser.index, .line = parser.tokens[start].line }, .kind = .{ .class_decl = .{ .name = name, .base = base, .body_first = body.first, .body_count = body.count, .visibility = visibility } } });
+    out.items[statement_index] = .{ .span = .{ .first = start, .last = parser.index, .line = parser.tokens[start].line }, .kind = .{ .class_decl = .{ .name = name, .base = base, .body_first = body.first, .body_count = body.count, .visibility = visibility } } };
 }
 
 fn parseImport(parser: anytype, module: *ast.Module, out: *std.ArrayListUnmanaged(ast.Stmt), start: usize) ParseError!void {
@@ -99,7 +101,10 @@ fn parseImport(parser: anytype, module: *ast.Module, out: *std.ArrayListUnmanage
         }
     }
     const owned_module = try module_path.toOwnedSlice(parser.allocator);
-    try module.import_modules.append(parser.allocator, owned_module);
+    module.import_modules.append(parser.allocator, owned_module) catch |err| {
+        parser.allocator.free(owned_module);
+        return err;
+    };
     const stored_module = module.import_modules.items[module.import_modules.items.len - 1];
     if (!parser.word("from")) return error.InvalidImportOrder;
     parser.index += 1;

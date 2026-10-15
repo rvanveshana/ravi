@@ -1,4 +1,5 @@
 const std = @import("std");
+pub const integer_arithmetic = @import("integer_arithmetic.zig");
 
 /// High-performance 64-bit NaN-boxed Value representation for Ravi dynamic & static execution.
 /// IEEE 754 Double Precision NaN boxing layout:
@@ -17,8 +18,8 @@ pub const Value = enum(u64) {
     const TAG_HANDLE: u64 = 6;
     const HANDLE_INDEX_MASK: u64 = (@as(u64, 1) << 40) - 1;
     pub const ObjectKind = enum(u8) { string, array, tuple, set, dictionary, function, closure, cell, instance, exception, future, channel };
-    pub const min_int: i64 = -(@as(i64, 1) << 47);
-    pub const max_int: i64 = (@as(i64, 1) << 47) - 1;
+    pub const min_int = integer_arithmetic.min;
+    pub const max_int = integer_arithmetic.max;
 
     pub inline fn fromFloat(f: f64) Value {
         if (std.math.isNan(f)) return @enumFromInt(QNAN);

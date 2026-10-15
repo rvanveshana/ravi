@@ -8,13 +8,37 @@ pub fn verify(chunk: anytype) VerifyError!void {
     if (chunk.root_map.items.len != chunk.code.items.len) return error.InvalidInstruction;
     for (chunk.functions.items) |function| {
         if (function.entry == 0 or function.entry >= chunk.code.items.len) return error.InvalidInstruction;
+        if (function.arity > function.defaults.len or function.fixed_count > function.arity) return error.InvalidInstruction;
+        if (function.varargs_index) |index| if (index >= function.arity) return error.InvalidInstruction;
+        if (function.kwargs_index) |index| if (index >= function.arity) return error.InvalidInstruction;
         if ((!function.resumable and function.suspension_count != 0) or (function.resumable and function.suspension_count == 0)) return error.InvalidInstruction;
     }
     for (chunk.captures.items) |capture| if (capture.function >= chunk.functions.items.len) return error.InvalidInstruction;
+    for (chunk.classes.items) |class| if (class.base) |base| if (base >= chunk.classes.items.len) return error.InvalidInstruction;
+    for (chunk.methods.items) |method| if (method.class_index >= chunk.classes.items.len or method.function_index >= chunk.functions.items.len) return error.InvalidInstruction;
     for (chunk.code.items) |instruction| {
         if (instruction.op == .suspend_point and instruction.operand < 0) return error.InvalidInstruction;
     }
+    try verifyFrame(chunk, 0, 0, 0);
+    for (chunk.functions.items) |function| try verifyFrame(chunk, function.entry, function.arity + @intFromBool(function.method_name != null), function.capture_count);
     try verifyControlFlow(chunk);
+}
+
+fn verifyFrame(chunk: anytype, first: usize, initial_locals: usize, captures: usize) VerifyError!void {
+    var end = chunk.code.items.len;
+    for (chunk.functions.items) |function| if (function.entry > first) {
+        end = @min(end, function.entry);
+    };
+    var locals = initial_locals;
+    for (chunk.code.items[first..end]) |instruction| if (instruction.op == .store_local) {
+        if (instruction.operand < 0 or instruction.operand >= std.math.maxInt(usize)) return error.InvalidLocal;
+        locals = @max(locals, @as(usize, @intCast(instruction.operand)) + 1);
+    };
+    for (chunk.code.items[first..end]) |instruction| switch (instruction.op) {
+        .load_local, .load_local_ref => if (instruction.operand < 0 or instruction.operand >= locals) return error.InvalidLocal,
+        .load_capture, .load_capture_ref, .store_capture => if (instruction.operand < 0 or instruction.operand >= captures) return error.InvalidLocal,
+        else => {},
+    };
 }
 
 fn verifyControlFlow(chunk: anytype) VerifyError!void {
@@ -47,7 +71,7 @@ fn verifyControlFlow(chunk: anytype) VerifyError!void {
                 if (state.instruction + 1 < chunk.code.items.len) work.append(chunk.allocator, .{ .instruction = state.instruction + 1, .depth = next_depth }) catch return error.OutOfMemory;
             },
             .return_value, .halt, .raise_value => {},
-            else => if (state.instruction + 1 < chunk.code.items.len) work.append(chunk.allocator, .{ .instruction = state.instruction + 1, .depth = next_depth }) catch return error.InvalidInstruction,
+            else => if (state.instruction + 1 < chunk.code.items.len) work.append(chunk.allocator, .{ .instruction = state.instruction + 1, .depth = next_depth }) catch return error.OutOfMemory,
         }
     }
 }
@@ -95,7 +119,7 @@ fn stackAfter(chunk: anytype, instruction: anytype, depth: isize) VerifyError!is
         },
         .store_local, .store_capture, .get_property, .length, .iterable, .type_query, .string_lower, .string_upper, .string_strip, .dict_keys, .dict_values, .dict_items, .negate, .not, .guard_integer, .guard_float, .guard_boolean, .guard_string, .box_dynamic, .unbox_integer, .sleep, .wait => required = 1,
         .spawn => {
-            if (instruction.operand < 0) return error.InvalidInstruction;
+            if (instruction.operand < 0 or instruction.operand >= std.math.maxInt(isize)) return error.InvalidInstruction;
             required = @intCast(instruction.operand + 1);
             delta = 1 - required;
         },

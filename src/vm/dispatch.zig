@@ -26,7 +26,7 @@ pub const FastDispatcher = struct {
             switch (instruction.op) {
                 .constant => {
                     if (top >= stack.len) return .{ .runtime_error = "stack overflow" };
-                    stack[top] = Value.fromInt(instruction.operand);
+                    stack[top] = Value.tryFromInt(instruction.operand) catch return .{ .runtime_error = "integer out of range" };
                     top += 1;
                 },
                 .add => {
@@ -34,7 +34,8 @@ pub const FastDispatcher = struct {
                     const right = stack[top - 1];
                     const left = stack[top - 2];
                     if (!left.isInt() or !right.isInt()) return .{ .runtime_error = "type error" };
-                    stack[top - 2] = Value.fromInt(left.asInt() + right.asInt());
+                    const sum = @import("ravi_vm_value").integer_arithmetic.evaluate(.add, left.asInt(), right.asInt()) catch return .{ .runtime_error = "integer out of range" };
+                    stack[top - 2] = Value.fromInt(sum);
                     top -= 1;
                 },
                 .return_value, .halt => {

@@ -10,14 +10,15 @@ pub fn lower(comptime CompileError: type, self: anytype, chunk: *bytecode.Chunk,
     var statement_index = first;
     while (statement_index < first + count) : (statement_index += 1) {
         const statement = module.statements.items[statement_index];
-        chunk.setSourceLocation(.{ .start_offset = 0, .end_offset = 0, .line = statement.span.line, .column = 1 });
+        chunk.setSourceLocation(.{ .source_id = statement.span.source_id, .start_offset = statement.span.start_offset, .end_offset = statement.span.end_offset, .line = statement.span.line, .column = 1 });
         switch (statement.kind) {
             .expression => |expression| {
                 try self.compileAstExpression(chunk, module, expression, names);
                 if (discard_expression) try chunk.emit(.{ .op = .pop });
             },
             .return_stmt => |expression| {
-                if (expression) |value| try self.compileAstExpression(chunk, module, value, names) else try chunk.emit(.{ .op = .constant, .operand = 0 });
+                if (expression) |value| try self.compileAstExpression(chunk, module, value, names) else try chunk.emit(.{ .op = .none_value });
+                try @import("type_guards.zig").emit(chunk, self.ast_state.return_type);
                 try self.compileAstFinalizers(chunk, module, names, loops, break_targets);
                 try chunk.emit(.{ .op = .return_value });
             },

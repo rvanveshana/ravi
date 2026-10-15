@@ -4,27 +4,33 @@ This document describes the current Ravi Kannada implementation. The desired
 end state is specified in [Language design](language-design.md); completion is
 tracked in the [Development plan](development-plan.md).
 
-## Current compilation paths
+## Executable compilation pipeline
 
 ```text
-.rk source -> lexer -> parser / AST -> semantic checks
-                                  |
-                                  +-> supported HIR subset -> MIR -> bytecode
-                                  |
-                                  +-> direct AST compiler -> bytecode
-                                                               |
-                                                      verifier -> VM
+.rk files -> per-file lexer/parser -> module dependency graph
+                                   -> qualified AST linking
+                                   -> lexical resolution and type checks
+                                   -> AST bytecode lowering
+                                   -> verification -> optimization -> verification -> VM
 ```
 
-`src/main.zig` coordinates the CLI. `src/compiler/hir_pipeline.zig` selects its
-supported subset and sends other shapes through `hir_compatibility.zig` to the
-AST compiler. The adapter uses the AST's source profile; it no longer retries
-compiler failures under another language profile. The direct AST path remains.
+`src/compiler/pipeline.zig` is the executable compilation service used by CLI
+checking, running, tracing, disassembly, and compiler integration tests. The
+former HIR subset selector, compatibility adapter, and unused AST-to-HIR lowering
+implementation have been removed. Unsupported source constructs produce errors;
+compiler failures never select a different compiler or source profile.
 
-Imports have a separate integration path: the loader builds a dependency graph,
-then the CLI concatenates source and compiles it through the AST adapter. This
-is not independent module compilation. Namespaces, cross-profile imports, source
-identity, and module initialization still need a unified implementation.
+`src/modules/loader.zig` parses dependencies under their own profiles, checks
+imports against public exports, detects cycles, and orders initialization.
+`src/modules/linker.zig` relocates AST IDs and qualifies bindings by module ID.
+It links parsed trees rather than concatenating source text. Dependencies are
+initialized once, local bindings may shadow imports, and spans retain their
+original source identity. CLI profile overrides apply to the root module.
+
+This is whole-program AST linking, not independent binary module compilation.
+HIR/MIR data structures and native backend experiments remain explicit research
+components. A future source-to-MIR compiler must replace the executable lowering
+as a complete implementation, rather than introducing another subset selector.
 
 ## Component boundaries
 
@@ -34,10 +40,10 @@ identity, and module initialization still need a unified implementation.
 | `config/constants.zig`, `src/lexer` | Profile vocabulary, tokens, indentation | Executable keywords use Latin-script Kanglish or English |
 | `src/parser`, `src/ast` | Expressions, suites, declarations, source-profile metadata | Some parsed features have no complete executable semantics |
 | `src/semantic`, `src/types` | Symbols, visibility metadata, type checks | Not a complete type inference or access-control system |
-| `src/compiler`, `src/ir` | AST/HIR/MIR lowering and bytecode emission | Two lowering paths remain |
+| `src/compiler`, `src/ir` | AST/HIR/MIR lowering and bytecode emission | Executable lowering is AST-based; general source-to-MIR compilation is unfinished |
 | `src/bytecode` | Instruction encoding, metadata, verification | Verification is a correctness boundary still under development |
 | `src/vm` | Execution, frames, values, objects, collections, faults | Handle ownership and language protocols need further work |
-| `src/memory` | Managed allocation, roots, mark/sweep collection | Non-moving collector; marking uses allocation-list searches |
+| `src/memory` | Managed allocation, roots, mark/sweep collection | Non-moving collector with indexed allocation lookup and adaptive live-set thresholds |
 | `src/concurrency` | Bounded workers, completion events, channels, state metadata | OS-thread tasks, not transparent async I/O |
 | `src/modules` | Resolution, dependency graph, interface/cache artifacts | CLI execution does not yet preserve separate modules |
 | `src/backend` | Backend contracts and native experiment | Native emitter handles an x86-64 constant-return shape only |
@@ -71,14 +77,21 @@ monotonic deadline and recheck it after spurious wakeups. Cancellation metadata
 and channels exist as runtime components, without a complete language-level
 structured-concurrency API.
 
-## Required consolidation
+## Shared contracts
 
-The next architecture must route all supported programs through resolved, typed
-HIR and verified MIR. Semantic analysis must own symbol resolution, captures,
-access checks, and dynamic boundary guards. Backends must share exception,
-cleanup, suspension, and memory contracts.
+Integer operands and results use one signed 48-bit arithmetic implementation.
+Constant folding preserves operand-range errors, overflow, division by zero,
+and truncating remainder semantics. The optimizer compacts instructions with a
+relocation map and never folds across an incoming control-flow edge.
 
-Remove the alternate compiler after the supported subset is represented in the
-single pipeline. Unsupported features must report explicit diagnostics. Native
-and VM backends may coexist as consumers of the same MIR; error-driven fallback
-must not define language semantics.
+Semantic analysis builds lexical scopes and resolves references. Scalar
+annotations are checked when argument types are known and enforced by bytecode
+guards at function entry and explicit typed assignments. This remains gradual
+analysis, not complete inference of object protocols and all dynamic behavior.
+
+The VM verifies frame operands and metadata before execution. Packed bytecode
+uses the same VM; it does not select a separate fast dispatcher. Compiler/session
+arenas and reclaimable runtime allocations use separate backing allocators.
+The collector indexes managed pointers and adjusts its collection threshold to
+the live set. Literal-aware formatting preserves string bytes, including tabs,
+trailing spaces, and embedded line endings.

@@ -10,6 +10,7 @@ pub const LanguageModules = struct {
     artifact: *std.Build.Module,
     cache: *std.Build.Module,
     loader: *std.Build.Module,
+    linker: *std.Build.Module,
     lsp: *std.Build.Module,
     lsp_protocol: *std.Build.Module,
     jsonrpc: *std.Build.Module,
@@ -17,6 +18,10 @@ pub const LanguageModules = struct {
 };
 
 pub fn addRootImports(root: *std.Build.Module, modules: core.CoreModules, runtime_modules: @import("modules_runtime.zig").RuntimeModules, compiler_modules: compiler.CompilerModules, language_modules: LanguageModules) void {
+    root.addImport("ravi_pipeline", compiler_modules.pipeline);
+    root.addImport("ravi_compiler", compiler_modules.compiler);
+    root.addImport("ravi_semantic", compiler_modules.semantic);
+    root.addImport("ravi_hir", compiler_modules.hir);
     root.addImport("ravi_config", modules.config);
     root.addImport("ravi_ast", modules.ast);
     root.addImport("ravi_types", modules.types);
@@ -24,8 +29,6 @@ pub fn addRootImports(root: *std.Build.Module, modules: core.CoreModules, runtim
     root.addImport("ravi_vm", runtime_modules.vm);
     root.addImport("ravi_gc", modules.gc);
     root.addImport("ravi_lexer", modules.lexer);
-    root.addImport("ravi_hir_pipeline", compiler_modules.hir_pipeline);
-    root.addImport("ravi_hir_compatibility", compiler_modules.hir_compatibility);
     root.addImport("ravi_backend", compiler_modules.backend);
     root.addImport("ravi_optimizer", compiler_modules.optimizer);
     root.addImport("ravi_debug", modules.debug);
@@ -36,6 +39,7 @@ pub fn addRootImports(root: *std.Build.Module, modules: core.CoreModules, runtim
     root.addImport("ravi_diagnostics", modules.diagnostics);
     root.addImport("ravi_formatter", language_modules.formatter);
     root.addImport("ravi_loader", language_modules.loader);
+    root.addImport("ravi_linker", language_modules.linker);
     root.addImport("ravi_parser", language_modules.parser);
     root.addImport("ravi_dap", language_modules.dap);
     root.addImport("ravi_lsp_jsonrpc", language_modules.jsonrpc);
@@ -59,6 +63,9 @@ pub fn add(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builti
     loader.addImport("ravi_ast", modules.ast);
     loader.addImport("ravi_config", modules.config);
     loader.addImport("ravi_artifact", artifact);
+    const linker = b.createModule(.{ .root_source_file = b.path("src/modules/linker.zig"), .target = target, .optimize = optimize });
+    linker.addImport("ravi_ast", modules.ast);
+    linker.addImport("ravi_loader", loader);
     const lsp = b.createModule(.{ .root_source_file = b.path("src/lsp/server.zig"), .target = target, .optimize = optimize });
     lsp.addImport("ravi_lexer", modules.lexer);
     lsp.addImport("ravi_parser", parser);
@@ -72,5 +79,5 @@ pub fn add(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builti
     const dap = b.createModule(.{ .root_source_file = b.path("src/debug/dap.zig"), .target = target, .optimize = optimize });
     dap.addImport("ravi_lsp_protocol", lsp_protocol);
     dap.addImport("ravi_debug", modules.debug);
-    return .{ .syntax = syntax, .parser = parser, .formatter = formatter, .resolver = resolver, .artifact = artifact, .cache = cache, .loader = loader, .lsp = lsp, .lsp_protocol = lsp_protocol, .jsonrpc = jsonrpc, .dap = dap };
+    return .{ .syntax = syntax, .parser = parser, .formatter = formatter, .resolver = resolver, .artifact = artifact, .cache = cache, .loader = loader, .linker = linker, .lsp = lsp, .lsp_protocol = lsp_protocol, .jsonrpc = jsonrpc, .dap = dap };
 }

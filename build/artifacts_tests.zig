@@ -18,6 +18,7 @@ pub fn add(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builti
     const parser = b.addTest(.{ .root_module = parser_tests_module });
 
     const helper_module = b.createModule(.{ .root_source_file = b.path("tests/compiler_vm_test_helpers.zig"), .target = target, .optimize = optimize });
+    helper_module.addImport("ravi_pipeline", compiler_modules.pipeline);
     helper_module.addImport("ravi_bytecode", core_modules.bytecode);
     helper_module.addImport("ravi_compiler", compiler_modules.compiler);
     helper_module.addImport("ravi_lexer", core_modules.lexer);
@@ -83,6 +84,11 @@ pub fn add(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builti
     mir_tests_module.addImport("ravi_hir", compiler_modules.hir);
     mir_tests_module.addImport("ravi_mir", compiler_modules.mir);
 
+    const module_pipeline = b.createModule(.{ .root_source_file = b.path("tests/module_pipeline_tests.zig"), .target = target, .optimize = optimize });
+    module_pipeline.addImport("ravi_loader", language_modules.loader);
+    module_pipeline.addImport("ravi_linker", language_modules.linker);
+    module_pipeline.addImport("ravi_pipeline", compiler_modules.pipeline);
+    module_pipeline.addImport("ravi_vm", runtime_modules.vm);
     return .{
         .lexer = &b.addRunArtifact(lexer).step,
         .parser = &b.addRunArtifact(parser).step,
@@ -115,7 +121,8 @@ pub fn add(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builti
         .mir = &b.addRunArtifact(b.addTest(.{ .root_module = compiler_modules.mir })).step,
         .mir_split = &b.addRunArtifact(b.addTest(.{ .root_module = mir_tests_module })).step,
         .mir_bytecode = &b.addRunArtifact(b.addTest(.{ .root_module = compiler_modules.mir_bytecode })).step,
-        .hir_pipeline = &b.addRunArtifact(b.addTest(.{ .root_module = compiler_modules.hir_pipeline })).step,
+        .module_pipeline = &b.addRunArtifact(b.addTest(.{ .root_module = module_pipeline })).step,
+        .pipeline = &b.addRunArtifact(b.addTest(.{ .root_module = compiler_modules.pipeline })).step,
         .lsp = &b.addRunArtifact(b.addTest(.{ .root_module = language_modules.lsp })).step,
         .lsp_protocol = &b.addRunArtifact(b.addTest(.{ .root_module = language_modules.lsp_protocol })).step,
         .jsonrpc = &b.addRunArtifact(b.addTest(.{ .root_module = language_modules.jsonrpc })).step,

@@ -8,5 +8,7 @@ if (!$ExamplesOnly) {
     zig build test "-Doptimize=$Optimize"
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 }
+& ./tools/test_cli.ps1
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 & ./tools/test_examples.ps1
 exit $LASTEXITCODE

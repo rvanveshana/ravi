@@ -61,6 +61,7 @@ pub const Parser = struct {
             }
             const before = self.index;
             self.parseStatement(&module, &module.statements) catch |err| {
+                if (err == error.OutOfMemory) return error.OutOfMemory;
                 try module.diagnostics.append(self.allocator, .{ .message = @errorName(err), .span = .{ .first = before, .last = @min(before + 1, self.tokens.len), .line = self.tokens[before].line } });
                 while (!self.at(.newline) and !self.at(.eof)) self.index += 1;
                 if (self.at(.newline)) self.index += 1;
@@ -88,9 +89,9 @@ pub const Parser = struct {
     fn parseFormattedExpression(self: *Parser, module: *ast.Module, source: []const u8, start: usize, line: usize) ParseError!ast.ExprId {
         var scan = lexer_mod.Lexer.initWithLanguage(self.allocator, source, self.language) catch return error.OutOfMemory;
         defer scan.deinit();
-        const tokens = scan.tokenize() catch return error.InvalidExpression;
+        const tokens = scan.tokenize() catch |err| return if (err == error.OutOfMemory) error.OutOfMemory else error.InvalidExpression;
         var nested_parser = Parser.initWithLanguage(self.allocator, tokens, self.language);
-        var nested = nested_parser.parse() catch return error.InvalidExpression;
+        var nested = nested_parser.parse() catch |err| return if (err == error.OutOfMemory) error.OutOfMemory else error.InvalidExpression;
         defer nested.deinit();
         if (nested.diagnostics.items.len != 0 or nested.statements.items.len != 1) return error.InvalidExpression;
         const nested_id = switch (nested.statements.items[0].kind) {

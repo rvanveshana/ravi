@@ -14,7 +14,7 @@ fn compileTokens(tokens: anytype, language: anytype) !bytecode.Chunk {
     defer module.deinit();
     if (module.diagnostics.items.len != 0) return error.InvalidExpression;
     var compile = compiler.Compiler.initWithLanguage(std.testing.allocator, language);
-    return compile.compileAstModule(&module);
+    return compile.lowerModule(&module);
 }
 
 test "array primitives preserve ordered mutation semantics" {

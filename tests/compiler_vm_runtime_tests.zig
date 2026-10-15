@@ -135,7 +135,7 @@ test "VM wide-frame execution propagates every allocation failure without leaks"
     try std.testing.checkAllAllocationFailures(std.testing.allocator, exerciseVmAllocationFailures, .{});
 }
 
-test "import declarations do not read uninitialized VM locals" {
-    try std.testing.expectEqual(@as(i64, 0), try helpers.run("math inda add tago\n", .kn));
-    try std.testing.expectEqual(@as(i64, 0), try helpers.run("# ravi: language=en\nmath from add import\n", .en));
+test "unresolved imports are rejected before VM execution" {
+    try std.testing.expectError(error.InvalidName, helpers.run("math inda add tago\n", .kn));
+    try std.testing.expectError(error.InvalidName, helpers.run("# ravi: language=en\nmath from add import\n", .en));
 }

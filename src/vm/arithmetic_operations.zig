@@ -22,7 +22,7 @@ pub fn modulo(comptime Error: type, self: anytype, ip: *usize) Error!bool {
         if (!state_helpers.handleFaultWithError(self, ip, error.DivisionByZero)) return error.DivisionByZero;
         return true;
     }
-    self.stack[self.stack_top - 2] = try value_runtime.integer(@rem(try value_runtime.requireInteger(self.stack[self.stack_top - 2]), rhs));
+    self.stack[self.stack_top - 2] = try value_runtime.integer(try @import("ravi_vm_value").integer_arithmetic.evaluate(.modulo, try value_runtime.requireInteger(self.stack[self.stack_top - 2]), rhs));
     self.stack_top -= 1;
     return false;
 }

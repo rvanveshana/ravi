@@ -39,13 +39,14 @@ pub fn binary(self: anytype, op: bytecode.OpCode) errors.RuntimeError!void {
     }
     const left = try values.requireInteger(lhs);
     const right = try values.requireInteger(rhs);
-    const result = switch (op) {
-        .add => std.math.add(i64, left, right) catch return error.IntegerOutOfRange,
-        .subtract => std.math.sub(i64, left, right) catch return error.IntegerOutOfRange,
-        .multiply => std.math.mul(i64, left, right) catch return error.IntegerOutOfRange,
-        .divide => if (right == 0) return error.DivisionByZero else std.math.divTrunc(i64, left, right) catch return error.IntegerOutOfRange,
+    const operation: @import("ravi_vm_value").integer_arithmetic.Operation = switch (op) {
+        .add => .add,
+        .subtract => .subtract,
+        .multiply => .multiply,
+        .divide => .divide,
         else => return error.InvalidInstruction,
     };
+    const result = try @import("ravi_vm_value").integer_arithmetic.evaluate(operation, left, right);
     self.stack[self.stack_top - 2] = try values.integer(result);
     self.stack_top -= 1;
 }

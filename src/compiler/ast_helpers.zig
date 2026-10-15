@@ -19,6 +19,7 @@ pub const FunctionCaptureInfo = struct {
 };
 
 pub const State = struct {
+    return_type: ?[]const u8 = null,
     generated_names: std.ArrayListUnmanaged([]u8) = .empty,
     lambdas: []const LambdaInfo = &.{},
     function_count: usize = 0,

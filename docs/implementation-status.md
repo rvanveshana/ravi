@@ -1,6 +1,6 @@
 # Implementation status
 
-Updated 2026-09-20. Ravi Kannada is an experimental development language. This page
+Updated 2026-10-15. Ravi Kannada is an experimental development language. This page
 owns capability readiness and validation evidence; target behavior belongs in the
 [language design](language-design.md).
 
@@ -9,10 +9,10 @@ owns capability readiness and validation evidence; target behavior belongs in th
 | Area | Current implementation | Main remaining gap |
 | --- | --- | --- |
 | Source profiles | Default Latin-script Kannada and English lexer/parser vocabulary | End-to-end parity; Kannada-script keywords |
-| Compilation | Typed HIR/MIR subset plus direct AST compatibility path | One complete pipeline |
-| Modules | Dependency graph and source concatenation in CLI | Independent compilation and namespaces |
+| Compilation | One resolved AST-to-bytecode executable pipeline | General source-to-MIR compilation |
+| Modules | Dependency graph, qualified AST linking, per-module profiles and source IDs | Independent binary compilation |
 | Values and memory | NaN-boxed values, signed 48-bit integers, nonmoving tracing GC | Complete ownership/rooting and failure coverage |
-| Objects and typing | Classes, annotations, closures, visibility metadata | Consistent protocols and enforcement |
+| Objects and typing | Classes, lexical scopes, scalar boundary guards, closures, import visibility | Complete object protocols and type inference |
 | Errors | Runtime identities and handler/cleanup machinery | Rich exception objects and all cleanup exits |
 | Concurrency | Bounded worker queue, monotonic waits, scalar transfer | Resumable I/O, structured tasks and object transfer |
 | Libraries | Primitive methods and small source helpers | Most application libraries; JSON/network/UI are blueprints |
@@ -35,12 +35,16 @@ These changes are foundations, not evidence of complete language correctness.
 
 ## Validation on Windows
 
-Validated on 2026-09-20 with Zig `0.17.0-dev.1415+64dfaa568`:
+Validated on 2026-10-15 with Zig `0.17.0-dev.1415+64dfaa568`:
 
-- `zig build test --summary all -j2`: **122/122 build steps succeeded**;
-  **187/187 executed tests passed**, with other test runs satisfied by Zig's cache.
-  The 187 count is this invocation's executed total, not the entire suite's inventory.
-- `zig build`: Debug executable built successfully.
+- `zig build test --summary all -j2` and the ReleaseSafe equivalent:
+  **125/125 build steps succeeded in both modes**. Unchanged test runs were
+  satisfied by Zig's cache; executed counts are not the suite's inventory.
+- The seven module-pipeline tests pass in both modes, including deterministic
+  allocation-failure sweeps with leak and error-propagation checks.
+- `zig build -Doptimize=ReleaseSafe`: executable built successfully.
+- `./tools/test_cli.ps1`: **21/21 regressions passed**, covering all source
+  commands, module diagnostics, integer errors, and literal-preserving formatting.
 - `./tools/test_examples.ps1`: **42/42 executable examples passed** with exact
   output snapshots, exit-code checks, and per-process timeouts.
 - `zig fmt --check src tests build config build.zig`, source-size checks, and
@@ -63,20 +67,26 @@ iteration and resumable I/O remain unfinished.
 The recursive example runner discovers programs and verifies their `.out` snapshots.
 It fails on missing snapshots, incorrect output, nonzero exit codes, and timeouts.
 CI reuses each optimization-mode binary instead of rebuilding Debug for examples.
-The local results above apply to the Windows Debug executable; they do not certify
+The example and CLI results above apply to the Windows ReleaseSafe executable; they do not certify
 other platforms or optimization modes.
 
 Compiler repairs preserve standalone side effects, local names in nested expressions,
 lambda entry blocks, callable table lifetimes, and method receiver arity. Collections
 store explicit element IDs, including nested expressions and dictionary pairs.
-AST and HIR compilation share built-in method metadata. The evaluation regression
+Executable compilation uses shared built-in method metadata. The evaluation regression
 also exercises short-circuit expressions, comparison chains, dictionary pop, and
 function return cleanup through the CLI.
 
-The architecture retains HIR/MIR and direct AST compatibility paths. Most compiler/VM
-unit tests exercise the AST path; green results do not establish complete pipeline
-parity, complete libraries, native compilation, or roadmap completion. There is no
-published Python performance comparison or cross-platform runtime certification.
+The executable compiler now has one AST lowering pipeline. The former HIR subset
+selector and compatibility adapter were removed. Compiler/VM integration helpers
+use the same semantic checks, optimizer, and verifier as the CLI. Module tests
+cover profile overrides, cross-profile imports, helper-name isolation, local
+shadowing, missing/private symbols, diamond dependencies, and source identities.
+HIR/MIR and native emission remain explicit development components, not a
+second source execution path. Complete inference, independent binary modules,
+full libraries, native compilation, and roadmap completion remain unfinished.
+There is no published Python performance comparison or cross-platform runtime
+certification from this local development session.
 The generated [feature matrix](feature-matrix.md) contains maintainer-entered stage
 flags rather than live test results or release-readiness verdicts.
 

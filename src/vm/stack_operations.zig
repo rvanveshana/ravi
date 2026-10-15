@@ -16,6 +16,10 @@ pub fn guardFloat(comptime Error: type, self: anytype) Error!void {
     if (self.stack_top == 0 or !self.stack[self.stack_top - 1].isFloat()) return error.TypeGuardFailed;
 }
 
+pub fn guardInteger(comptime Error: type, self: anytype) Error!void {
+    if (self.stack_top == 0 or !self.stack[self.stack_top - 1].isInt()) return error.TypeGuardFailed;
+}
+
 pub fn guardBoolean(comptime Error: type, self: anytype) Error!void {
     if (self.stack_top == 0) return error.TypeGuardFailed;
     const value = self.stack[self.stack_top - 1];

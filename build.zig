@@ -13,6 +13,7 @@ pub fn build(b: *std.Build) void {
     const runtime_modules = runtime.add(b, target, optimize, core_modules);
     const compiler_modules = compiler.add(b, target, optimize, core_modules, runtime_modules);
     const language_modules = language.add(b, target, optimize, core_modules);
+    compiler_modules.pipeline.addImport("ravi_parser", language_modules.parser);
 
     const root_module = b.createModule(.{ .root_source_file = b.path("src/main.zig"), .target = target, .optimize = optimize });
     language.addRootImports(root_module, core_modules, runtime_modules, compiler_modules, language_modules);

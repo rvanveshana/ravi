@@ -21,7 +21,7 @@ test "AST control flow uses canonical English profile keywords" {
     defer module.deinit();
     try std.testing.expectEqual(@as(usize, 0), module.diagnostics.items.len);
     var compile = compiler.Compiler.initWithLanguage(std.testing.allocator, .en);
-    var chunk = try compile.compileAstModule(&module);
+    var chunk = try compile.lowerModule(&module);
     defer chunk.deinit();
     var vm = try vm_mod.Vm.init(std.testing.allocator);
     defer vm.deinit();
@@ -38,7 +38,7 @@ test "AST control flow lowers else break and continue" {
     defer module.deinit();
     try std.testing.expectEqual(@as(usize, 0), module.diagnostics.items.len);
     var compile = compiler.Compiler.initWithLanguage(std.testing.allocator, .en);
-    var chunk = try compile.compileAstModule(&module);
+    var chunk = try compile.lowerModule(&module);
     defer chunk.deinit();
     var vm = try vm_mod.Vm.init(std.testing.allocator);
     defer vm.deinit();
@@ -55,7 +55,7 @@ test "AST control flow rejects transfers outside loops" {
     defer module.deinit();
     try std.testing.expectEqual(@as(usize, 0), module.diagnostics.items.len);
     var compile = compiler.Compiler.initWithLanguage(std.testing.allocator, .en);
-    try std.testing.expectError(error.UnsupportedOperator, compile.compileAstModule(&module));
+    try std.testing.expectError(error.UnsupportedOperator, compile.lowerModule(&module));
 }
 
 test "pass is an executable no-op in both compiler paths" {
@@ -69,7 +69,7 @@ test "pass is an executable no-op in both compiler paths" {
     try std.testing.expectEqual(@as(usize, 0), module.diagnostics.items.len);
 
     var ast_compile = compiler.Compiler.init(std.testing.allocator);
-    var ast_chunk = try ast_compile.compileAstModule(&module);
+    var ast_chunk = try ast_compile.lowerModule(&module);
     defer ast_chunk.deinit();
     var ast_vm = try vm_mod.Vm.init(std.testing.allocator);
     defer ast_vm.deinit();

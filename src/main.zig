@@ -1,20 +1,14 @@
 const std = @import("std");
 const Lexer = @import("ravi_lexer").Lexer;
-const TokenKind = @import("ravi_lexer").TokenKind;
 const Parser = @import("ravi_parser").Parser;
-const Analyzer = @import("semantic/analyzer.zig").Analyzer;
 const gc = @import("ravi_gc");
-const hir_pipeline = @import("ravi_hir_pipeline");
-const hir_compatibility = @import("ravi_hir_compatibility");
+const Pipeline = @import("ravi_pipeline").Pipeline;
+const Linker = @import("ravi_linker").Linker;
+const ast = @import("ravi_ast");
 const bytecode = @import("ravi_bytecode");
 const Vm = @import("ravi_vm").Vm;
 const exception_diagnostics = @import("vm/exception_diagnostics.zig");
-const Backend = @import("ravi_backend").Backend;
-const Optimizer = @import("ravi_optimizer").Optimizer;
 const debug_mod = @import("ravi_debug");
-const Debugger = debug_mod.Debugger;
-const Scheduler = @import("ravi_scheduler").Scheduler;
-const SyntaxTree = @import("ravi_syntax").SyntaxTree;
 const SourceManager = @import("ravi_source").Manager;
 const cli_diagnostics = @import("diagnostics/cli.zig");
 const formatter = @import("ravi_formatter");
@@ -22,11 +16,10 @@ const ModuleLoader = @import("ravi_loader").Loader;
 const config = @import("ravi_config");
 const version = "0.1.0-dev";
 const sample =
-    "math inda add tago\n" ++
     "kriya calculate(a: int, b: int):\n" ++
     "    nodu:\n" ++
     "        adre a > 10:\n" ++
-    "            kodu add(a, b)\n" ++
+    "            kodu a + b\n" ++
     "        illa:\n" ++
     "            kodu a\n" ++
     "    tappu:\n" ++
@@ -133,33 +126,51 @@ pub fn main(init: std.process.Init) !void {
         }
         std.process.exit(1);
     }
-    var analyzer = Analyzer.init(collector.allocator());
-    defer analyzer.deinit();
-    analyzer.analyzeWithLanguage(tokens, language) catch |err| {
-        cli_diagnostics.print(collector.allocator(), diagnostic_format, managed_source.name, source, "RAVI-SEM-001", @errorName(err), cli_diagnostics.tokenLocation(analyzer.last_token orelse tokens[0]));
-        std.process.exit(1);
+    const Context = struct { io: std.Io };
+    var context = Context{ .io = init.io };
+    const Provider = struct {
+        fn read(ctx: *anyopaque, allocator: std.mem.Allocator, target: []const u8) anyerror![]u8 {
+            const file_context: *Context = @ptrCast(@alignCast(ctx));
+            return std.Io.Dir.cwd().readFileAlloc(file_context.io, target, allocator, .limited(16 * 1024 * 1024));
+        }
     };
-    analyzer.analyzeModule(&module) catch |err| {
-        cli_diagnostics.print(collector.allocator(), diagnostic_format, managed_source.name, source, "RAVI-SEM-002", @errorName(err), cli_diagnostics.tokenLocation(tokens[0]));
-        std.process.exit(1);
-    };
-    if (std.mem.eql(u8, mode, "run") or std.mem.eql(u8, mode, "trace") or std.mem.eql(u8, mode, "bytecode")) {
-        if (std.mem.eql(u8, mode, "run")) if (path) |file_path| {
-            var imports_loaded = true;
-            runWithImports(collector.allocator(), init.io, file_path) catch |err| switch (err) {
-                error.FileNotFound => imports_loaded = false,
-                else => return err,
-            };
-            if (imports_loaded) return;
-        };
-        var chunk: bytecode.Chunk = undefined;
-        chunk = hir_pipeline.lower(collector.allocator(), &module) catch |err| {
-            const location = cli_diagnostics.moduleErrorLocation(&module, source);
-            cli_diagnostics.print(collector.allocator(), diagnostic_format, managed_source.name, source, "RAVI-HIR-001", cli_diagnostics.compilerErrorMessage(err), location);
+    var loader = ModuleLoader.init(collector.allocator(), Provider.read, @ptrCast(&context));
+    defer loader.deinit();
+    loader.root_language = language;
+    var linker = Linker{ .allocator = collector.allocator() };
+    defer linker.deinit();
+    var linked: ?ast.Module = null;
+    defer if (linked) |*value| value.deinit();
+    if (path) |file_path| {
+        try loader.addSearchPath("lib");
+        const order = loader.load(file_path) catch |err| {
+            const span = loader.error_span;
+            cli_diagnostics.print(collector.allocator(), diagnostic_format, loader.error_path orelse file_path, loader.error_context, "RAVI-MODULE-001", @errorName(err), .{ .start_offset = span.start_offset, .end_offset = span.end_offset, .line = span.line, .column = loader.error_column });
             std.process.exit(1);
         };
-        defer chunk.deinit();
-        if (std.mem.eql(u8, mode, "run")) _ = Optimizer.optimize(&chunk);
+        defer collector.allocator().free(order);
+        for (loader.modules.items, 0..) |loaded, index| {
+            if (index == 0) continue;
+            _ = try source_manager.add(loaded.path, loaded.source);
+        }
+        linked = linker.link(&loader, order) catch |err| {
+            cli_diagnostics.print(collector.allocator(), diagnostic_format, file_path, source, "RAVI-MODULE-002", @errorName(err), .{ .start_offset = 0, .end_offset = 0, .line = 1, .column = 1 });
+            std.process.exit(1);
+        };
+    }
+    var pipeline = Pipeline{ .allocator = collector.allocator() };
+    var chunk = pipeline.compile(if (linked) |*value| value else &module) catch |err| {
+        const location = pipeline.last_location;
+        const origin = source_manager.get(@enumFromInt(location.source_id)) orelse managed_source;
+        cli_diagnostics.print(collector.allocator(), diagnostic_format, origin.name, origin.text, "RAVI-COMPILE-001", cli_diagnostics.compilerErrorMessage(err), location);
+        std.process.exit(1);
+    };
+    defer chunk.deinit();
+    if (std.mem.eql(u8, mode, "check")) {
+        std.debug.print("valid Ravi module: {d} syntax nodes\n", .{module.statements.items.len});
+        return;
+    }
+    if (std.mem.eql(u8, mode, "run") or std.mem.eql(u8, mode, "trace") or std.mem.eql(u8, mode, "bytecode")) {
         if (std.mem.eql(u8, mode, "bytecode") or std.mem.eql(u8, mode, "trace")) {
             var buffer: [192]u8 = undefined;
             for (chunk.code.items, 0..) |_, instruction| {
@@ -169,74 +180,28 @@ pub fn main(init: std.process.Init) !void {
             if (std.mem.eql(u8, mode, "bytecode")) return;
             std.debug.print("--- execution ---\n", .{});
         }
-        var vm = try Vm.init(collector.allocator());
+        var vm = try Vm.init(std.heap.page_allocator);
         defer vm.deinit();
         const result = vm.run(&chunk) catch |err| {
             const location: @import("ravi_bytecode").SourceLocation = if (vm.fault_ip < chunk.source_map.items.len) chunk.source_map.items[vm.fault_ip] else .{ .start_offset = 0, .end_offset = 0, .line = 1, .column = 1 };
             var exception_message_buffer: [256]u8 = undefined;
-            cli_diagnostics.print(collector.allocator(), diagnostic_format, managed_source.name, source, "RAVI-RUNTIME-001", exception_diagnostics.formatMessage(&exception_message_buffer, err), location);
+            const origin = source_manager.get(@enumFromInt(location.source_id)) orelse managed_source;
+            cli_diagnostics.print(collector.allocator(), diagnostic_format, origin.name, origin.text, "RAVI-RUNTIME-001", exception_diagnostics.formatMessage(&exception_message_buffer, err), location);
             if (err == error.RaisedException) exception_diagnostics.printRaised(vm, vm.last_exception);
             var frame_index = vm.trace_count;
             while (frame_index > 0) {
                 frame_index -= 1;
                 const frame = vm.trace[frame_index];
                 const frame_location: @import("ravi_bytecode").SourceLocation = if (frame.instruction < chunk.source_map.items.len) chunk.source_map.items[frame.instruction] else .{ .start_offset = 0, .end_offset = 0, .line = 0, .column = 0 };
-                std.debug.print("  at {s} ({s}:{d}:{d})\n", .{ frame.function, managed_source.name, frame_location.line, frame_location.column });
+                const frame_source = source_manager.get(@enumFromInt(frame_location.source_id)) orelse managed_source;
+                std.debug.print("  at {s} ({s}:{d}:{d})\n", .{ frame.function, frame_source.name, frame_location.line, frame_location.column });
             }
             std.process.exit(1);
         };
         if (!vm.pub_printed) std.debug.print("{d}\n", .{result});
         return;
     }
-    std.debug.print("valid Ravi Kannada module: {d} syntax nodes\n", .{module.statements.items.len});
-    _ = TokenKind;
-    _ = Backend;
-    _ = Debugger;
-    _ = Scheduler;
-    var syntax = try SyntaxTree.fromTokens(collector.allocator(), source, tokens);
-    defer syntax.deinit();
-}
-fn runWithImports(allocator: std.mem.Allocator, io: std.Io, root_path: []const u8) !void {
-    const Context = struct { io: std.Io };
-    var context = Context{ .io = io };
-    const Provider = struct {
-        fn read(ctx: *anyopaque, target_allocator: std.mem.Allocator, path: []const u8) anyerror![]u8 {
-            const file_context: *Context = @ptrCast(@alignCast(ctx));
-            return std.Io.Dir.cwd().readFileAlloc(file_context.io, path, target_allocator, .limited(16 * 1024 * 1024));
-        }
-    };
-    var loader = ModuleLoader.init(allocator, Provider.read, @ptrCast(&context));
-    defer loader.deinit();
-    try loader.addSearchPath("lib");
-    const order = try loader.load(root_path);
-    defer allocator.free(order);
-    if (order.len < 2) return error.FileNotFound;
-    var combined_source = std.ArrayListUnmanaged(u8).empty;
-    defer combined_source.deinit(allocator);
-    var root_language = config.SourceLanguage.kn;
-    for (order) |module_id| {
-        const loaded = loader.module(module_id) orelse return error.InvalidModule;
-        if (module_id == order[order.len - 1]) root_language = loaded.language;
-        try combined_source.appendSlice(allocator, loaded.source);
-        if (module_id != order[order.len - 1]) try combined_source.appendSlice(allocator, "\n");
-    }
-    var scan = try Lexer.initWithLanguage(allocator, combined_source.items, root_language);
-    defer scan.deinit();
-    const tokens = try scan.tokenize();
-    var parser = Parser.initWithLanguage(allocator, tokens, root_language);
-    var module = try parser.parseRecovering();
-    defer module.deinit();
-    if (module.diagnostics.items.len != 0) return error.InvalidModule;
-    var analyzer = Analyzer.init(allocator);
-    defer analyzer.deinit();
-    try analyzer.analyzeWithLanguage(tokens, root_language);
-    try analyzer.analyzeModule(&module);
-    var chunk = try hir_compatibility.lower(allocator, &module);
-    defer chunk.deinit();
-    _ = Optimizer.optimize(&chunk);
-    var vm = try Vm.init(allocator);
-    defer vm.deinit();
-    _ = try vm.run(&chunk);
+    unreachable;
 }
 fn printHelp() void {
     std.debug.print(
@@ -245,7 +210,7 @@ fn printHelp() void {
         \\Usage: ravi <command> [--lang kn|en] <file.rk>
         \\
         \\Commands:
-        \\  check       Parse and type-check a module
+        \\  check       Resolve, type-check, compile and verify a module
         \\  run         Compile and execute a module
         \\  trace       Disassemble, then execute a module
         \\  bytecode    Print verified bytecode with source locations

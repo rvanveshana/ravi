@@ -46,7 +46,7 @@ pub const Compiler = struct {
     }
 
     /// Compile the scalar AST subset without consulting source tokens.
-    pub fn compileAstModule(self: *Compiler, module: *const ast.Module) CompileError!bytecode.Chunk {
+    pub fn lowerModule(self: *Compiler, module: *const ast.Module) CompileError!bytecode.Chunk {
         defer {
             for (self.ast_state.generated_names.items) |name| self.allocator.free(name);
             self.ast_state.generated_names.deinit(self.allocator);
@@ -76,20 +76,31 @@ pub const Compiler = struct {
                     };
                     break :blk null;
                 } else null;
-                const is_exception = if (class_decl.base) |base_name| std.mem.eql(u8, base_name, "Exception") or std.mem.eql(u8, base_name, "BaseException") or (base != null and chunk.classes.items[base.?].is_exception) else false;
+                const is_exception = if (class_decl.base) |base_name| std.mem.eql(u8, base_name, "Exception") or std.mem.eql(u8, base_name, "BaseException") else false;
                 try chunk.classes.append(self.allocator, .{ .name = class_decl.name, .base = base, .is_exception = is_exception });
                 for (function_statements.items, 0..) |statement_index, function_index| {
                     if (statement_index >= class_decl.body_first and statement_index < class_decl.body_first + class_decl.body_count) {
                         const method = module.statements.items[statement_index].kind.function;
-                        try chunk.methods.append(self.allocator, .{ .class_index = class_index, .name = method.name, .function_index = function_index, .visibility = @intFromEnum(method.visibility) });
+                        try chunk.methods.append(self.allocator, .{ .class_index = class_index, .name = method.method_name orelse method.name, .function_index = function_index, .visibility = @intFromEnum(method.visibility) });
                     }
                 }
                 class_index += 1;
             },
             else => {},
         };
+        for (chunk.classes.items, 0..) |*class, original| {
+            var current = original;
+            var steps: usize = 0;
+            while (chunk.classes.items[current].base) |base| {
+                if (base >= chunk.classes.items.len or steps >= chunk.classes.items.len) return error.InvalidFunction;
+                class.is_exception = class.is_exception or chunk.classes.items[base].is_exception;
+                current = base;
+                steps += 1;
+            }
+        }
         for (function_statements.items, 0..) |statement_index, function_index| {
             const function = module.statements.items[statement_index].kind.function;
+            if (function.params_count > 64) return error.InvalidFunction;
             var defaults: [64]?i64 = @splat(null);
             var fixed_count: usize = function.params_count;
             var varargs_index: ?usize = null;
@@ -106,7 +117,12 @@ pub const Compiler = struct {
             if (kwargs_index) |index| {
                 if (index < fixed_count) fixed_count = index;
             }
-            _ = try chunk.addFunction(.{ .entry = 0, .arity = function.params_count, .fixed_count = fixed_count, .varargs_index = varargs_index, .kwargs_index = kwargs_index, .name = function.name, .defaults = defaults, .capture_count = function_captures.items[function_index].capture_count });
+            var method_name: ?[]const u8 = null;
+            for (chunk.methods.items) |method| if (method.function_index == function_index) {
+                method_name = method.name;
+                break;
+            };
+            _ = try chunk.addFunction(.{ .entry = 0, .arity = function.params_count, .fixed_count = fixed_count, .varargs_index = varargs_index, .kwargs_index = kwargs_index, .name = function.name, .method_name = method_name, .defaults = defaults, .capture_count = function_captures.items[function_index].capture_count });
         }
         var lambdas: std.ArrayListUnmanaged(AstLambdaInfo) = .empty;
         defer lambdas.deinit(self.allocator);
@@ -147,6 +163,15 @@ pub const Compiler = struct {
                 else => {},
             };
             for (module.parameters.items[function.params_first .. function.params_first + function.params_count]) |parameter| try function_names.append(self.allocator, parameter.name);
+            chunk.setSourceLocation(.{ .source_id = module.statements.items[statement_index].span.source_id, .start_offset = module.statements.items[statement_index].span.start_offset, .end_offset = module.statements.items[statement_index].span.end_offset, .line = module.statements.items[statement_index].span.line, .column = 1 });
+            for (module.parameters.items[function.params_first .. function.params_first + function.params_count]) |parameter| {
+                if (parameter.annotation != null and parameter.kind == .positional) {
+                    try chunk.emit(.{ .op = .load_local, .operand = @intCast(helpers.findLocal(function_names.items, parameter.name).?) });
+                    try @import("type_guards.zig").emit(&chunk, parameter.annotation);
+                    try chunk.emit(.{ .op = .pop });
+                }
+            }
+            self.ast_state.return_type = function.return_type;
             self.ast_state.active_captures = function_captures.items[function_index].captures[0..function_captures.items[function_index].capture_count];
             try self.compileAstStatements(&chunk, module, function.body_first, function.body_count, &function_names, true, &loops, &break_targets);
             for (chunk.code.items[chunk.functions.items[function_index].entry..]) |instruction| {
@@ -154,8 +179,10 @@ pub const Compiler = struct {
             }
             chunk.functions.items[function_index].resumable = chunk.functions.items[function_index].suspension_count != 0;
             self.ast_state.active_captures = &.{};
-            try chunk.emit(.{ .op = .constant, .operand = 0 });
+            try chunk.emit(.{ .op = .none_value });
+            try @import("type_guards.zig").emit(&chunk, function.return_type);
             try chunk.emit(.{ .op = .return_value });
+            self.ast_state.return_type = null;
         }
         for (lambdas.items, 0..) |lambda, lambda_index| {
             chunk.functions.items[self.ast_state.function_count + lambda_index].entry = chunk.code.items.len;

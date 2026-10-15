@@ -22,10 +22,12 @@ pub const Collector = struct {
     live_allocations: usize = 0,
     collections: usize = 0,
     collection_threshold: usize = 1024,
+    collection_floor: usize = 1024,
     stress: bool = false,
     roots: std.ArrayListUnmanaged(*anyopaque) = .empty,
     marked: std.ArrayListUnmanaged(*anyopaque) = .empty,
     managed: std.ArrayListUnmanaged(Allocation) = .empty,
+    managed_index: std.AutoHashMapUnmanaged(usize, usize) = .empty,
 
     pub fn init(backing: std.mem.Allocator) Collector {
         return .{ .backing = backing, .arena = std.heap.ArenaAllocator.init(backing) };
@@ -36,12 +38,14 @@ pub const Collector = struct {
             .backing = backing,
             .arena = std.heap.ArenaAllocator.init(backing),
             .collection_threshold = @max(options.collection_threshold, 1),
+            .collection_floor = @max(options.collection_threshold, 1),
             .stress = options.stress,
         };
     }
 
     pub fn deinit(self: *Collector) void {
         for (self.managed.items) |allocation| allocation.destroy(self.backing, allocation.object);
+        self.managed_index.deinit(self.arena.child_allocator);
         self.managed.deinit(self.arena.child_allocator);
         self.roots.deinit(self.arena.child_allocator);
         self.marked.deinit(self.arena.child_allocator);
@@ -75,6 +79,8 @@ pub const Collector = struct {
             .trace = VTable.trace,
             .destroy = VTable.destroy,
         });
+        errdefer _ = self.managed.pop();
+        try self.managed_index.put(self.arena.child_allocator, @intFromPtr(value), self.managed.items.len - 1);
         self.bytes_allocated += @sizeOf(T);
         self.allocations += 1;
         self.live_allocations += 1;
@@ -99,6 +105,8 @@ pub const Collector = struct {
             .trace = VTable.trace,
             .destroy = VTable.destroy,
         });
+        errdefer _ = self.managed.pop();
+        try self.managed_index.put(self.arena.child_allocator, @intFromPtr(value), self.managed.items.len - 1);
         self.bytes_allocated += @sizeOf(T);
         self.allocations += 1;
         self.live_allocations += 1;
@@ -114,14 +122,19 @@ pub const Collector = struct {
     /// The caller must not retain handles or child references to this object.
     pub fn discardUnpublished(self: *Collector, object: *anyopaque) void {
         self.removeRoot(object);
-        for (self.managed.items, 0..) |allocation, index| {
-            if (allocation.object != object) continue;
+        if (self.managed_index.get(@intFromPtr(object))) |index| {
+            const allocation = self.managed.items[index];
             allocation.destroy(self.backing, object);
             self.bytes_allocated -= allocation.size;
             self.live_allocations -= 1;
-            _ = self.managed.swapRemove(index);
-            return;
+            self.removeAllocation(index);
         }
+    }
+
+    fn removeAllocation(self: *Collector, index: usize) void {
+        _ = self.managed_index.remove(@intFromPtr(self.managed.items[index].object));
+        _ = self.managed.swapRemove(index);
+        if (index < self.managed.items.len) self.managed_index.getPtr(@intFromPtr(self.managed.items[index].object)).?.* = index;
     }
 
     pub fn removeRoot(self: *Collector, root: *anyopaque) void {
@@ -146,23 +159,20 @@ pub const Collector = struct {
     }
 
     pub fn mark(self: *Collector, object: *anyopaque) !void {
-        for (self.managed.items) |*allocation| {
-            if (allocation.object != object) continue;
-            if (allocation.marked) return;
-            allocation.marked = true;
-            try self.marked.append(self.arena.child_allocator, object);
-            return;
-        }
+        const index = self.managed_index.get(@intFromPtr(object)) orelse return;
+        const allocation = &self.managed.items[index];
+        if (allocation.marked) return;
+        try self.marked.append(self.arena.child_allocator, object);
+        allocation.marked = true;
     }
 
     pub fn isMarked(self: *const Collector, object: *anyopaque) bool {
-        for (self.managed.items) |allocation| if (allocation.object == object) return allocation.marked;
-        return false;
+        const index = self.managed_index.get(@intFromPtr(object)) orelse return false;
+        return self.managed.items[index].marked;
     }
 
     pub fn isManaged(self: *const Collector, object: *anyopaque) bool {
-        for (self.managed.items) |allocation| if (allocation.object == object) return true;
-        return false;
+        return self.managed_index.contains(@intFromPtr(object));
     }
 
     pub fn collect(self: *Collector) !void {
@@ -174,12 +184,8 @@ pub const Collector = struct {
         var work: usize = 0;
         while (work < self.marked.items.len) : (work += 1) {
             const object = self.marked.items[work];
-            for (self.managed.items) |allocation| {
-                if (allocation.object == object) {
-                    try allocation.trace(self, object);
-                    break;
-                }
-            }
+            const allocation = self.managed.items[self.managed_index.get(@intFromPtr(object)).?];
+            try allocation.trace(self, object);
         }
 
         var index: usize = 0;
@@ -192,8 +198,9 @@ pub const Collector = struct {
             allocation.destroy(self.backing, allocation.object);
             self.bytes_allocated -= allocation.size;
             self.live_allocations -= 1;
-            _ = self.managed.swapRemove(index);
+            self.removeAllocation(index);
         }
+        self.collection_threshold = @max(self.collection_floor, std.math.mul(usize, self.live_allocations, 2) catch std.math.maxInt(usize));
     }
 };
 

@@ -28,13 +28,15 @@ pub fn callValue(self: anytype, chunk: anytype, arity_operand: i64, ip: *usize) 
         const slot = handle.handleIndex().?;
         if (slot >= self.closure_count) return error.InvalidFunction;
         const closure = self.closures[slot];
+        if (closure.function_index >= chunk.functions.items.len) return error.InvalidFunction;
         const function = chunk.functions.items[closure.function_index];
+        try validateArity(function, arity);
         if (arity > function.arity or self.frame_top + 1 >= self.frames.len) return error.InvalidFunction;
         const base = self.stack_top - arity;
         self.frame_top += 1;
         self.frames[self.frame_top] = .{ .return_ip = ip.*, .base = base - 1, .captures = closure.captures };
         try self.frames[self.frame_top].ensureLocals(self.allocator, function.arity);
-        for (0..function.arity) |i| self.frames[self.frame_top].locals[i] = if (i < arity) self.stack[base + i] else if (function.defaults[i]) |default| Value.fromInt(default) else Value.nil();
+        for (0..function.arity) |i| self.frames[self.frame_top].locals[i] = if (i < arity) self.stack[base + i] else try Value.tryFromInt(function.defaults[i].?);
         if (self.trace_count < self.trace.len) {
             self.trace[self.trace_count] = .{ .function = function.name, .instruction = function.entry };
             self.trace_count += 1;
@@ -47,12 +49,13 @@ pub fn callValue(self: anytype, chunk: anytype, arity_operand: i64, ip: *usize) 
     };
     if (function_index >= chunk.functions.items.len) return error.InvalidFunction;
     const function = chunk.functions.items[function_index];
+    try validateArity(function, arity);
     if (arity > function.arity or self.frame_top + 1 >= self.frames.len) return error.InvalidFunction;
     const base = self.stack_top - arity;
     self.frame_top += 1;
     self.frames[self.frame_top] = .{ .return_ip = ip.*, .base = base - 1 };
     try self.frames[self.frame_top].ensureLocals(self.allocator, function.arity);
-    for (0..function.arity) |i| self.frames[self.frame_top].locals[i] = if (i < arity) self.stack[base + i] else if (function.defaults[i]) |default| Value.fromInt(default) else Value.nil();
+    for (0..function.arity) |i| self.frames[self.frame_top].locals[i] = if (i < arity) self.stack[base + i] else try Value.tryFromInt(function.defaults[i].?);
     if (self.trace_count < self.trace.len) {
         self.trace[self.trace_count] = .{ .function = function.name, .instruction = function.entry };
         self.trace_count += 1;
@@ -71,20 +74,21 @@ pub fn callMethod(self: anytype, chunk: anytype, operand: i64, ip: *usize) !void
     const instance_slot = receiver.handleIndex() orelse return error.InvalidFunction;
     if (instance_slot >= self.instance_count) return error.InvalidFunction;
     const class_index = self.instances[instance_slot].class_index;
-    if (bytecode.lookupMethod(chunk.classes.items, chunk.methods.items, class_index, function.name)) |resolved| {
-        if (resolved >= chunk.functions.items.len) return error.InvalidFunction;
-        var declaring_class: ?usize = null;
-        var method_visibility: u8 = 0;
-        for (chunk.methods.items) |method| if (method.function_index == resolved) {
-            declaring_class = method.class_index;
-            method_visibility = method.visibility;
-            break;
-        };
-        if (method_visibility == 2 and !bytecode.canAccessProtected(chunk.classes.items, declaring_class orelse return error.InvalidFunction, self.frames[self.frame_top].owner_class)) return error.InvalidFunction;
-        function = chunk.functions.items[resolved];
-    }
+    const resolved = bytecode.lookupMethod(chunk.classes.items, chunk.methods.items, class_index, function.method_name orelse return error.InvalidFunction) orelse return error.InvalidFunction;
+    if (resolved >= chunk.functions.items.len or chunk.functions.items[resolved].arity != function.arity) return error.InvalidFunction;
+    var declaring_class: ?usize = null;
+    var method_visibility: u8 = 0;
+    for (chunk.methods.items) |method| if (method.function_index == resolved) {
+        declaring_class = method.class_index;
+        method_visibility = method.visibility;
+        break;
+    };
+    const caller = self.frames[self.frame_top].owner_class;
+    if (method_visibility == 1 and caller != declaring_class) return error.InvalidFunction;
+    if (method_visibility == 2 and !bytecode.canAccessProtected(chunk.classes.items, declaring_class orelse return error.InvalidFunction, caller)) return error.InvalidFunction;
+    function = chunk.functions.items[resolved];
     self.frame_top += 1;
-    self.frames[self.frame_top] = .{ .return_ip = ip.*, .base = base, .owner_class = class_index };
+    self.frames[self.frame_top] = .{ .return_ip = ip.*, .base = base, .owner_class = declaring_class orelse return error.InvalidFunction };
     try self.frames[self.frame_top].ensureLocals(self.allocator, function.arity + 1);
     self.frames[self.frame_top].locals[0] = receiver;
     for (0..function.arity) |index| self.frames[self.frame_top].locals[index + 1] = self.stack[base + index + 1];
@@ -98,14 +102,16 @@ pub fn callMethod(self: anytype, chunk: anytype, operand: i64, ip: *usize) !void
 pub fn callSuper(self: anytype, chunk: anytype, operand: i64, ip: *usize) !void {
     if (operand < 0 or operand >= @as(i64, @intCast(chunk.functions.items.len))) return error.InvalidFunction;
     if (self.frame_top + 1 >= self.frames.len) return error.CallStackOverflow;
+    if (self.stack_top < chunk.functions.items[@intCast(operand)].arity + 1) return error.StackUnderflow;
     const receiver = self.stack[self.stack_top - chunk.functions.items[@intCast(operand)].arity - 1];
     const instance_slot = receiver.handleIndex() orelse return error.InvalidFunction;
     if (receiver.handleKind() != .instance or instance_slot >= self.instance_count) return error.InvalidFunction;
     const owner = self.frames[self.frame_top].owner_class orelse return error.InvalidFunction;
     const base = chunk.classes.items[owner].base orelse return error.InvalidFunction;
     const requested = chunk.functions.items[@intCast(operand)];
-    const resolved = bytecode.lookupMethod(chunk.classes.items, chunk.methods.items, base, requested.name) orelse return error.InvalidFunction;
+    const resolved = bytecode.lookupMethod(chunk.classes.items, chunk.methods.items, base, requested.method_name orelse return error.InvalidFunction) orelse return error.InvalidFunction;
     const function = chunk.functions.items[resolved];
+    if (function.arity != requested.arity) return error.InvalidFunction;
     const call_base = self.stack_top - function.arity - 1;
     self.frame_top += 1;
     self.frames[self.frame_top] = .{ .return_ip = ip.*, .base = call_base, .owner_class = base };
@@ -117,6 +123,11 @@ pub fn callSuper(self: anytype, chunk: anytype, operand: i64, ip: *usize) !void 
         self.trace_count += 1;
     }
     ip.* = function.entry - 1;
+}
+
+fn validateArity(function: bytecode.FunctionInfo, arity: usize) !void {
+    if (arity > function.arity or function.arity > function.defaults.len) return error.InvalidFunction;
+    for (arity..function.arity) |index| if (function.defaults[index] == null) return error.InvalidFunction;
 }
 
 const CallKind = enum { call, call_method, call_super, call_value };
