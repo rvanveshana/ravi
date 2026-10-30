@@ -3,6 +3,10 @@ const std = @import("std");
 pub const VerifyError = error{ OutOfMemory, EmptyChunk, InvalidJump, InvalidLocal, StackUnderflow, InvalidInstruction };
 
 pub fn verify(chunk: anytype) VerifyError!void {
+    return verifyWithAllocator(chunk, chunk.allocator);
+}
+
+pub fn verifyWithAllocator(chunk: anytype, allocator: std.mem.Allocator) VerifyError!void {
     if (chunk.code.items.len == 0) return error.EmptyChunk;
     if (chunk.source_map.items.len != chunk.code.items.len) return error.InvalidInstruction;
     if (chunk.root_map.items.len != chunk.code.items.len) return error.InvalidInstruction;
@@ -21,7 +25,7 @@ pub fn verify(chunk: anytype) VerifyError!void {
     }
     try verifyFrame(chunk, 0, 0, 0);
     for (chunk.functions.items) |function| try verifyFrame(chunk, function.entry, function.arity + @intFromBool(function.method_name != null), function.capture_count);
-    try verifyControlFlow(chunk);
+    try verifyControlFlow(chunk, allocator);
 }
 
 fn verifyFrame(chunk: anytype, first: usize, initial_locals: usize, captures: usize) VerifyError!void {
@@ -41,16 +45,16 @@ fn verifyFrame(chunk: anytype, first: usize, initial_locals: usize, captures: us
     };
 }
 
-fn verifyControlFlow(chunk: anytype) VerifyError!void {
-    const depths = chunk.allocator.alloc(?isize, chunk.code.items.len) catch return error.OutOfMemory;
-    defer chunk.allocator.free(depths);
+fn verifyControlFlow(chunk: anytype, allocator: std.mem.Allocator) VerifyError!void {
+    const depths = allocator.alloc(?isize, chunk.code.items.len) catch return error.OutOfMemory;
+    defer allocator.free(depths);
     @memset(depths, null);
     var work: std.ArrayListUnmanaged(struct { instruction: usize, depth: isize }) = .empty;
-    defer work.deinit(chunk.allocator);
-    work.append(chunk.allocator, .{ .instruction = 0, .depth = 0 }) catch return error.OutOfMemory;
+    defer work.deinit(allocator);
+    work.append(allocator, .{ .instruction = 0, .depth = 0 }) catch return error.OutOfMemory;
     for (chunk.functions.items) |function| {
         if (function.entry >= chunk.code.items.len) return error.InvalidInstruction;
-        work.append(chunk.allocator, .{ .instruction = function.entry, .depth = 0 }) catch return error.OutOfMemory;
+        work.append(allocator, .{ .instruction = function.entry, .depth = 0 }) catch return error.OutOfMemory;
     }
     while (work.pop()) |state| {
         if (depths[state.instruction]) |known| {
@@ -61,30 +65,39 @@ fn verifyControlFlow(chunk: anytype) VerifyError!void {
         const instruction = chunk.code.items[state.instruction];
         const next_depth = try stackAfter(chunk, instruction, state.depth);
         switch (instruction.op) {
-            .jump => try appendState(chunk, &work, instruction.operand, next_depth),
+            .jump => try appendState(chunk, allocator, &work, instruction.operand, next_depth),
             .jump_if_false => {
-                try appendState(chunk, &work, instruction.operand, next_depth);
-                if (state.instruction + 1 < chunk.code.items.len) work.append(chunk.allocator, .{ .instruction = state.instruction + 1, .depth = next_depth }) catch return error.OutOfMemory;
+                try appendState(chunk, allocator, &work, instruction.operand, next_depth);
+                if (state.instruction + 1 < chunk.code.items.len) work.append(allocator, .{ .instruction = state.instruction + 1, .depth = next_depth }) catch return error.OutOfMemory;
             },
             .try_begin => {
-                try appendState(chunk, &work, instruction.operand, next_depth + 1);
-                if (state.instruction + 1 < chunk.code.items.len) work.append(chunk.allocator, .{ .instruction = state.instruction + 1, .depth = next_depth }) catch return error.OutOfMemory;
+                try appendState(chunk, allocator, &work, instruction.operand, next_depth + 1);
+                if (state.instruction + 1 < chunk.code.items.len) work.append(allocator, .{ .instruction = state.instruction + 1, .depth = next_depth }) catch return error.OutOfMemory;
             },
             .return_value, .halt, .raise_value => {},
-            else => if (state.instruction + 1 < chunk.code.items.len) work.append(chunk.allocator, .{ .instruction = state.instruction + 1, .depth = next_depth }) catch return error.OutOfMemory,
+            else => if (state.instruction + 1 < chunk.code.items.len) work.append(allocator, .{ .instruction = state.instruction + 1, .depth = next_depth }) catch return error.OutOfMemory,
         }
     }
 }
 
-fn appendState(chunk: anytype, work: anytype, operand: i64, depth: isize) VerifyError!void {
+fn appendState(chunk: anytype, allocator: std.mem.Allocator, work: anytype, operand: i64, depth: isize) VerifyError!void {
     if (operand < 0 or operand >= @as(i64, @intCast(chunk.code.items.len))) return error.InvalidJump;
-    work.append(chunk.allocator, .{ .instruction = @as(usize, @intCast(operand)), .depth = depth }) catch return error.OutOfMemory;
+    work.append(allocator, .{ .instruction = @as(usize, @intCast(operand)), .depth = depth }) catch return error.OutOfMemory;
 }
 
 fn stackAfter(chunk: anytype, instruction: anytype, depth: isize) VerifyError!isize {
     var required: isize = 0;
     var delta: isize = 0;
     switch (instruction.op) {
+        .host_call => {
+            if (instruction.operand < 0) return error.InvalidInstruction;
+            const id: usize = @intCast(@divTrunc(instruction.operand, 256));
+            const args: isize = @intCast(@mod(instruction.operand, 256));
+            const config = @import("ravi_config");
+            if (id >= config.host_builtins.len or args != config.host_builtins[id].arguments) return error.InvalidInstruction;
+            required = args;
+            delta = 1 - args;
+        },
         .constant, .true_value, .false_value, .none_value => delta = 1,
         .make_format => {
             if (instruction.operand < 0 or instruction.operand >= @as(i64, @intCast(chunk.formats.items.len))) return error.InvalidInstruction;

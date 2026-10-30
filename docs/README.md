@@ -16,6 +16,8 @@ Examples use the Kannada/Kanglish profile unless an English header is shown.
 | --- | --- |
 | [Implementation status](implementation-status.md) | Current capabilities, limitations, and dated validation evidence |
 | [Architecture](architecture.md) | Actual compiler/runtime structure and its integration gaps |
+| [Robustness review](robustness-review.md) | 2026-10-30 fixes and remaining async, threading, library, and performance gates |
+| [Task/runtime contracts](task-runtime.md) | Implemented task ownership, copy transfer, channels, library limits, and profiling |
 | [Language design](language-design.md) | Accepted direction and contracts still to implement |
 | [Development plan](development-plan.md) | Ordered milestones and acceptance criteria |
 | [Runtime ABI](runtime-abi.md) | Internal value representation and ownership constraints |

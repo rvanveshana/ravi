@@ -28,10 +28,14 @@ const TaskFuture = tasks.Future;
 pub const TraceFrame = trace_runtime.Frame;
 test {
     _ = @import("task_tests.zig");
+    _ = @import("task_runtime_tests.zig");
+    _ = @import("host_runtime_tests.zig");
+    _ = @import("vm_tests.zig");
     _ = @import("allocation_tests.zig");
 }
 pub const Vm = struct {
     allocator: std.mem.Allocator,
+    metrics: @import("metrics.zig").Metrics = .{},
     stack: []Value,
     stack_top: usize = 0,
     frames: []Frame,
@@ -67,8 +71,27 @@ pub const Vm = struct {
     resumable_ip: usize = 0,
     resumable_started: bool = false,
     task_scheduler: ?*scheduler.Scheduler = null,
+    owns_task_scheduler: bool = true,
+    task_program: ?*@import("task_program.zig").Program = null,
+    cooperative: bool = false,
+    task_ip: usize = 0,
+    task_deadline: ?i96 = null,
+    task_waiting: ?*TaskFuture = null,
+    task_cancelled: ?*std.atomic.Value(bool) = null,
+    task_cancel_injected: bool = false,
+    task_channel: ?*@import("shared_channel.zig").Shared = null,
+    task_channel_send: bool = false,
+    task_timeout_deadline: ?i96 = null,
+    task_timeout_ip: ?usize = null,
+    channels: std.ArrayListUnmanaged(*@import("shared_channel.zig").Shared) = .empty,
+    host_io: ?std.Io = null,
+    host_backend: ?*std.Io.Threaded = null,
+    pending_io: ?*TaskFuture = null,
+    pending_io_ip: usize = 0,
+    environ: std.process.Environ = .empty,
+    task_generation: u32 = 0,
     worker_count: usize = 0,
-    futures: std.ArrayListUnmanaged(*TaskFuture) = .empty,
+    futures: std.ArrayListUnmanaged(tasks.Entry) = .empty,
     pub fn init(allocator: std.mem.Allocator) !Vm {
         return initWithCollectorOptions(allocator, .{});
     }
@@ -83,8 +106,17 @@ pub const Vm = struct {
     }
     pub fn deinit(self: *Vm) void {
         if (self.resumable_machine) |*machine| machine.deinit();
-        if (self.task_scheduler) |value| value.deinit();
-        for (self.futures.items) |future| self.allocator.destroy(future);
+        if (self.pending_io) |future| {
+            future.awaitReady(self.task_scheduler.?);
+            future.destroy();
+        }
+        tasks.closeScope(self);
+        for (self.channels.items) |channel| channel.release();
+        self.channels.deinit(self.allocator);
+        if (self.host_backend) |backend| {
+            backend.deinit();
+            self.allocator.destroy(backend);
+        }
         self.futures.deinit(self.allocator);
         state_helpers.deinit(self);
         self.collector.deinit();
@@ -93,7 +125,7 @@ pub const Vm = struct {
         return value_runtime.toLegacy(try self.execute(chunk));
     }
     pub fn runValue(self: *Vm, chunk: *const bytecode.Chunk) RuntimeError!Value {
-        chunk.verify() catch |err| return if (err == error.OutOfMemory) error.OutOfMemory else error.InvalidInstruction;
+        chunk.verifyWithAllocator(self.allocator) catch |err| return if (err == error.OutOfMemory) error.OutOfMemory else error.InvalidInstruction;
         return self.execute(chunk);
     }
     pub fn runResumable(self: *Vm, chunk: *const bytecode.Chunk) RuntimeError!ResumableResult {
@@ -163,6 +195,12 @@ pub const Vm = struct {
     pub fn waitTask(self: *Vm, handle: Value) RuntimeError!Value {
         return tasks.wait(self, handle);
     }
+    pub fn cancelTask(self: *Vm, handle: Value) RuntimeError!void {
+        return tasks.cancel(self, handle);
+    }
+    pub fn releaseTask(self: *Vm, handle: Value) RuntimeError!void {
+        return tasks.release(self, handle);
+    }
     fn execute(self: *Vm, chunk: *const bytecode.Chunk) RuntimeError!Value {
         return execution.execute(self, chunk);
     }
@@ -198,64 +236,3 @@ pub const Vm = struct {
         return call_runtime.callValue(self, chunk, arity_operand, ip);
     }
 };
-
-test "VM debugger attachment pauses at instruction breakpoints" {
-    var chunk = bytecode.Chunk.init(std.testing.allocator);
-    defer chunk.deinit();
-    try chunk.emit(.{ .op = .halt });
-    var debugger = debug.Debugger.init(std.testing.allocator);
-    defer debugger.deinit();
-    _ = try debugger.addBreakpoint(0);
-    var vm = try Vm.init(std.testing.allocator);
-    defer vm.deinit();
-    vm.attachDebugger(&debugger);
-    try std.testing.expectError(error.DebuggerPaused, vm.runValue(&chunk));
-    vm.detachDebugger();
-    _ = try vm.runValue(&chunk);
-}
-
-test "VM resumable execution yields and resumes at the next instruction" {
-    var chunk = bytecode.Chunk.init(std.testing.allocator);
-    defer chunk.deinit();
-    try chunk.emit(.{ .op = .constant, .operand = 7 });
-    try chunk.emit(.{ .op = .suspend_point, .operand = 12 });
-    try chunk.emit(.{ .op = .return_value });
-    var vm = try Vm.init(std.testing.allocator);
-    defer vm.deinit();
-    switch (try vm.runResumable(&chunk)) {
-        .suspended => |value| try std.testing.expectEqual(@as(i64, 7), value.asInt()),
-        .completed => return error.TestExpectedEqual,
-    }
-    try std.testing.expectEqual(async_state.Status.suspended, vm.resumableStatus().?);
-    switch (try vm.resumeResumable()) {
-        .suspended => return error.TestExpectedEqual,
-        .completed => |value| try std.testing.expectEqual(@as(i64, 7), value.asInt()),
-    }
-    try std.testing.expectEqual(async_state.Status.completed, vm.resumableStatus().?);
-}
-
-test "VM interning scales beyond the legacy thousand-string cap" {
-    var vm = try Vm.init(std.testing.allocator);
-    defer vm.deinit();
-    var buffer: [32]u8 = undefined;
-    for (0..1_024) |index| {
-        const text = try std.fmt.bufPrint(&buffer, "string-{d}", .{index});
-        _ = try vm.internString(text);
-    }
-    try std.testing.expect(vm.strings.items.len >= 1_024);
-}
-
-test "VM preserves the active exception when a handler rethrows" {
-    var chunk = bytecode.Chunk.init(std.testing.allocator);
-    defer chunk.deinit();
-    try chunk.emit(.{ .op = .constant, .operand = 42 });
-    try chunk.emit(.{ .op = .try_begin, .operand = 4 });
-    try chunk.emit(.{ .op = .raise_value });
-    try chunk.emit(.{ .op = .halt });
-    try chunk.emit(.{ .op = .raise_value });
-    var vm = try Vm.init(std.testing.allocator);
-    defer vm.deinit();
-    try std.testing.expectError(error.RaisedException, vm.runValue(&chunk));
-    try std.testing.expect(vm.last_exception.isInt());
-    try std.testing.expectEqual(@as(i64, 42), vm.last_exception.asInt());
-}

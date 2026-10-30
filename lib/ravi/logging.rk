@@ -1,0 +1,6 @@
+kriya info(message):
+    kodu __ravi_log("INFO", message)
+kriya mahiti(message):
+    kodu info(message)
+kriya error(message):
+    kodu __ravi_log("ERROR", message)

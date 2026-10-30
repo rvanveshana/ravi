@@ -118,6 +118,9 @@ pub fn refreshRoots(self: anytype) errors.RuntimeError!void {
         for (frame.captures) |value| try markValue(self, value, &seen);
     }
     try markValue(self, self.last_exception, &seen);
+    for (self.futures.items) |entry| if (entry.future) |future| {
+        if (future.cached) |value| try markValue(self, value, &seen);
+    };
 }
 
 fn markValue(self: anytype, value: Value, seen: *std.AutoHashMap(u64, void)) errors.RuntimeError!void {
@@ -178,7 +181,7 @@ pub fn writeBarrierValue(self: anytype, parent: Value, child: Value) errors.Runt
     self.collector.writeBarrier(parent_pointer, child_pointer) catch return error.OutOfMemory;
 }
 
-fn objectPointer(self: anytype, value: Value) ?*anyopaque {
+pub fn objectPointer(self: anytype, value: Value) ?*anyopaque {
     const kind = value.handleKind() orelse return null;
     const index = value.handleIndex().?;
     return switch (kind) {

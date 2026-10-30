@@ -21,6 +21,8 @@ pub const Collector = struct {
     allocations: usize = 0,
     live_allocations: usize = 0,
     collections: usize = 0,
+    profile_io: ?std.Io = null,
+    collection_ns: i96 = 0,
     collection_threshold: usize = 1024,
     collection_floor: usize = 1024,
     stress: bool = false,
@@ -176,6 +178,10 @@ pub const Collector = struct {
     }
 
     pub fn collect(self: *Collector) !void {
+        const started = if (self.profile_io) |io| std.Io.Clock.now(.awake, io).nanoseconds else 0;
+        defer if (self.profile_io) |io| {
+            self.collection_ns += std.Io.Clock.now(.awake, io).nanoseconds - started;
+        };
         self.collections += 1;
         self.marked.clearRetainingCapacity();
         for (self.managed.items) |*allocation| allocation.marked = false;

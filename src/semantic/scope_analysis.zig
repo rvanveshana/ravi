@@ -233,6 +233,7 @@ fn isMethod(module: *const ast.Module, index: usize) bool {
 }
 
 fn builtin(name: []const u8) bool {
+    if (@import("ravi_config").hostBuiltin(name) != null) return true;
     const names = [_][]const u8{ "print", "mudrisu", "type", "vidha", "sleep", "malagu", "range", "shreni", "add", "sub", "mul", "div", "mod", "__ravi_exception", "guru", "super" };
     for (names) |known| if (std.mem.eql(u8, name, known)) return true;
     return false;

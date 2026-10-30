@@ -9,10 +9,7 @@ param(
         "examples/closures.rk",
         "examples/collections_advanced.rk",
         "examples/strings.rk",
-        "examples/gradual_typing.rk",
-        "bench_3.rk",
-        "typed_loop.rk",
-        "dynamic_loop.rk"
+        "examples/gradual_typing.rk"
     )
 )
 

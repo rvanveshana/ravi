@@ -1,0 +1,27 @@
+# Small eager collection helpers. No intermediate copies are created.
+kriya sum(values, start=0):
+    total = start
+    prati value alli values:
+        total = total + value
+    kodu total
+
+kriya motta(values, start=0):
+    kodu sum(values, start)
+
+kriya all(values):
+    prati value alli values:
+        adre alla value:
+            kodu false
+    kodu true
+
+kriya ellavu(values):
+    kodu all(values)
+
+kriya any(values):
+    prati value alli values:
+        adre value:
+            kodu true
+    kodu false
+
+kriya yavudadaru(values):
+    kodu any(values)

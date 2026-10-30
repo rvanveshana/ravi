@@ -1,0 +1,14 @@
+kriya cancel(task):
+    kodu __ravi_task_cancel(task)
+kriya raddu(task):
+    kodu cancel(task)
+kriya release(task):
+    kodu __ravi_task_release(task)
+kriya bidugade(task):
+    kodu release(task)
+kriya is_done(task):
+    kodu __ravi_task_done(task)
+kriya mugidide(task):
+    kodu is_done(task)
+kriya wait_for(task, milliseconds: int):
+    kodu __ravi_wait_for(task, milliseconds)

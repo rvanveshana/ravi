@@ -75,7 +75,7 @@ pub fn expression(comptime Error: type, self: anytype, chunk: *bytecode.Chunk, m
                 try chunk.emit(.{ .op = .load_capture, .operand = @intCast(capture) });
             } else if ((std.mem.eql(u8, name, "guru") or std.mem.eql(u8, name, "super")) and helpers.findLocal(names.items, "tanna") != null) {
                 try chunk.emit(.{ .op = .load_local, .operand = @intCast(helpers.findLocal(names.items, "tanna").?) });
-            } else return error.InvalidName;
+            } else if (!try builtins.functionReference(Error, self, chunk, module, name)) return error.InvalidName;
         },
         .spawn => |operand| {
             if (@as(usize, operand) >= module.expressions.items.len) return error.InvalidExpression;
@@ -125,6 +125,7 @@ pub fn expression(comptime Error: type, self: anytype, chunk: *bytecode.Chunk, m
             if (call.callee >= module.expressions.items.len) return error.InvalidExpression;
             if (module.expressions.items[call.callee].kind == .name) {
                 const name = module.expressions.items[call.callee].kind.name;
+                if (try builtins.hostCall(Error, self, chunk, module, name, call, names, expression)) return;
                 if (builtins.isPrint(language, name)) {
                     if (call.arg_count != 1) return error.UnsupportedOperator;
                     try expression(Error, self, chunk, module, module.call_args.items[call.first_arg], names);

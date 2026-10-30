@@ -26,6 +26,13 @@ body:
     id: alternatives
     attributes:
       label: Alternatives considered
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: Describe observable behavior and relevant correctness, performance, resource, or compatibility checks.
+    validations:
+      required: true
   - type: checkboxes
     id: checks
     attributes:

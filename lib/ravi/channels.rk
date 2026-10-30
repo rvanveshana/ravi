@@ -1,0 +1,20 @@
+kriya channel(capacity: int):
+    kodu __ravi_channel(capacity)
+kriya vahini(capacity: int):
+    kodu channel(capacity)
+kriya send(channel, value):
+    kodu __ravi_send(channel, value)
+kriya kaluhisu(channel, value):
+    kodu send(channel, value)
+kriya receive(channel):
+    kodu __ravi_receive(channel)
+kriya sweekarisu(channel):
+    kodu receive(channel)
+kriya close(channel):
+    kodu __ravi_close_channel(channel)
+kriya mucchu(channel):
+    kodu close(channel)
+kriya send_for(channel, value, milliseconds: int):
+    kodu __ravi_send_for(channel, value, milliseconds)
+kriya receive_for(channel, milliseconds: int):
+    kodu __ravi_receive_for(channel, milliseconds)

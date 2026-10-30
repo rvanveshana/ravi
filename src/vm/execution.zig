@@ -22,14 +22,16 @@ const stack_operations = @import("stack_operations.zig");
 const arithmetic_operations = @import("arithmetic_operations.zig");
 const control_flow = @import("control_flow.zig");
 const async_state = @import("ravi_async_state");
-const sleepMilliseconds = @import("sleep.zig").sleepMilliseconds;
+const task_suspension = @import("task_suspension.zig");
 const integer = value_runtime.integer;
 const makeHandle = value_runtime.makeHandle;
 const dictSlot = value_runtime.dictSlot;
 
 pub const ResumableResult = union(enum) { suspended: Value, completed: Value };
 pub fn execute(self: anytype, chunk: *const bytecode.Chunk) RuntimeError!Value {
+    errdefer @import("tasks.zig").cancelScope(self);
     const result = try executeInternal(self, chunk, null, 0, null, true);
+    try @import("tasks.zig").joinScope(self);
     try object_storage.refreshRoots(self);
     self.collector.collect() catch return error.OutOfMemory;
     return switch (result) {
@@ -43,8 +45,12 @@ pub fn executeResumable(self: anytype, chunk: *const bytecode.Chunk, machine: *a
 }
 
 pub fn executeInternal(self: anytype, chunk: *const bytecode.Chunk, machine: ?*async_state.Machine, ip_start: usize, next_ip: ?*usize, reset: bool) RuntimeError!ResumableResult {
-    chunk.verify() catch |err| return if (err == error.OutOfMemory) error.OutOfMemory else error.InvalidInstruction;
+    const verified = self.cooperative and self.task_program != null and chunk == &self.task_program.?.chunk;
+    const verification_started = self.metrics.now(self.host_io);
+    if (!verified) chunk.verifyWithAllocator(self.allocator) catch |err| return if (err == error.OutOfMemory) error.OutOfMemory else error.InvalidInstruction;
+    self.metrics.verification_ns += self.metrics.now(self.host_io) - verification_started;
     if (reset) {
+        @import("tasks.zig").closeScope(self);
         for (self.gc_roots.items) |root| self.collector.removeRoot(root);
         self.gc_roots.clearRetainingCapacity();
         state_helpers.clearFrames(self);
@@ -71,15 +77,16 @@ pub fn executeInternal(self: anytype, chunk: *const bytecode.Chunk, machine: ?*a
     // execution only needs periodic polling. Debug sessions retain
     // instruction-precise polling for breakpoints and stepping.
     var safepoint_ticks: u16 = 0;
+    var quantum: usize = 0;
     while (ip < chunk.code.items.len) : (ip += 1) {
+        if (self.cooperative and try task_suspension.poll(self, &ip, next_ip, &quantum)) return .{ .suspended = Value.nil() };
         const collection_ready = self.collector.stress or
             self.collector.live_allocations >= self.collector.collection_threshold;
         if (self.debugger != null or (safepoint_ticks == 0 and collection_ready)) {
             try object_storage.refreshRoots(self);
             self.collector.safepoint() catch return error.OutOfMemory;
-            // Allocation sites perform an immediate safepoint. A longer
-            // polling interval keeps allocation-free numeric loops from
-            // repeatedly rebuilding the full root set.
+            // Allocation sites perform immediate safepoints; numeric loops
+            // avoid repeatedly rebuilding the full root set.
             safepoint_ticks = 4095;
         } else if (safepoint_ticks > 0) {
             safepoint_ticks -= 1;
@@ -89,8 +96,10 @@ pub fn executeInternal(self: anytype, chunk: *const bytecode.Chunk, machine: ?*a
         self.fault_ip = ip;
         if (self.trace_count > 0) self.trace[self.trace_count - 1].instruction = ip;
         const instruction = chunk.code.items[ip];
+        self.metrics.record();
         const instruction_result: RuntimeError!void = blk: {
             switch (instruction.op) {
+                .host_call => if (@import("host_calls.zig").invoke(self, instruction.operand, ip, next_ip) catch |err| break :blk err) return .{ .suspended = Value.nil() },
                 .halt => {
                     const value = if (self.stack_top == 0) Value.nil() else self.stack[self.stack_top - 1];
                     if (machine) |state| state.complete(value) catch |err| return machineError(err);
@@ -156,28 +165,19 @@ pub fn executeInternal(self: anytype, chunk: *const bytecode.Chunk, machine: ?*a
                 .box_dynamic => {},
                 .unbox_integer, .guard_integer => try stack_operations.guardInteger(RuntimeError, self),
                 .sleep => {
-                    if (self.stack_top == 0) return error.StackUnderflow;
-                    const duration = self.stack[self.stack_top - 1];
-                    if (!duration.isInt() or duration.asInt() < 0) return error.TypeGuardFailed;
-                    const milliseconds: u64 = @intCast(duration.asInt());
-                    try sleepMilliseconds(milliseconds);
-                    self.stack[self.stack_top - 1] = Value.nil();
+                    if (task_suspension.sleep(self, ip, next_ip) catch |err| break :blk err) return .{ .suspended = Value.nil() };
                 },
                 .spawn => {
                     if (instruction.operand < 0) return error.InvalidInstruction;
                     const arity: usize = @intCast(instruction.operand);
                     if (self.stack_top < arity + 1) return error.StackUnderflow;
                     const callee = self.stack[self.stack_top - arity - 1];
-                    if (callee.handleKind() != .function) return error.InvalidFunction;
-                    const function_index = callee.handleIndex() orelse return error.InvalidFunction;
-                    const future = try self.spawnTask(chunk, function_index, self.stack[self.stack_top - arity .. self.stack_top]);
+                    const future = @import("tasks.zig").spawnCallable(self, chunk, callee, self.stack[self.stack_top - arity .. self.stack_top]) catch |err| break :blk err;
                     self.stack_top -= arity + 1;
                     try state_helpers.push(self, future);
                 },
                 .wait => {
-                    if (self.stack_top == 0) return error.StackUnderflow;
-                    const result = try self.waitTask(self.stack[self.stack_top - 1]);
-                    self.stack[self.stack_top - 1] = result;
+                    if (task_suspension.wait(self, ip, next_ip) catch |err| break :blk err) return .{ .suspended = Value.nil() };
                 },
                 .make_array, .make_tuple, .make_set => {
                     try construction.collection(RuntimeError, self, instruction.operand, instruction.op == .make_tuple, instruction.op == .make_set);

@@ -175,6 +175,11 @@ pub const Chunk = struct {
     pub fn verify(self: *const Chunk) VerifyError!void {
         return verifier.verify(self);
     }
+
+    /// Scratch storage belongs to the caller, never to a shared compiler arena.
+    pub fn verifyWithAllocator(self: *const Chunk, allocator: std.mem.Allocator) VerifyError!void {
+        return verifier.verifyWithAllocator(self, allocator);
+    }
 };
 
 test "packed instructions round-trip signed operands" {

@@ -45,7 +45,7 @@ as a complete implementation, rather than introducing another subset selector.
 | `src/vm` | Execution, frames, values, objects, collections, faults | Handle ownership and language protocols need further work |
 | `src/memory` | Managed allocation, roots, mark/sweep collection | Non-moving collector with indexed allocation lookup and adaptive live-set thresholds |
 | `src/concurrency` | Bounded workers, completion events, channels, state metadata | OS-thread tasks, not transparent async I/O |
-| `src/modules` | Resolution, dependency graph, interface/cache artifacts | CLI execution does not yet preserve separate modules |
+| `src/modules` | Resolution, dependency graph, interface/cache artifacts | Whole-program AST linking; no independent binary compilation |
 | `src/backend` | Backend contracts and native experiment | Native emitter handles an x86-64 constant-return shape only |
 | `src/lsp`, `src/debug` | Editor/debugger infrastructure | Not complete production integrations |
 
@@ -71,6 +71,8 @@ A spawned function runs in a child VM using a thread-safe allocator. Arguments
 and results currently support scalar values only. VM-local object handles are
 rejected instead of being interpreted in another heap. Completion preserves the
 runtime error identity; structured exception payload transfer remains unfinished.
+Bytecode verification uses caller-owned scratch allocations so workers never
+allocate through the shared compiler chunk's allocator.
 
 Ordinary waits and sleep can block an OS thread. Futures with timeouts use a
 monotonic deadline and recheck it after spurious wakeups. Cancellation metadata

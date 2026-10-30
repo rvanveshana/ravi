@@ -5,3 +5,10 @@ zig-cache/
 .zig-global*/
 .zig-local*/
 .idea/
+
+# Local experiments and temporary publication drafts belong outside source.
+/.scratch/
+/*.tmp
+/*.bak
+/*.log
+

@@ -16,9 +16,9 @@ records completed work; [language design](language-design.md) owns the target co
 | 5. Performance | Typed specialization, reduced allocation, general native backend | VM/native conformance, target ABI checks, and reproducible performance results |
 | 6. Release quality | Packages/lockfiles, editor/debugger integrations, extended libraries, versioned handbook | Clean installation, platform matrix, fuzzing, soak tests, and documentation examples pass |
 
-Stage 0 remains open because the full suite has unresolved failures. Documentation
-cleanup does not close those implementation defects. Stage 1 must not add another
-compiler path to work around them.
+The recorded baseline suite passes; Stage 0 remains open until its remaining
+acceptance criteria have evidence. Stage 1 must preserve the single executable
+compiler pipeline. See the implementation status for current validation results.
 
 ## Standard-library delivery
 

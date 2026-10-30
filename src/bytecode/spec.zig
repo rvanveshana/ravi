@@ -12,7 +12,7 @@ pub const Effect = struct {
 pub fn effect(op: OpCode) Effect {
     return switch (op) {
         .halt => .{ .minimum_stack = 0, .stack_delta = 0, .terminates = true },
-        .suspend_point => .{ .minimum_stack = 0, .stack_delta = 0 },
+        .suspend_point, .host_call => .{ .minimum_stack = 0, .stack_delta = 0 },
         .constant, .make_string, .make_function, .make_instance, .load_local, .load_local_ref, .load_capture, .load_capture_ref, .true_value, .false_value, .none_value, .make_float => .{ .minimum_stack = 0, .stack_delta = 1 },
         .get_property => .{ .minimum_stack = 1, .stack_delta = 0 },
         .set_property => .{ .minimum_stack = 2, .stack_delta = -2 },

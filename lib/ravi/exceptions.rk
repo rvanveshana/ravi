@@ -161,3 +161,20 @@ kriya ParikshaneDosha():
     kodu _exception("ValidationError")
 kriya ValidationError():
     kodu ParikshaneDosha()
+
+kriya CancelledError():
+    kodu _exception("CancelledError")
+kriya ChannelClosedError():
+    kodu _exception("ChannelClosedError")
+kriya ResourceLimitError():
+    kodu _exception("ResourceLimitError")
+kriya UnicodeError():
+    kodu _exception("UnicodeError")
+kriya JsonError():
+    kodu _exception("JsonError")
+kriya IoError():
+    kodu _exception("IoError")
+kriya AssertionError():
+    kodu _exception("AssertionError")
+kriya TimeoutError():
+    kodu _exception("TimeoutError")

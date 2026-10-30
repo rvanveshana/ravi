@@ -1,0 +1,22 @@
+name: Usage or contributor question
+description: Ask about supported behavior, setup, or how to start contributing
+title: "[Question]: "
+labels: [question]
+body:
+  - type: textarea
+    id: question
+    attributes:
+      label: Question
+      description: Describe what you want to do and where you need help.
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: What have you tried?
+      description: Link relevant documentation, issues, commands, or a small program.
+  - type: input
+    id: environment
+    attributes:
+      label: Environment, if relevant
+      description: OS, Zig version, Ravi revision, and source profile.

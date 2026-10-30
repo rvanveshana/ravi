@@ -80,3 +80,22 @@ Examples must identify their profile, use supported syntax, and show output wher
 useful. Unimplemented APIs belong in a planned-feature note, not a runnable block.
 Use relative repository links and avoid local machine paths. API documentation
 should state arguments, results, mutation, errors, and relevant resource limits.
+
+## Issues, labels, and review
+
+Use the [GitHub issue chooser](https://github.com/rvanveshana/ravi/issues/new/choose)
+for bugs, features, documentation, performance, concurrency, library proposals,
+questions, or a scoped contributor task. Each task should identify its outcome,
+starting files, boundaries, and acceptance criteria. Maintainers add `good first
+issue` when a task is suitable for someone new to the repository.
+
+[.github/labels.yml](../.github/labels.yml) defines category and priority labels.
+Maintainers can import these with a label-sync tool while preserving unrelated
+labels. Keep issue-form label names consistent with that file. Labels describe
+scope and triage; their presence does not promise an implementation date.
+
+The [PR template](../.github/PULL_REQUEST_TEMPLATE.md) asks for the concrete
+behavior change, related issue, relevant commands/results, documentation, source
+profile parity, and runtime/API concerns. GitHub PR templates use Markdown;
+GitHub's YAML forms apply to issues. Review discussion belongs in the issue/PR
+so other contributors can understand the agreed scope and decisions.

@@ -27,3 +27,49 @@ kriya bhagisu(left, right):
 
 kriya answer():
     kodu 41
+
+# Bounded integer arithmetic keeps the VM's overflow errors.
+kriya abs(value):
+    adre value < 0:
+        kodu 0 - value
+    kodu value
+
+kriya nirapeksha(value):
+    kodu abs(value)
+
+kriya minimum(left, right):
+    adre left < right:
+        kodu left
+    kodu right
+
+kriya kanishta(left, right):
+    kodu minimum(left, right)
+
+kriya maximum(left, right):
+    adre left > right:
+        kodu left
+    kodu right
+
+kriya garishtha(left, right):
+    kodu maximum(left, right)
+
+kriya clamp(value, lower, upper):
+    adre lower > upper:
+        yese "clamp: lower bound exceeds upper bound"
+    kodu minimum(maximum(value, lower), upper)
+
+kriya miti(value, lower, upper):
+    kodu clamp(value, lower, upper)
+
+# Euclid's algorithm: logarithmic work, no temporary collections.
+kriya gcd(left: int, right: int):
+    left = abs(left)
+    right = abs(right)
+    vargu right != 0:
+        remainder = left % right
+        left = right
+        right = remainder
+    kodu left
+
+kriya samanya_bhajaka(left: int, right: int):
+    kodu gcd(left, right)

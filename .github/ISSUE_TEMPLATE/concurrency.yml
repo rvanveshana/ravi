@@ -1,0 +1,47 @@
+name: Async or concurrency report
+description: Report task, thread, channel, cancellation, or shutdown behavior
+title: "[Concurrency]: "
+labels: [concurrency, triage]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Actual and expected behavior
+      description: Describe a hang, failure, race, resource growth, or incorrect result.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal program and command
+      description: Include task counts, worker configuration, channel capacity, deadlines, and cancellation/close sequence where relevant.
+      render: shell
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: Ravi commit, Zig version, optimization mode, OS, architecture, and CPU count.
+    validations:
+      required: true
+  - type: dropdown
+    id: frequency
+    attributes:
+      label: Reproduction frequency
+      options:
+        - Every run
+        - Intermittent
+        - Observed once
+  - type: textarea
+    id: resources
+    attributes:
+      label: Resource and timing observations
+      description: Include duration, thread count, CPU/memory, logs, and whether cancellation or shutdown completes. Estimates are welcome if identified.
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Submission checks
+      options:
+        - label: I searched existing issues and read the task-runtime contracts.
+          required: true

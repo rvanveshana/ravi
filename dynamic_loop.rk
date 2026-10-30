@@ -1,8 +1,0 @@
-# Dynamic-bound workload. This intentionally exercises the generic tagged
-# value path and is used as a correctness/performance comparison to typed_loop.
-limit = 50
-prati i alli shreni(1, limit):
-    prati j alli shreni(1, limit):
-        prati k alli shreni(1, limit):
-            munde
-mudrisu("dynamic-done")

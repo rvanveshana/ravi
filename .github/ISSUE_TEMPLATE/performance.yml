@@ -1,0 +1,55 @@
+name: Performance report
+description: Report a reproducible latency, throughput, CPU, or memory problem
+title: "[Performance]: "
+labels: [performance, triage]
+body:
+  - type: markdown
+    attributes:
+      value: Include a reproducible workload and correctness checks. Clearly distinguish measurements from estimates.
+  - type: textarea
+    id: workload
+    attributes:
+      label: Workload and reproduction
+      description: Provide a small program, inputs, exact commands, and expected output.
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: measurements
+    attributes:
+      label: Measurements
+      description: Include sample count, warmup, median/p95 or range, CPU/memory/thread observations, and baseline if available.
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: Ravi commit, Zig version, optimization mode, OS, CPU, and memory.
+    validations:
+      required: true
+  - type: dropdown
+    id: phase
+    attributes:
+      label: Affected phase
+      options:
+        - Unknown / whole process
+        - Loading / compilation / verification
+        - VM execution
+        - Allocation / GC
+        - Tasks / channels / I/O
+  - type: textarea
+    id: profile
+    attributes:
+      label: Profile output and observations
+      description: Include `ravi run --profile file.rk` output if useful. Worker metrics are not yet fully aggregated.
+      render: shell
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Submission checks
+      options:
+        - label: I searched existing performance issues.
+          required: true
+        - label: I checked that the measured workload produces the expected result.
+          required: true

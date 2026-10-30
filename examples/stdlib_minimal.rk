@@ -1,0 +1,23 @@
+ravi.math inda abs, nirapeksha, minimum, kanishta, maximum, garishtha, clamp, miti, gcd, samanya_bhajaka tago
+ravi.collections inda sum, motta, all, ellavu, any, yavudadaru tago
+
+adre abs(-42) != 42 athva abs(0) != 0 athva nirapeksha(9) != 9:
+    yese "absolute value failed"
+adre minimum(2, 3) != 2 athva kanishta(3, 2) != 2:
+    yese "minimum failed"
+adre maximum(2, 3) != 3 athva garishtha(3, 2) != 3:
+    yese "maximum failed"
+adre clamp(-1, 0, 10) != 0 athva clamp(11, 0, 10) != 10 athva miti(5, 0, 10) != 5:
+    yese "clamp failed"
+adre gcd(-48, 18) != 6 athva gcd(0, 0) != 0 athva samanya_bhajaka(7, 0) != 7:
+    yese "gcd failed"
+adre sum([]) != 0 athva sum([], 8) != 8 athva motta([1, 2, 3], 4) != 10:
+    yese "sum failed"
+adre alla all([]) athva alla ellavu([1, 2]) athva all([1, 0, 3]):
+    yese "all failed"
+adre any([]) athva any([0, false]) athva alla yavudadaru([0, 2]):
+    yese "any failed"
+# Predicates accept mixed scalar and handle values under Ravi truth rules.
+adre all([false, [1]]) athva alla any([true, [1]]):
+    yese "short circuit failed"
+mudrisu("stdlib_minimal: PASS")

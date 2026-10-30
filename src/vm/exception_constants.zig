@@ -36,8 +36,19 @@ pub const raised_exception_error = ExceptionInfo{ .code = 599, .name = "RaisedEx
 pub const value_error = ExceptionInfo{ .code = 400, .name = "ValueError", .message = "value is invalid" };
 pub const type_error = ExceptionInfo{ .code = 401, .name = "TypeError", .message = "value has the wrong type for this operation" };
 pub const validation_error = ExceptionInfo{ .code = 402, .name = "ValidationError", .message = "validation failed" };
+const additional = [_]ExceptionInfo{
+    .{ .code = 600, .name = "CancelledError", .message = "task cancellation requested" },
+    .{ .code = 601, .name = "ChannelClosedError", .message = "channel is closed and cannot complete this operation" },
+    .{ .code = 602, .name = "ResourceLimitError", .message = "operation exceeds its resource limit" },
+    .{ .code = 603, .name = "UnicodeError", .message = "invalid UTF-8 data" },
+    .{ .code = 604, .name = "JsonError", .message = "invalid or unsupported JSON value" },
+    .{ .code = 605, .name = "IoError", .message = "file or environment operation failed" },
+    .{ .code = 606, .name = "AssertionError", .message = "assertion failed" },
+    .{ .code = 607, .name = "TimeoutError", .message = "operation deadline expired" },
+};
 
 pub fn fromCode(code: i64) ?ExceptionInfo {
+    for (additional) |info| if (info.code == code) return info;
     inline for (.{
         base_exception,        exception,              runtime_error,             arithmetic_error,          zero_division_error,
         overflow_error,        lookup_error,           index_error,               key_error,                 name_error,
@@ -52,6 +63,7 @@ pub fn fromCode(code: i64) ?ExceptionInfo {
 }
 
 pub fn fromName(name: []const u8) ?ExceptionInfo {
+    for (additional) |info| if (std.mem.eql(u8, info.name, name)) return info;
     inline for (.{
         base_exception,        exception,              runtime_error,             arithmetic_error,          zero_division_error,
         overflow_error,        lookup_error,           index_error,               key_error,                 name_error,
@@ -67,6 +79,16 @@ pub fn fromName(name: []const u8) ?ExceptionInfo {
 
 pub fn fromRuntimeError(err: anyerror) ?ExceptionInfo {
     return switch (err) {
+        error.Cancelled => additional[0],
+        error.ChannelClosed => additional[1],
+        error.TransferLimit, error.TaskLimit => additional[2],
+        error.InvalidUtf8 => additional[3],
+        error.JsonError => additional[4],
+        error.IoError => additional[5],
+        error.AssertionFailed => additional[6],
+        error.TimedOut => additional[7],
+        error.UnsupportedTransfer => type_error,
+        error.TaskQueueFull, error.SchedulerStopped => runtime_error,
         error.OutOfMemory => out_of_memory_error,
         error.StackOverflow => stack_overflow_error,
         error.StackUnderflow => stack_underflow_error,

@@ -1,0 +1,7 @@
+kriya assert_equal(actual, expected):
+    kodu __ravi_assert_equal(actual, expected)
+kriya assert_true(value):
+    adre alla value:
+        yese __ravi_exception("AssertionError")
+kriya samanave(actual, expected):
+    kodu assert_equal(actual, expected)

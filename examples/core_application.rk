@@ -1,0 +1,27 @@
+ravi.files inda read_text, write_text tago
+ravi.paths inda join, basename tago
+ravi.json inda parse, encode tago
+ravi.bytes inda encode_utf8, decode_utf8 tago
+ravi.time inda monotonic_ms, elapsed_ms tago
+ravi.testing inda assert_equal, assert_true tago
+
+started = monotonic_ms()
+path = join("zig-out", "ravi-core-example.json")
+assert_equal(basename(path), "ravi-core-example.json")
+document = {"name": "ರವಿ", "numbers": [1, 2, 3], "active": true, "missing": none}
+write_text(path, encode(document))
+loaded = parse(read_text(path))
+assert_equal(loaded["name"], "ರವಿ")
+assert_equal(loaded["numbers"][2], 3)
+assert_equal(loaded["active"], true)
+assert_equal(decode_utf8(encode_utf8("ಕನ್ನಡ")), "ಕನ್ನಡ")
+assert_true(elapsed_ms(started) >= 0)
+
+# A spawned file operation parks its VM while a bounded I/O worker reads.
+kriya count_numbers(file_path):
+    data = parse(read_text(file_path))
+    kodu data["numbers"].gatra()
+
+task = horabidu count_numbers(path)
+assert_equal(kaayu task, 3)
+mudrisu("core_application: PASS")

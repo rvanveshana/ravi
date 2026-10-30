@@ -1,0 +1,39 @@
+name: Standard library proposal
+description: Propose a small library API with clear behavior and resource contracts
+title: "[Library]: "
+labels: [standard library, discussion]
+body:
+  - type: textarea
+    id: use_case
+    attributes:
+      label: Application need
+      description: Explain the concrete use case and why current APIs are insufficient.
+    validations:
+      required: true
+  - type: textarea
+    id: api
+    attributes:
+      label: Proposed API and example
+      description: Include module, arguments, return values, Kannada names/aliases, and English aliases tied to the same implementation.
+      render: ravi
+    validations:
+      required: true
+  - type: textarea
+    id: contract
+    attributes:
+      label: Resource and error contract
+      description: Define mutation/copy behavior, limits, ownership, close semantics, deadlines/cancellation, and errors where applicable.
+    validations:
+      required: true
+  - type: textarea
+    id: validation
+    attributes:
+      label: Acceptance checks
+      description: Include normal cases, malformed inputs, UTF-8, allocation failure, rollback, and platform behavior that apply.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives and scope
+      description: Explain what belongs in Ravi source, what requires a host primitive, and what can remain outside the core library.

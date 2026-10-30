@@ -63,6 +63,12 @@ reports are welcome. Good first contributions include improving diagnostics,
 adding focused regression tests, clarifying the handbook, and implementing scoped
 items from the [development plan](docs/development-plan.md).
 
+Help build a fast, robust language with dynamic values, type checks, async,
+threading, and shared English/Kannada semantics. Start with the
+[issue forms](https://github.com/rvanveshana/ravi/issues/new/choose),
+[good first issues](https://github.com/rvanveshana/ravi/labels/good%20first%20issue),
+or [help wanted](https://github.com/rvanveshana/ravi/labels/help%20wanted).
+
 Before opening a pull request, read [CONTRIBUTING.md](CONTRIBUTING.md) and the
 [Code of Conduct](CODE_OF_CONDUCT.md). Please discuss substantial language-design
 changes in an issue before implementation so syntax and semantics remain coherent.

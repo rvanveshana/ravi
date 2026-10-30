@@ -11,6 +11,47 @@ const compileSource = helpers.compileSource;
 const run = helpers.run;
 const runAst = helpers.runAst;
 
+test "public host failures enter catch handlers across function calls" {
+    const source =
+        "function receive(ch):\n    return __ravi_receive_for(ch, 0)\n" ++
+        "ch = __ravi_channel(1)\nresult = 0\ntry:\n    receive(ch)\nexcept:\n    result = 7\nresult\n";
+    try std.testing.expectEqual(@as(i64, 7), try helpers.run(source, .en));
+}
+
+test "spawn copies closure cells and transfers a rich raised collection" {
+    const closure = "factor = 3\nscale = function(value: int) => value * factor\ntask = spawn scale(3)\nwait task\n";
+    try std.testing.expectEqual(@as(i64, 9), try helpers.run(closure, .en));
+    const exception =
+        "function fail():\n    raise [7, \"ಕನ್ನಡ\"]\n" ++
+        "task = spawn fail()\nresult = 0\ntry:\n    wait task\nexcept value:\n    result = value[0]\nresult\n";
+    try std.testing.expectEqual(@as(i64, 7), try helpers.run(exception, .en));
+}
+
+test "single worker cancellation runs cleanup and channel waits release workers" {
+    const source =
+        "function work(ch):\n    try:\n        __ravi_send(ch, 1)\n        sleep(60000)\n    except:\n        value = 0\n    finally:\n        __ravi_send(ch, 7)\n    return 9\n" ++
+        "ch = __ravi_channel(1)\ntask = spawn work(ch)\n__ravi_receive(ch)\n__ravi_task_cancel(task)\n__ravi_receive_for(ch, 5000) + wait task\n";
+    var chunk = try helpers.compileSource(source, .en);
+    defer chunk.deinit();
+    var vm = try vm_mod.Vm.init(std.testing.allocator);
+    defer vm.deinit();
+    vm.worker_count = 1;
+    try std.testing.expectEqual(@as(i64, 16), try vm.run(&chunk));
+}
+
+test "failed task cancels parked descendants before propagating its error" {
+    const source =
+        "function sleep_long():\n    sleep(60000)\n" ++
+        "function fail():\n    child = spawn sleep_long()\n    raise [7]\n" ++
+        "task = spawn fail()\nresult = 0\ntry:\n    __ravi_wait_for(task, 5000)\nexcept value:\n    result = value[0]\nresult\n";
+    var chunk = try helpers.compileSource(source, .en);
+    defer chunk.deinit();
+    var vm = try vm_mod.Vm.init(std.testing.allocator);
+    defer vm.deinit();
+    vm.worker_count = 1;
+    try std.testing.expectEqual(@as(i64, 7), try vm.run(&chunk));
+}
+
 test "English print uses the shared print operation" {
     // Output is an effect; print returns none in both source profiles.
     try std.testing.expectEqual(@as(i64, 0), try helpers.run("print(3)\n", .en));

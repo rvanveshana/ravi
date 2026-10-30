@@ -1,0 +1,12 @@
+# ravi: language=en
+ravi.math from abs, minimum, maximum, clamp, gcd import
+ravi.collections from sum, all, any import
+if abs(-12) != 12 or minimum(2, 3) != 2 or maximum(2, 3) != 3:
+    raise "math imports failed"
+if clamp(20, 1, 10) != 10 or gcd(48, -18) != 6:
+    raise "math algorithms failed"
+if sum([1, 2, 3], 4) != 10 or not all([]) or any([]):
+    raise "collection imports failed"
+if all([1, 0]) or not any([0, 1]):
+    raise "collection predicates failed"
+print("stdlib_minimal_en: PASS")

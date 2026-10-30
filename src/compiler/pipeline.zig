@@ -10,26 +10,43 @@ const Optimizer = @import("ravi_optimizer").Optimizer;
 
 /// One executable pipeline shared by the CLI and integration tests.
 pub const Pipeline = struct {
+    pub const Timings = struct { analysis: i96 = 0, lowering: i96 = 0, optimization: i96 = 0, verification: i96 = 0 };
     allocator: std.mem.Allocator,
+    profile_io: ?std.Io = null,
+    timings: Timings = .{},
     last_location: bytecode.SourceLocation = .{ .start_offset = 0, .end_offset = 0, .line = 1, .column = 1 },
 
     pub fn compile(self: *Pipeline, module: *const ast.Module) !bytecode.Chunk {
+        var started = self.now();
         var analyzer = Analyzer.init(self.allocator);
         defer analyzer.deinit();
         analyzer.analyzeModule(module) catch |err| {
             if (analyzer.last_span) |span| self.last_location = .{ .source_id = span.source_id, .start_offset = span.start_offset, .end_offset = span.end_offset, .line = span.line, .column = 1 };
             return err;
         };
+        self.timings.analysis += self.now() - started;
+        started = self.now();
         var compiler = Compiler.initWithLanguage(self.allocator, module.language);
         var chunk = compiler.lowerModule(module) catch |err| {
             self.last_location = compiler.last_location;
             return err;
         };
         errdefer chunk.deinit();
+        self.timings.lowering += self.now() - started;
+        started = self.now();
         try chunk.verify();
+        self.timings.verification += self.now() - started;
+        started = self.now();
         _ = try Optimizer.optimize(&chunk);
+        self.timings.optimization += self.now() - started;
+        started = self.now();
         try chunk.verify();
+        self.timings.verification += self.now() - started;
         return chunk;
+    }
+
+    fn now(self: *const Pipeline) i96 {
+        return if (self.profile_io) |io| std.Io.Clock.now(.awake, io).nanoseconds else 0;
     }
 
     pub fn compileSource(self: *Pipeline, source: []const u8, language: config.SourceLanguage) !bytecode.Chunk {

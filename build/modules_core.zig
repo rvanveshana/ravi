@@ -31,6 +31,7 @@ pub fn add(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builti
     bytecode.addImport("ravi_opcode_spec", opcode_spec);
     const verifier = b.createModule(.{ .root_source_file = b.path("src/bytecode/verifier.zig"), .target = target, .optimize = optimize });
     verifier.addImport("ravi_opcode_spec", opcode_spec);
+    verifier.addImport("ravi_config", config);
     bytecode.addImport("ravi_bytecode_verifier", verifier);
     const vm_value = b.createModule(.{ .root_source_file = b.path("src/vm/value.zig"), .target = target, .optimize = optimize });
     const vm_collections = b.createModule(.{ .root_source_file = b.path("src/vm/collections.zig"), .target = target, .optimize = optimize });

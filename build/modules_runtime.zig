@@ -9,6 +9,7 @@ pub const RuntimeModules = struct {
 pub fn add(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode, modules: core.CoreModules) RuntimeModules {
     const vm = b.createModule(.{ .root_source_file = b.path("src/vm/vm.zig"), .target = target, .optimize = optimize });
     vm.addImport("ravi_scheduler", modules.scheduler);
+    vm.addImport("ravi_config", modules.config);
     vm.addImport("ravi_async_state", modules.async_state);
     vm.addImport("ravi_vm_collections", modules.vm_collections);
     vm.addImport("ravi_vm_value", modules.vm_value);

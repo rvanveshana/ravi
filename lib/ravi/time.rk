@@ -1,0 +1,10 @@
+kriya monotonic_ms():
+    kodu __ravi_monotonic()
+kriya wall_ms():
+    kodu __ravi_wall_time()
+kriya elapsed_ms(start: int):
+    kodu monotonic_ms() - start
+kriya sleep(milliseconds: int):
+    kodu malagu(milliseconds)
+kriya samaya():
+    kodu monotonic_ms()

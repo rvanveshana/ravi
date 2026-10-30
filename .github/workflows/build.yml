@@ -37,3 +37,7 @@ jobs:
       - name: Verify CLI compilation contracts
         shell: pwsh
         run: ./tools/test_cli.ps1
+      - name: Bounded malformed-source fuzzing
+        if: matrix.optimize == 'ReleaseSafe'
+        shell: pwsh
+        run: ./tools/fuzz_source.ps1 -Cases 128

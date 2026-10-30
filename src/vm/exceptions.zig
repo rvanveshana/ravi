@@ -58,6 +58,8 @@ fn isBuiltinException(name: []const u8) bool {
         "InvalidFunctionError", "InvalidInstructionError", "StackError",           "StackUnderflowError", "StackOverflowError", "CallStackOverflowError",
         "InvalidLocalError",    "InvalidJumpError",        "CollectionError",      "CollectionFullError", "StringTooLongError", "MemoryError",
         "OutOfMemoryError",     "DebuggerPausedError",     "RaisedExceptionError", "ValueError",          "TypeError",          "ValidationError",
+        "CancelledError",       "ChannelClosedError",      "ResourceLimitError",   "UnicodeError",        "JsonError",          "IoError",
+        "AssertionError",       "TimeoutError",
     };
     for (names) |candidate| if (std.mem.eql(u8, name, candidate)) return true;
     return false;

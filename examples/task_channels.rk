@@ -1,0 +1,38 @@
+ravi.channels inda channel, send, receive, close, receive_for tago
+ravi.tasks inda cancel, release, wait_for tago
+ravi.testing inda assert_equal tago
+
+kriya producer(ch):
+    prati value alli shreni(0, 20):
+        send(ch, value)
+    close(ch)
+    kodu 20
+
+ch = channel(2)
+task = horabidu producer(ch)
+total = 0
+prati i alli shreni(0, 20):
+    total = total + receive(ch)
+assert_equal(total, 190)
+assert_equal(kaayu task, 20)
+release(task)
+
+# Copy transfer keeps mutations in a separate heap.
+kriya change(values):
+    values[0] = 99
+    kodu values
+original = [1, 2]
+changed_task = horabidu change(original)
+changed = kaayu changed_task
+assert_equal(changed[0], 99)
+assert_equal(original[0], 1)
+
+empty = channel(1)
+timed_out = false
+nodu:
+    receive_for(empty, 1)
+tappu:
+    timed_out = true
+assert_equal(timed_out, true)
+close(empty)
+mudrisu("task_channels: PASS")

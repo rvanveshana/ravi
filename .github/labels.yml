@@ -1,0 +1,65 @@
+# Desired labels. Maintainers can import with a label-sync tool.
+# Preserve unrelated live labels; this file does not automatically sync GitHub.
+- name: bug
+  color: "d73a4a"
+  description: Reproducible incorrect behavior
+- name: enhancement
+  color: "a2eeef"
+  description: New or improved behavior
+- name: documentation
+  color: "0075ca"
+  description: Handbook, API reference, examples, or contributor guidance
+- name: question
+  color: "d876e3"
+  description: Usage or development question
+- name: discussion
+  color: "c5def5"
+  description: Design proposal needing agreement
+- name: triage
+  color: "ededed"
+  description: Needs reproduction, scope, or maintainer classification
+- name: good first issue
+  color: "7057ff"
+  description: Scoped task suitable for a new contributor
+- name: help wanted
+  color: "008672"
+  description: Contributions welcome
+- name: performance
+  color: "fbca04"
+  description: Measured latency, throughput, CPU, or memory behavior
+- name: concurrency
+  color: "5319e7"
+  description: Tasks, async execution, threads, channels, or cancellation
+- name: standard library
+  color: "0e8a16"
+  description: Core module APIs and host primitives
+- name: source profiles
+  color: "1d76db"
+  description: English and Kannada vocabulary or semantic parity
+- name: compiler
+  color: "0052cc"
+  description: Lexing, parsing, analysis, lowering, or optimization
+- name: runtime
+  color: "b60205"
+  description: VM, GC, object ownership, or execution
+- name: tooling
+  color: "006b75"
+  description: CLI, formatter, debugger, or editor support
+- name: testing
+  color: "fef2c0"
+  description: Regression tests, fuzzing, allocator sweeps, or stress checks
+- name: native backend
+  color: "8b4513"
+  description: MIR lowering, ABI, machine code, or native conformance
+- name: release
+  color: "0e8a16"
+  description: CI, platforms, reproducibility, or release readiness
+- name: "priority: critical"
+  color: "b60205"
+  description: Confirmed crash, corruption, or severe resource failure
+- name: "priority: high"
+  color: "d93f0b"
+  description: Blocks important supported behavior
+- name: "priority: normal"
+  color: "fbca04"
+  description: Regular planned work

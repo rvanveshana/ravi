@@ -1,0 +1,9 @@
+# Byte buffers are integer lists with elements in 0..255.
+kriya encode_utf8(text):
+    kodu __ravi_encode_utf8(text)
+kriya sanketisu(text):
+    kodu encode_utf8(text)
+kriya decode_utf8(bytes):
+    kodu __ravi_decode_utf8(bytes)
+kriya odhisu(bytes):
+    kodu decode_utf8(bytes)

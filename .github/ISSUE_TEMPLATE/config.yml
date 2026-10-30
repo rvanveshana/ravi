@@ -1,5 +1,8 @@
 blank_issues_enabled: false
 contact_links:
+  - name: Contributor guide
+    url: https://github.com/rvanveshana/ravi/blob/main/CONTRIBUTING.md
+    about: Setup, contribution workflow, focused validation, and review expectations.
   - name: Security vulnerability
     url: https://github.com/rvanveshana/ravi/security/advisories/new
     about: Report security vulnerabilities privately. Do not open a public issue.

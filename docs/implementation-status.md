@@ -1,6 +1,6 @@
 # Implementation status
 
-Updated 2026-10-15. Ravi Kannada is an experimental development language. This page
+Updated 2026-10-30. Ravi Kannada is an experimental development language. This page
 owns capability readiness and validation evidence; target behavior belongs in the
 [language design](language-design.md).
 
@@ -14,17 +14,30 @@ owns capability readiness and validation evidence; target behavior belongs in th
 | Values and memory | NaN-boxed values, signed 48-bit integers, nonmoving tracing GC | Complete ownership/rooting and failure coverage |
 | Objects and typing | Classes, lexical scopes, scalar boundary guards, closures, import visibility | Complete object protocols and type inference |
 | Errors | Runtime identities and handler/cleanup machinery | Rich exception objects and all cleanup exits |
-| Concurrency | Bounded worker queue, monotonic waits, scalar transfer | Resumable I/O, structured tasks and object transfer |
-| Libraries | Primitive methods and small source helpers | Most application libraries; JSON/network/UI are blueprints |
+| Concurrency | Resumable task VMs, shared bounded pool, event timers, copied graphs, channels and deadlines | Complete cancellation/soak/fairness coverage; interruptible OS I/O |
+| Libraries | JSON, UTF-8 files/bytes, paths, time, task/channel lifecycle, logging/assertions/environment | Streams, networking/TLS, UI; broader platform/OOM coverage |
 | Native backend | Constant-return x86-64 prototype | General native compilation |
 | Tools | CLI, formatter, diagnostics, editor/debugger foundations | Integration and conformance |
 
 ## Recent foundation work
 
+The [2026-10-30 robustness review](robustness-review.md) records the current
+performance, async, threading, and library gaps with implementation gates.
+VM bytecode verification now uses caller-owned scratch memory, preventing
+workers from allocating through shared compiler arenas. Internal channels use
+an O(1) FIFO ring, with wraparound, close/drain, null-payload, and allocation
+failure regressions. The host Windows sleep API rejects signed tick overflow.
+Small math and collection modules add absolute value, min/max, clamp, GCD,
+sum, and all/any with aliases; both source profiles have executable examples.
+Subsequent implementation adds resumable tasks, copy transfer, public channels,
+and core application modules; see [runtime contracts](task-runtime.md).
+General native compilation, networking/UI, and release certification remain open.
+
 The build now runs test executables instead of only compiling them. Scheduler work
 replaced polling/shifting with a bounded ring queue and synchronization, introduced
 monotonic deadlines, and improved shutdown and initialization rollback. Worker
-heaps use a thread-safe allocator and reject unsupported VM-local handles.
+heaps use a thread-safe allocator; supported objects cross boundaries as copied
+graphs rather than raw VM-local handles.
 
 Other changes preserve the source profile without an English retry, repair
 construction rollback, use validated UTF-8 decoding, retain final expressions,
@@ -34,6 +47,54 @@ Source, test, build, and maintenance files have a 300-line check without exempti
 These changes are foundations, not evidence of complete language correctness.
 
 ## Validation on Windows
+
+### Subsequent task/core-library working revision
+
+The broader implementation was checked with one full ReleaseSafe run. It
+completed **122/125 build steps**, with **288/289 executed tests passing**;
+the failing compiler/VM regression exposed closure initialization resetting
+restored capture state. That bug and a nested function-reference bug were fixed.
+Follow-up used affected targets rather than repeating the full suite:
+
+- Compiler/VM runtime group: **21/21 passed**, including closure and raised
+  payload transfer, cancellation cleanup, and failed-task descendant shutdown.
+- VM: **25/25 passed**, including 2,000 parked timers on one worker, 5,000
+  wait/release cycles, cyclic/aliased transfer and OOM rollback, JSON/UTF-8,
+  and channel deadlines/close/drain. Scheduler **14/14** passed earlier in
+  ReleaseSafe; the final targeted run reused that passing cache.
+- Compiler pipeline **4/4** and module integration **7/7** passed.
+- ReleaseSafe Windows executable: CLI **27/27**, examples **46/46** passed.
+- Bounded malformed-source fuzz: **128 deterministic cases**, no crash or
+  timeout; seed `20261030`. This is not sustained fuzzing.
+- Contribution metadata: **8 issue forms**, **21 label definitions**, issue
+  configuration, and workflow YAML parsed and checked for structure/references.
+- Formatting, maintained-file size budget, and whitespace checks passed.
+
+The full suite was not rerun after these corrections. The earlier full-suite
+results below remain historical; they do not certify the newer working revision.
+
+A Linux x86-64 ReleaseSafe executable was cross-built with the pinned toolchain
+and executed under Ubuntu 24.04 WSL. Core-application, task-channel, and async
+examples passed. This exposed and fixed a Linux sleep API incompatibility.
+Linux unit/CLI matrices, extended concurrency soak/CPU measurements, general
+native compilation, and networking/TLS remain acceptance gates.
+
+### Earlier review validation
+
+Validated the 2026-10-30 review changes on the same pinned toolchain:
+
+- Full Debug and ReleaseSafe suites: **125/125 build steps succeeded** in both
+  modes. The final runs executed 182 and 201 tests respectively; other tests
+  used cached passing results, so these counts are not the suite inventory.
+- Focused worker/bytecode checks: **19/19 tests passed** in Debug, including
+  the parent-allocator isolation regression. Channel and compiler/VM checks
+  passed in ReleaseSafe, including ring edge cases and host sleep overflow.
+- ReleaseSafe executable built successfully; CLI regressions **27/27 passed**,
+  executable examples **44/44 passed**, including both new library profiles.
+- Formatting, maintained-file size budget, and whitespace checks passed.
+
+No benchmark speedup or non-Windows runtime certification is claimed by this
+review. The older evidence below remains historical validation context.
 
 Validated on 2026-10-15 with Zig `0.17.0-dev.1415+64dfaa568`:
 

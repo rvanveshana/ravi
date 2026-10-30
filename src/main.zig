@@ -44,6 +44,7 @@ pub fn main(init: std.process.Init) !void {
     var path: ?[]const u8 = null;
     var language_override: ?config.SourceLanguage = null;
     var diagnostic_format: cli_diagnostics.DiagnosticFormat = .human;
+    var profile = @import("profiling.zig").Profile{ .io = init.io };
     if (std.mem.eql(u8, first_arg, "check") or std.mem.eql(u8, first_arg, "run") or std.mem.eql(u8, first_arg, "trace") or std.mem.eql(u8, first_arg, "tokens") or std.mem.eql(u8, first_arg, "bytecode") or std.mem.eql(u8, first_arg, "fmt") or std.mem.eql(u8, first_arg, "fmt-check")) {
         mode = first_arg;
     } else if (std.mem.eql(u8, first_arg, "--lang")) {
@@ -78,9 +79,13 @@ pub fn main(init: std.process.Init) !void {
                 std.debug.print("unknown diagnostic format: {s}\n", .{name});
                 std.process.exit(2);
             };
+        } else if (std.mem.eql(u8, argument, "--profile")) {
+            profile.enabled = true;
         } else if (path == null) path = argument;
     }
+    profile.begin();
     const loaded_source = if (path) |file_path| try std.Io.Dir.cwd().readFileAlloc(init.io, file_path, collector.allocator(), .limited(16 * 1024 * 1024)) else sample;
+    profile.end(.load);
     var source_manager = SourceManager.init(collector.allocator());
     defer source_manager.deinit();
     const source_id = try source_manager.add(path orelse "<sample>", loaded_source);
@@ -102,16 +107,19 @@ pub fn main(init: std.process.Init) !void {
         std.debug.print("language header error: {s}\n", .{@errorName(err)});
         std.process.exit(1);
     }) orelse .kn;
+    profile.begin();
     var lexer = try Lexer.initWithLanguage(collector.allocator(), source, language);
     defer lexer.deinit();
     const tokens = lexer.tokenize() catch |err| {
         cli_diagnostics.print(collector.allocator(), diagnostic_format, managed_source.name, source, "RAVI-LEX-001", @errorName(err), .{ .start_offset = lexer.error_offset, .end_offset = @min(lexer.error_offset + 1, source.len), .line = lexer.error_line, .column = lexer.error_column });
         std.process.exit(1);
     };
+    profile.end(.lex);
     if (std.mem.eql(u8, mode, "tokens")) {
         for (tokens) |token| std.debug.print("{d}:{d} {s} {s}\n", .{ token.line, token.column, @tagName(token.kind), token.lexeme });
         return;
     }
+    profile.begin();
     var parser = Parser.initWithLanguage(collector.allocator(), tokens, language);
     var module = parser.parseRecovering() catch |err| {
         const error_token = tokens[@min(parser.index, tokens.len - 1)];
@@ -119,6 +127,7 @@ pub fn main(init: std.process.Init) !void {
         std.process.exit(1);
     };
     defer module.deinit();
+    profile.end(.parse);
     if (module.diagnostics.items.len != 0) {
         for (module.diagnostics.items) |diagnostic| {
             const token = if (diagnostic.span.first < tokens.len) tokens[diagnostic.span.first] else tokens[tokens.len - 1];
@@ -142,6 +151,7 @@ pub fn main(init: std.process.Init) !void {
     var linked: ?ast.Module = null;
     defer if (linked) |*value| value.deinit();
     if (path) |file_path| {
+        profile.begin();
         try loader.addSearchPath("lib");
         const order = loader.load(file_path) catch |err| {
             const span = loader.error_span;
@@ -157,8 +167,10 @@ pub fn main(init: std.process.Init) !void {
             cli_diagnostics.print(collector.allocator(), diagnostic_format, file_path, source, "RAVI-MODULE-002", @errorName(err), .{ .start_offset = 0, .end_offset = 0, .line = 1, .column = 1 });
             std.process.exit(1);
         };
+        profile.end(.link);
     }
-    var pipeline = Pipeline{ .allocator = collector.allocator() };
+    profile.begin();
+    var pipeline = Pipeline{ .allocator = collector.allocator(), .profile_io = if (profile.enabled) init.io else null };
     var chunk = pipeline.compile(if (linked) |*value| value else &module) catch |err| {
         const location = pipeline.last_location;
         const origin = source_manager.get(@enumFromInt(location.source_id)) orelse managed_source;
@@ -166,6 +178,7 @@ pub fn main(init: std.process.Init) !void {
         std.process.exit(1);
     };
     defer chunk.deinit();
+    profile.end(.compile);
     if (std.mem.eql(u8, mode, "check")) {
         std.debug.print("valid Ravi module: {d} syntax nodes\n", .{module.statements.items.len});
         return;
@@ -181,7 +194,12 @@ pub fn main(init: std.process.Init) !void {
             std.debug.print("--- execution ---\n", .{});
         }
         var vm = try Vm.init(std.heap.page_allocator);
+        vm.host_io = init.io;
+        vm.environ = init.minimal.environ;
+        vm.metrics.enabled = profile.enabled;
+        vm.collector.profile_io = if (profile.enabled) init.io else null;
         defer vm.deinit();
+        profile.begin();
         const result = vm.run(&chunk) catch |err| {
             const location: @import("ravi_bytecode").SourceLocation = if (vm.fault_ip < chunk.source_map.items.len) chunk.source_map.items[vm.fault_ip] else .{ .start_offset = 0, .end_offset = 0, .line = 1, .column = 1 };
             var exception_message_buffer: [256]u8 = undefined;
@@ -198,6 +216,8 @@ pub fn main(init: std.process.Init) !void {
             }
             std.process.exit(1);
         };
+        profile.end(.execute);
+        profile.report(&vm, pipeline.timings);
         if (!vm.pub_printed) std.debug.print("{d}\n", .{result});
         return;
     }
@@ -221,6 +241,7 @@ fn printHelp() void {
         \\Options:
         \\  --lang kn|en  Override the source language profile
         \\  --diagnostic-format human|compact|json
+        \\  --profile    Report phase timings and root VM/scheduler counters
         \\  -h, --help    Show this help
         \\  -V, --version Show the compiler version
         \\

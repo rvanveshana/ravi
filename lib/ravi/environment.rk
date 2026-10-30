@@ -1,0 +1,4 @@
+kriya get(name):
+    kodu __ravi_env(name)
+kriya padeyiri(name):
+    kodu get(name)

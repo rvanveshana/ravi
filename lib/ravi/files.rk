@@ -1,0 +1,9 @@
+# UTF-8 text, at most 8 MiB per operation; host code always closes files.
+kriya read_text(path):
+    kodu __ravi_read_text(path)
+kriya odu(path):
+    kodu read_text(path)
+kriya write_text(path, contents):
+    kodu __ravi_write_text(path, contents)
+kriya bare(path, contents):
+    kodu write_text(path, contents)

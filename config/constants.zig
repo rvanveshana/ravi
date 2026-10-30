@@ -9,6 +9,52 @@ pub const spaces_per_indent: usize = 4;
 pub const tab_width: usize = 4;
 pub const max_identifier_bytes: usize = 256;
 pub const max_string_bytes: usize = 16 * 1024 * 1024;
+pub const HostBuiltin = enum(u8) {
+    task_cancel,
+    task_release,
+    task_done,
+    channel_create,
+    channel_send,
+    channel_recv,
+    channel_close,
+    read_text,
+    write_text,
+    path_join,
+    path_basename,
+    path_dirname,
+    clock_mono,
+    clock_wall,
+    json_encode,
+    json_decode,
+    bytes_encode,
+    bytes_decode,
+    log,
+    assert_equal,
+    env_get,
+    task_wait_timeout,
+    channel_send_timeout,
+    channel_recv_timeout,
+};
+pub const HostSpec = struct { name: []const u8, arguments: u8, blocking: bool = false };
+pub const host_builtins = [_]HostSpec{
+    .{ .name = "__ravi_task_cancel", .arguments = 1 },   .{ .name = "__ravi_task_release", .arguments = 1 },                .{ .name = "__ravi_task_done", .arguments = 1 },
+    .{ .name = "__ravi_channel", .arguments = 1 },       .{ .name = "__ravi_send", .arguments = 2 },                        .{ .name = "__ravi_receive", .arguments = 1 },
+    .{ .name = "__ravi_close_channel", .arguments = 1 }, .{ .name = "__ravi_read_text", .arguments = 1, .blocking = true }, .{ .name = "__ravi_write_text", .arguments = 2, .blocking = true },
+    .{ .name = "__ravi_path_join", .arguments = 2 },     .{ .name = "__ravi_basename", .arguments = 1 },                    .{ .name = "__ravi_dirname", .arguments = 1 },
+    .{ .name = "__ravi_monotonic", .arguments = 0 },     .{ .name = "__ravi_wall_time", .arguments = 0 },                   .{ .name = "__ravi_json_encode", .arguments = 1 },
+    .{ .name = "__ravi_json_decode", .arguments = 1 },   .{ .name = "__ravi_encode_utf8", .arguments = 1 },                 .{ .name = "__ravi_decode_utf8", .arguments = 1 },
+    .{ .name = "__ravi_log", .arguments = 2 },           .{ .name = "__ravi_assert_equal", .arguments = 2 },                .{ .name = "__ravi_env", .arguments = 1, .blocking = true },
+    .{ .name = "__ravi_wait_for", .arguments = 2 },      .{ .name = "__ravi_send_for", .arguments = 3 },                    .{ .name = "__ravi_receive_for", .arguments = 2 },
+};
+pub fn hostBuiltin(name: []const u8) ?HostBuiltin {
+    for (host_builtins, 0..) |spec, id| if (std.mem.eql(u8, name, spec.name)) return @enumFromInt(id);
+    return null;
+}
+
+comptime {
+    if (host_builtins.len != @typeInfo(HostBuiltin).@"enum".field_names.len)
+        @compileError("host builtin descriptors must match the opcode registry");
+}
 
 pub const Keyword = struct {
     spelling: []const u8,

@@ -1,0 +1,40 @@
+name: Scoped contributor task
+description: Define a concrete contribution with boundaries and acceptance criteria
+title: "[Task]: "
+labels: [help wanted, triage]
+body:
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Problem and intended outcome
+      description: Explain the observable improvement for users or contributors.
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope and starting points
+      description: Link relevant files, design contracts, and issues. State boundaries and prerequisites.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: List concrete behavior, relevant tests/examples, documentation, and compatibility requirements.
+    validations:
+      required: true
+  - type: dropdown
+    id: experience
+    attributes:
+      label: Suggested experience
+      options:
+        - Needs maintainer assessment
+        - Beginner / documentation or examples
+        - Familiar with Zig or Ravi
+        - Compiler / runtime / concurrency experience
+  - type: textarea
+    id: support
+    attributes:
+      label: Contributor support
+      description: Explain how to ask questions and whether anyone is available to guide the work. Maintainers can add good first issue after scoping.

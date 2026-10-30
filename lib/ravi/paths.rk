@@ -1,0 +1,12 @@
+kriya join(left, right):
+    kodu __ravi_path_join(left, right)
+kriya serisu(left, right):
+    kodu join(left, right)
+kriya basename(path):
+    kodu __ravi_basename(path)
+kriya hesaru(path):
+    kodu basename(path)
+kriya dirname(path):
+    kodu __ravi_dirname(path)
+kriya koshtha(path):
+    kodu dirname(path)

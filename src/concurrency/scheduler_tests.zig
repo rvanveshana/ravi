@@ -138,3 +138,46 @@ test "future terminal transition is first-writer-wins" {
     try std.testing.expectEqual(AwaitStatus.cancelled, (try future.awaitTimeout(std.testing.io, 0)).status);
     try std.testing.expect(future.await(std.testing.io) == null);
 }
+
+test "channel ring wraps and drains after close including null payloads" {
+    var channel = Channel.init(std.testing.allocator, 3);
+    defer channel.deinit();
+    var payloads = [_]u8{ 1, 2, 3, 4 };
+    try std.testing.expectEqual(ReceiveResult.empty, channel.receiveState());
+    try channel.send(&payloads[0]);
+    try channel.send(&payloads[1]);
+    try channel.send(null);
+    try std.testing.expect(channel.receive() == @as(*anyopaque, @ptrCast(&payloads[0])));
+    try channel.send(&payloads[2]);
+    try std.testing.expect(channel.receive() == @as(*anyopaque, @ptrCast(&payloads[1])));
+    try channel.send(&payloads[3]);
+    channel.close();
+    try std.testing.expectError(error.Closed, channel.send(null));
+    const result = channel.receiveState();
+    try std.testing.expect(result == .value);
+    try std.testing.expect(result.value == null);
+    try std.testing.expect(channel.receive() == @as(*anyopaque, @ptrCast(&payloads[2])));
+    try std.testing.expect(channel.receive() == @as(*anyopaque, @ptrCast(&payloads[3])));
+    try std.testing.expectEqual(ReceiveResult.closed, channel.receiveState());
+}
+
+test "zero capacity channel rejects sends without allocating" {
+    var channel = Channel.init(std.testing.failing_allocator, 0);
+    defer channel.deinit();
+    try std.testing.expectError(error.Full, channel.send(null));
+    try std.testing.expectEqual(ReceiveResult.empty, channel.receiveState());
+    channel.close();
+    try std.testing.expectEqual(ReceiveResult.closed, channel.receiveState());
+}
+
+test "channel allocation failure does not publish a value" {
+    var failing = std.testing.FailingAllocator.init(std.testing.allocator, .{ .fail_index = 0 });
+    var channel = Channel.init(failing.allocator(), 2);
+    defer channel.deinit();
+    try std.testing.expectError(error.OutOfMemory, channel.send(null));
+    try std.testing.expectEqual(ReceiveResult.empty, channel.receiveState());
+    failing.fail_index = std.math.maxInt(usize);
+    try channel.send(null);
+    try std.testing.expect(channel.receiveState() == .value);
+    try std.testing.expectEqual(ReceiveResult.empty, channel.receiveState());
+}

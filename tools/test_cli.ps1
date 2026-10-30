@@ -77,6 +77,19 @@ try {
     Assert-Result $brokenDependency 1 'math.rk:2:' 'Imported parser diagnostic'
     if (!$brokenDependency.Output.Contains('function bad(')) { throw 'Imported parser diagnostic used the wrong source text' }
     $passed++
+    $libraryErrors = @(
+        @{ Name = 'abs-boundary'; Import = 'ravi.math'; Call = 'abs(0 - 140737488355327 - 1)'; Error = 'OverflowError' },
+        @{ Name = 'gcd-boundary'; Import = 'ravi.math'; Call = 'gcd(0 - 140737488355327 - 1, 1)'; Error = 'OverflowError' },
+        @{ Name = 'gcd-type'; Import = 'ravi.math'; Call = 'gcd(1.5, 2)'; Error = 'TypeMismatch' },
+        @{ Name = 'clamp-bounds'; Import = 'ravi.math'; Call = 'clamp(5, 10, 0)'; Error = 'lower bound exceeds upper bound' },
+        @{ Name = 'sum-overflow'; Import = 'ravi.collections'; Call = 'sum([140737488355327, 1])'; Error = 'OverflowError' },
+        @{ Name = 'sum-type'; Import = 'ravi.collections'; Call = 'sum([1, [2]])'; Error = 'TypeError' }
+    )
+    foreach ($case in $libraryErrors) {
+        $functionName = $case.Call.Split('(')[0]
+        $fixture = Write-Fixture ($case.Name + '.rk') "# ravi: language=en`n$($case.Import) from $functionName import`n$($case.Call)`n"
+        Assert-Result (Invoke-Ravi @('run', $fixture)) 1 $case.Error $case.Name
+    }
     Write-Output "CLI regressions: $passed passed"
 } finally {
     $resolvedFixture = [IO.Path]::GetFullPath($fixtureRoot)
